@@ -28,6 +28,30 @@ cargo build --release
 cp target/release/sak /usr/local/bin/
 ```
 
+### With Nix Flakes
+
+```sh
+# Run directly
+nix run github:patsoffice/sak -- --help
+
+# Install into a profile
+nix profile install github:patsoffice/sak
+```
+
+Or add to a NixOS/home-manager flake:
+
+```nix
+{
+  inputs.sak.url = "github:patsoffice/sak";
+
+  # NixOS
+  environment.systemPackages = [ inputs.sak.packages.${system}.default ];
+
+  # home-manager
+  home.packages = [ inputs.sak.packages.${system}.default ];
+}
+```
+
 ## Using
 
 SAK is designed to be self-documenting. An LLM can discover all available domains, commands, and options through `--help` at each level:

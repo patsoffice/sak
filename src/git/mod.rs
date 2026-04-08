@@ -128,9 +128,13 @@ mod tests {
 
     #[test]
     fn test_open_repo_discovers_current() {
-        // We're running inside the sak repo, so this should work
+        // Skip if not running inside a git repo (e.g., Nix sandbox)
         let repo = open_repo(&None);
-        assert!(repo.is_ok());
+        if std::env::var("NIX_BUILD_TOP").is_ok() {
+            assert!(repo.is_err());
+        } else {
+            assert!(repo.is_ok());
+        }
     }
 
     #[test]
