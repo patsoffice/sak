@@ -30,7 +30,10 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
 
 - **Single crate** binary — no workspace, no lib split
 - Two-level subcommand structure: `sak <domain> <operation>`
-- Two domains: `fs` (filesystem) with operations: `glob`, `grep`, `cut`, `read`; `git` (repository) with operations: `status`, `diff`, `log`, `show`, `blame`, `branch`, `tags`, `stash-list`, `remote`, `contributors`
+- Discover domains, commands, and usage via `--help` at each level:
+  - `sak --help` — list domains and quick-start examples
+  - `sak <domain> --help` — list commands in a domain
+  - `sak <domain> <command> --help` — detailed options and examples
 - Future domains (e.g., `json`, `csv`) add new modules under `src/`
 - Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
 - All operations are strictly read-only — no writes, no side effects
@@ -52,26 +55,14 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
 ## File Layout
 
 ```
-src/main.rs          # Top-level CLI, domain dispatch
-src/output.rs        # BoundedWriter (stdout-only), line formatting, path utils, binary detection
-src/fs/mod.rs        # fs subcommand dispatch
-src/fs/glob.rs       # File finding by glob pattern
-src/fs/grep.rs       # Regex search (single-line + multiline)
-src/fs/cut.rs        # Field extraction (whitespace/literal/regex delimiters)
-src/fs/read.rs       # File reading with line numbers and ranges
-src/git/mod.rs       # git subcommand dispatch, shared helpers (open_repo, short_id, format_time)
-src/git/status.rs    # Working tree status
-src/git/diff.rs      # File diffs (staged, unstaged, commit ranges)
-src/git/log.rs       # Commit history with filtering
-src/git/show.rs      # Single commit display with diff
-src/git/blame.rs     # Line-by-line authorship
-src/git/branch.rs    # Branch listing
-src/git/tags.rs      # Tag listing
-src/git/remote.rs    # Remote listing
-src/git/stash.rs     # Stash entry listing
-src/git/contributors.rs # Contributor aggregation from commit history
-benches/benchmarks.rs # Criterion benchmarks for grep, cut, glob
+src/main.rs           # Top-level CLI, domain dispatch
+src/output.rs         # BoundedWriter (stdout-only), line formatting, path utils, binary detection
+src/<domain>/mod.rs   # Domain subcommand dispatch (one per domain)
+src/<domain>/<cmd>.rs # Individual command implementation (one per command)
+benches/benchmarks.rs # Criterion benchmarks
 ```
+
+Each domain is a module under `src/` with a `mod.rs` for dispatch and one file per command. Use `ls src/*/` to see current domains and commands.
 
 ## Issue Tracking (beads)
 
