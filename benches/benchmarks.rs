@@ -143,12 +143,12 @@ fn bench_glob_matching(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0usize;
             for entry in walkdir::WalkDir::new(dir.path()) {
-                if let Ok(e) = entry {
-                    if e.file_type().is_file() {
-                        let rel = e.path().strip_prefix(dir.path()).unwrap();
-                        if glob.is_match(rel) {
-                            count += 1;
-                        }
+                if let Ok(e) = entry
+                    && e.file_type().is_file()
+                {
+                    let rel = e.path().strip_prefix(dir.path()).unwrap();
+                    if glob.is_match(rel) {
+                        count += 1;
                     }
                 }
             }

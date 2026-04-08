@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem).
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem) and `git` (repository).
 
 ## Build & Test
 
@@ -17,6 +17,7 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
 - All tests must pass before committing
 - `cargo clippy` must pass with no warnings
 - `cargo fmt` must pass with no formatting changes
+- Bump the version in `Cargo.toml` before committing new capabilities: minor for a new domain (0.1.0 -> 0.2.0), patch for a new command within an existing domain (0.1.0 -> 0.1.1)
 
 ## Commit Style
 
@@ -29,8 +30,9 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
 
 - **Single crate** binary — no workspace, no lib split
 - Two-level subcommand structure: `sak <domain> <operation>`
-- Currently one domain: `fs` (filesystem) with operations: `glob`, `grep`, `cut`, `read`
-- Future domains (e.g., `json`, `csv`, `git`) add new modules under `src/`
+- Two domains: `fs` (filesystem) with operations: `glob`, `grep`, `cut`, `read`; `git` (repository) with operations: `status`, `diff`, `log`, `show`, `blame`, `branch`, `tags`, `stash-list`, `remote`, `contributors`
+- Future domains (e.g., `json`, `csv`) add new modules under `src/`
+- Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
@@ -57,6 +59,17 @@ src/fs/glob.rs       # File finding by glob pattern
 src/fs/grep.rs       # Regex search (single-line + multiline)
 src/fs/cut.rs        # Field extraction (whitespace/literal/regex delimiters)
 src/fs/read.rs       # File reading with line numbers and ranges
+src/git/mod.rs       # git subcommand dispatch, shared helpers (open_repo, short_id, format_time)
+src/git/status.rs    # Working tree status
+src/git/diff.rs      # File diffs (staged, unstaged, commit ranges)
+src/git/log.rs       # Commit history with filtering
+src/git/show.rs      # Single commit display with diff
+src/git/blame.rs     # Line-by-line authorship
+src/git/branch.rs    # Branch listing
+src/git/tags.rs      # Tag listing
+src/git/remote.rs    # Remote listing
+src/git/stash.rs     # Stash entry listing
+src/git/contributors.rs # Contributor aggregation from commit history
 benches/benchmarks.rs # Criterion benchmarks for grep, cut, glob
 ```
 
@@ -83,6 +96,10 @@ br sync --flush-only                           # Export to JSONL for git commit
 - `br` never auto-commits — run `br sync --flush-only` then commit `.beads/` manually
 - Check `br ready --json` at the start of a session to see what's actionable
 - Close issues with descriptive `--reason` so context is preserved
+
+## Documentation Hygiene
+
+Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands") in documentation files like CLAUDE.md, README.md, or issue close reasons. These go stale immediately after the next change. Instead, describe *what* exists qualitatively and let readers run `cargo test`, `sak --help`, etc. to get current numbers.
 
 ## Gotchas
 

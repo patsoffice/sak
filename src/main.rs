@@ -1,4 +1,5 @@
 mod fs;
+mod git;
 mod output;
 
 use std::process::ExitCode;
@@ -21,7 +22,11 @@ Quick start:
   sak fs glob '**/*.rs'                  Find all Rust files
   sak fs grep 'fn main' src/             Search for a pattern
   sak fs read src/main.rs -n 1-20        Read lines 1-20 of a file
-  sak fs cut -d: -f 1 /etc/passwd        Extract first field"
+  sak fs cut -d: -f 1 /etc/passwd        Extract first field
+  sak git status                          Show working tree status
+  sak git log --oneline -n 10             Recent commits
+  sak git diff --staged                   Show staged changes
+  sak git blame src/main.rs               Line-by-line authorship"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -33,6 +38,9 @@ enum Command {
     /// Filesystem operations (read-only)
     #[command(subcommand)]
     Fs(fs::FsCommand),
+    /// Git repository operations (read-only)
+    #[command(subcommand)]
+    Git(git::GitCommand),
 }
 
 fn main() -> ExitCode {
@@ -40,6 +48,7 @@ fn main() -> ExitCode {
 
     let result = match &cli.command {
         Command::Fs(cmd) => fs::run(cmd),
+        Command::Git(cmd) => git::run(cmd),
     };
 
     match result {
