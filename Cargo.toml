@@ -1,0 +1,28 @@
+[package]
+name = "sak"
+version = "0.1.0"
+edition = "2024"
+description = "Swiss Army Knife for LLMs - read-only file operations"
+
+[[bin]]
+name = "sak"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "wrap_help"] }
+globset = "0.4"
+walkdir = "2"
+regex = "1"
+anyhow = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3"
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[profile.release]
+lto = true
+strip = true
