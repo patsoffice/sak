@@ -20,6 +20,7 @@
 
 pub mod client;
 pub mod config;
+pub mod images;
 pub mod info;
 pub mod list;
 
@@ -37,6 +38,8 @@ pub enum LxcCommand {
     Info(info::InfoArgs),
     /// Show the configuration subset of a single instance
     Config(config::ConfigArgs),
+    /// List images on the local LXD/Incus daemon
+    Images(images::ImagesArgs),
 }
 
 /// Dispatch a `sak lxc` subcommand.
@@ -56,5 +59,6 @@ async fn dispatch(cmd: &LxcCommand) -> Result<ExitCode> {
         LxcCommand::List(args) => list::run(args).await,
         LxcCommand::Info(args) => info::run(args).await,
         LxcCommand::Config(args) => config::run(args).await,
+        LxcCommand::Images(args) => images::run(args).await,
     }
 }
