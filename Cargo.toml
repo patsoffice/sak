@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -39,7 +39,7 @@ docker = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util",
 # `sqlite` is opt-in (not in `default`) until binary-size and build-time impact
 # are measured. Pulls in `rusqlite` with the `bundled` feature, which compiles
 # libsqlite3 from source — first build is slower, no system dep needed.
-sqlite = ["dep:rusqlite"]
+sqlite = ["dep:rusqlite", "dep:base64"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
@@ -77,6 +77,11 @@ http-body-util = { version = "0.1", optional = true }
 # build time. Read-only enforcement is OS-level via SQLITE_OPEN_READ_ONLY +
 # `PRAGMA query_only=ON`, plus a chokepoint grep test in src/sqlite/client.rs.
 rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
+# `base64` is used by `sak sqlite query` (and the dump command that shares its
+# row-formatting helpers) to render BLOB cells as base64 strings in both JSON
+# and TSV output. Gated on the `sqlite` feature so non-sqlite builds stay
+# unchanged.
+base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

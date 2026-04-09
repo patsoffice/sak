@@ -78,6 +78,44 @@ pub fn query_rows(conn: &Connection, sql: &str) -> Result<Vec<Vec<String>>> {
     Ok(out)
 }
 
+/// Run a SELECT (or `WITH` / `EXPLAIN` / `PRAGMA`) statement and collect every
+/// row as a vector of typed [`rusqlite::types::Value`] cells, alongside the
+/// column names from the cursor in declared order.
+///
+/// This is the type-preserving counterpart to [`query_rows`] used by commands
+/// (`query`, `dump`, ...) that need to know whether each cell is `NULL`, an
+/// integer, a real, a string, or a blob — for example to render JSON-lines
+/// output where the JSON type must match the SQLite type.
+///
+/// All `rusqlite::Connection` and `Statement` access stays in this module so
+/// the chokepoint grep test continues to hold.
+pub fn query_rows_typed(
+    conn: &Connection,
+    sql: &str,
+) -> Result<(Vec<String>, Vec<Vec<rusqlite::types::Value>>)> {
+    let mut stmt = conn
+        .prepare(sql)
+        .with_context(|| format!("preparing query: {sql}"))?;
+    let columns: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
+    let column_count = columns.len();
+    let rows_iter = stmt
+        .query_map([], |row| {
+            let mut row_vec = Vec::with_capacity(column_count);
+            for i in 0..column_count {
+                let value: rusqlite::types::Value = row.get(i)?;
+                row_vec.push(value);
+            }
+            Ok(row_vec)
+        })
+        .with_context(|| format!("executing query: {sql}"))?;
+
+    let mut out = Vec::new();
+    for row in rows_iter {
+        out.push(row.with_context(|| format!("reading row from: {sql}"))?);
+    }
+    Ok((columns, out))
+}
+
 /// Test helper: open a writable connection and run a SQL batch to seed a
 /// fixture database. Lives in `client.rs` so sibling tests don't have to
 /// import `rusqlite::Connection` themselves (which the chokepoint test would
