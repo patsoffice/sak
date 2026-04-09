@@ -19,7 +19,6 @@ use kube::{Api, Client};
 /// 2. In-cluster service account if running inside a pod.
 ///
 /// Wraps [`kube::Client::try_default`].
-#[allow(dead_code)] // wired up by sak-llm-ovb (kinds + get) and others
 pub async fn build_client() -> Result<Client> {
     Client::try_default()
         .await
@@ -31,7 +30,6 @@ pub async fn build_client() -> Result<Client> {
 /// Pass `namespace = None` to list cluster-wide (`all_with`); pass `Some(ns)`
 /// for a namespaced list. Caller is responsible for ensuring the kind is
 /// actually namespaced when supplying a namespace.
-#[allow(dead_code)] // wired up by sak-llm-ovb (kinds + get)
 pub async fn list_dyn(
     client: &Client,
     ar: &ApiResource,
@@ -48,20 +46,25 @@ pub async fn list_dyn(
 }
 
 /// Get a single resource by name.
-#[allow(dead_code)] // wired up by sak-llm-ovb (kinds + get)
+///
+/// Returns `Ok(None)` if the apiserver responds with 404, so callers can map
+/// "not found" to the sak-standard exit code 1 without losing the ability to
+/// surface other errors as exit code 2.
 pub async fn get_dyn(
     client: &Client,
     ar: &ApiResource,
     namespace: Option<&str>,
     name: &str,
-) -> Result<DynamicObject> {
+) -> Result<Option<DynamicObject>> {
     let api: Api<DynamicObject> = match namespace {
         Some(ns) => Api::namespaced_with(client.clone(), ns, ar),
         None => Api::all_with(client.clone(), ar),
     };
-    api.get(name)
-        .await
-        .with_context(|| format!("failed to get {} {}", ar.kind, name))
+    match api.get(name).await {
+        Ok(obj) => Ok(Some(obj)),
+        Err(kube::Error::Api(e)) if e.code == 404 => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("failed to get {} {}", ar.kind, name)),
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +157,7 @@ mod tests {
             .expect("build_client failed — is KUBECONFIG set and the cluster reachable?");
 
         // Fast-path resolve for `pod` via the hardcoded shortname table.
-        let ar = discovery::resolve(&client, "pod")
+        let (ar, _caps) = discovery::resolve(&client, "pod")
             .await
             .expect("resolve(pod) failed");
         assert_eq!(ar.kind, "Pod");
@@ -167,11 +170,14 @@ mod tests {
         let pods = super::list_dyn(&client, &ar, None, &ListParams::default())
             .await
             .expect("list_dyn(pods) failed");
-        eprintln!("live_smoke: discovered {} pod(s) cluster-wide", pods.items.len());
+        eprintln!(
+            "live_smoke: discovered {} pod(s) cluster-wide",
+            pods.items.len()
+        );
 
         // Slow-path resolve: pick a kind that's not in the shortname table.
         // `Lease` from coordination.k8s.io exists on every modern cluster.
-        let lease = discovery::resolve(&client, "Lease")
+        let (lease, _) = discovery::resolve(&client, "Lease")
             .await
             .expect("resolve(Lease) via slow path failed");
         assert_eq!(lease.kind, "Lease");

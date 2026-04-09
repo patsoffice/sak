@@ -21,6 +21,8 @@
 
 pub mod client;
 pub mod discovery;
+pub mod get;
+pub mod kinds;
 
 use std::process::ExitCode;
 
@@ -28,12 +30,13 @@ use anyhow::Result;
 use clap::Subcommand;
 
 /// Subcommands of `sak k8s`.
-///
-/// This enum is intentionally empty in the foundation issue (sak-llm-k7e).
-/// Subsequent issues add `Kinds`/`Get` (sak-llm-ovb), `Images`/`Env`
-/// (sak-llm-m78), and `Schema` (sak-llm-ium).
 #[derive(Subcommand)]
-pub enum K8sCommand {}
+pub enum K8sCommand {
+    /// List every group/version/kind exposed by the cluster
+    Kinds(kinds::KindsArgs),
+    /// List or get resources of a kind
+    Get(get::GetArgs),
+}
 
 /// Dispatch a `sak k8s` subcommand.
 ///
@@ -48,5 +51,8 @@ pub fn run(cmd: &K8sCommand) -> Result<ExitCode> {
 }
 
 async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
-    match *cmd {}
+    match cmd {
+        K8sCommand::Kinds(args) => kinds::run(args).await,
+        K8sCommand::Get(args) => get::run(args).await,
+    }
 }

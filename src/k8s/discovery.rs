@@ -14,9 +14,10 @@
 //! The fast-path table is unit-testable without a live cluster; the resolver
 //! function is exercised manually against a real cluster.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use kube::api::ApiResource;
 use kube::core::GroupVersionKind;
+use kube::discovery::ApiCapabilities;
 
 /// A single builtin kind and the names by which it can be referenced.
 struct Builtin {
@@ -253,22 +254,27 @@ pub fn lookup_builtin(name: &str) -> Option<GroupVersionKind> {
     None
 }
 
-/// Resolve a user-supplied kind string to an `ApiResource` against the live
-/// cluster, using the fast-path table when possible.
-#[allow(dead_code)] // wired up by sak-llm-ovb (kinds + get)
-pub async fn resolve(client: &kube::Client, kind: &str) -> Result<ApiResource> {
+/// Resolve a user-supplied kind string to an `ApiResource` and its capabilities
+/// (scope, verbs, ...) against the live cluster, using the fast-path table when
+/// possible.
+pub async fn resolve(client: &kube::Client, kind: &str) -> Result<(ApiResource, ApiCapabilities)> {
     // Fast path: hardcoded shortname → GVK → single-GVK lookup.
     if let Some(gvk) = lookup_builtin(kind) {
-        let (ar, _caps) = kube::discovery::oneshot::pinned_kind(client, &gvk).await?;
-        return Ok(ar);
+        let pair = kube::discovery::oneshot::pinned_kind(client, &gvk)
+            .await
+            .with_context(|| format!("failed to resolve {kind:?} via pinned discovery"))?;
+        return Ok(pair);
     }
 
     // Slow path: full discovery, then linear search by kind/plural.
-    let discovery = kube::Discovery::new(client.clone()).run().await?;
+    let discovery = kube::Discovery::new(client.clone())
+        .run()
+        .await
+        .context("failed to run cluster discovery")?;
     for group in discovery.groups() {
-        for (ar, _caps) in group.recommended_resources() {
+        for (ar, caps) in group.recommended_resources() {
             if ar.kind.eq_ignore_ascii_case(kind) || ar.plural.eq_ignore_ascii_case(kind) {
-                return Ok(ar);
+                return Ok((ar, caps));
             }
         }
     }
@@ -276,6 +282,24 @@ pub async fn resolve(client: &kube::Client, kind: &str) -> Result<ApiResource> {
     Err(anyhow!(
         "unknown kind: {kind:?} (not in builtin shortname table and not found via cluster discovery)"
     ))
+}
+
+/// Walk the entire cluster discovery tree and return every `(ApiResource,
+/// ApiCapabilities)` pair the apiserver exposes. Used by `sak k8s kinds` —
+/// this is one of the few legitimate uses of full discovery (the user is
+/// explicitly asking for everything).
+pub async fn discover_all(client: &kube::Client) -> Result<Vec<(ApiResource, ApiCapabilities)>> {
+    let discovery = kube::Discovery::new(client.clone())
+        .run()
+        .await
+        .context("failed to run cluster discovery")?;
+    let mut out = Vec::new();
+    for group in discovery.groups() {
+        for (ar, caps) in group.recommended_resources() {
+            out.push((ar, caps));
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -24,18 +24,18 @@ use clap::{Parser, Subcommand};
         or `sak <domain> <command> --help` for detailed usage.",
     after_help = "\
 Quick start:
-  sak fs glob '**/*.rs'                  Find all Rust files
-  sak fs grep 'fn main' src/             Search for a pattern
-  sak fs read src/main.rs -n 1-20        Read lines 1-20 of a file
-  sak fs cut -d: -f 1 /etc/passwd        Extract first field
-  sak git status                          Show working tree status
-  sak git log --oneline -n 10             Recent commits
-  sak git diff --staged                   Show staged changes
-  sak git blame src/main.rs               Line-by-line authorship
-  sak json query .name data.json          Extract a JSON value
-  sak json keys --types data.json         List keys with value types
-  sak json flatten data.json              Flatten to path<TAB>value
-  sak json validate data.json             Check JSON validity
+  sak fs glob '**/*.rs'                       Find all Rust files
+  sak fs grep 'fn main' src/                  Search for a pattern
+  sak fs read src/main.rs -n 1-20             Read lines 1-20 of a file
+  sak fs cut -d: -f 1 /etc/passwd             Extract first field
+  sak git status                              Show working tree status
+  sak git log --oneline -n 10                 Recent commits
+  sak git diff --staged                       Show staged changes
+  sak git blame src/main.rs                   Line-by-line authorship
+  sak json query .name data.json              Extract a JSON value
+  sak json keys --types data.json             List keys with value types
+  sak json flatten data.json                  Flatten to path<TAB>value
+  sak json validate data.json                 Check JSON validity
   sak config query .package.name Cargo.toml   Read TOML/YAML/plist values
   sak config keys --types config.yaml         List config keys with types
   sak config flatten Info.plist               Flatten any config file
