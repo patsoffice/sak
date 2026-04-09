@@ -19,6 +19,7 @@
 //! not turn the rest of the binary async.
 
 pub mod client;
+pub mod list;
 
 use std::process::ExitCode;
 
@@ -26,11 +27,11 @@ use anyhow::Result;
 use clap::Subcommand;
 
 /// Subcommands of `sak lxc`.
-///
-/// Currently empty — this is the foundation issue. Dependent issues
-/// (`list`, `info`, `config`, `images`) populate it.
 #[derive(Subcommand)]
-pub enum LxcCommand {}
+pub enum LxcCommand {
+    /// List instances on the local LXD/Incus daemon
+    List(list::ListArgs),
+}
 
 /// Dispatch a `sak lxc` subcommand.
 ///
@@ -45,7 +46,7 @@ pub fn run(cmd: &LxcCommand) -> Result<ExitCode> {
 }
 
 async fn dispatch(cmd: &LxcCommand) -> Result<ExitCode> {
-    // The enum is currently uninhabited — this match is exhaustive with no
-    // arms. Dependent issues add the real arms.
-    match *cmd {}
+    match cmd {
+        LxcCommand::List(args) => list::run(args).await,
+    }
 }
