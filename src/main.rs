@@ -1,5 +1,6 @@
 mod fs;
 mod git;
+mod json;
 mod output;
 
 use std::process::ExitCode;
@@ -26,7 +27,11 @@ Quick start:
   sak git status                          Show working tree status
   sak git log --oneline -n 10             Recent commits
   sak git diff --staged                   Show staged changes
-  sak git blame src/main.rs               Line-by-line authorship"
+  sak git blame src/main.rs               Line-by-line authorship
+  sak json query .name data.json          Extract a JSON value
+  sak json keys --types data.json         List keys with value types
+  sak json flatten data.json              Flatten to path<TAB>value
+  sak json validate data.json             Check JSON validity"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -41,6 +46,9 @@ enum Command {
     /// Git repository operations (read-only)
     #[command(subcommand)]
     Git(git::GitCommand),
+    /// JSON operations (read-only)
+    #[command(subcommand)]
+    Json(json::JsonCommand),
 }
 
 fn main() -> ExitCode {
@@ -49,6 +57,7 @@ fn main() -> ExitCode {
     let result = match &cli.command {
         Command::Fs(cmd) => fs::run(cmd),
         Command::Git(cmd) => git::run(cmd),
+        Command::Json(cmd) => json::run(cmd),
     };
 
     match result {

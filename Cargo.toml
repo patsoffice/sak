@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -15,6 +15,8 @@ walkdir = "2"
 regex = "1"
 anyhow = "1"
 git2 = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 criterion = "0.5"
