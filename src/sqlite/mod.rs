@@ -19,6 +19,7 @@
 //! runtime — [`run`] dispatches directly.
 
 pub mod client;
+pub mod tables;
 
 use std::process::ExitCode;
 
@@ -26,15 +27,14 @@ use anyhow::Result;
 use clap::Subcommand;
 
 /// Subcommands of `sak sqlite`.
-///
-/// Currently empty — this is the foundation issue. Dependent issues
-/// (`tables`, `schema`, `query`, `count`, `dump`, `info`) populate it.
 #[derive(Subcommand)]
-pub enum SqliteCommand {}
+pub enum SqliteCommand {
+    Tables(tables::TablesArgs),
+}
 
 /// Dispatch a `sak sqlite` subcommand.
 pub fn run(cmd: &SqliteCommand) -> Result<ExitCode> {
-    // The enum is currently uninhabited — this match is exhaustive with no
-    // arms. Dependent issues add the real arms.
-    match *cmd {}
+    match cmd {
+        SqliteCommand::Tables(args) => tables::run(args),
+    }
 }

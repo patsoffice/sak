@@ -24,11 +24,6 @@ use rusqlite::{Connection, OpenFlags};
 /// Uses `SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_URI` and then immediately runs
 /// `PRAGMA query_only = ON;` as defense in depth. Returns an error if the
 /// file does not exist, is not a SQLite database, or cannot be read.
-//
-// `#[allow(dead_code)]` until the first sqlite subcommand wires it in. The
-// foundation issue intentionally adds no commands; dependent issues
-// (`tables`, `schema`, `query`, ...) consume this helper.
-#[allow(dead_code)]
 pub fn open_readonly(path: &Path) -> Result<Connection> {
     let conn = Connection::open_with_flags(
         path,
@@ -38,6 +33,53 @@ pub fn open_readonly(path: &Path) -> Result<Connection> {
     conn.pragma_update(None, "query_only", true)
         .context("setting PRAGMA query_only=ON")?;
     Ok(conn)
+}
+
+/// Run a SELECT statement and collect every row as a vector of stringified
+/// cell values. NULLs become empty strings; integers and reals are formatted
+/// with their `Display` impls; blobs are rendered as `<blob:N bytes>`.
+///
+/// This is the only sanctioned way for sibling modules in `src/sqlite/` to
+/// pull rows out of a connection — they must not import `rusqlite::Connection`
+/// or call mutation methods directly. The chokepoint grep test enforces this.
+pub fn query_rows(conn: &Connection, sql: &str) -> Result<Vec<Vec<String>>> {
+    let mut stmt = conn
+        .prepare(sql)
+        .with_context(|| format!("preparing query: {sql}"))?;
+    let column_count = stmt.column_count();
+    let rows_iter = stmt
+        .query_map([], |row| {
+            let mut row_vec = Vec::with_capacity(column_count);
+            for i in 0..column_count {
+                let value: rusqlite::types::Value = row.get(i)?;
+                let cell = match value {
+                    rusqlite::types::Value::Null => String::new(),
+                    rusqlite::types::Value::Integer(n) => n.to_string(),
+                    rusqlite::types::Value::Real(f) => f.to_string(),
+                    rusqlite::types::Value::Text(t) => t,
+                    rusqlite::types::Value::Blob(b) => format!("<blob:{} bytes>", b.len()),
+                };
+                row_vec.push(cell);
+            }
+            Ok(row_vec)
+        })
+        .with_context(|| format!("executing query: {sql}"))?;
+
+    let mut out = Vec::new();
+    for row in rows_iter {
+        out.push(row.with_context(|| format!("reading row from: {sql}"))?);
+    }
+    Ok(out)
+}
+
+/// Test helper: open a writable connection and run a SQL batch to seed a
+/// fixture database. Lives in `client.rs` so sibling tests don't have to
+/// import `rusqlite::Connection` themselves (which the chokepoint test would
+/// reject). Only compiled under `cfg(test)`.
+#[cfg(test)]
+pub(crate) fn seed_for_tests(path: &Path, sql: &str) {
+    let writer = Connection::open(path).expect("open writable for test seed");
+    writer.execute_batch(sql).expect("seed sql batch");
 }
 
 #[cfg(test)]
