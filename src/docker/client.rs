@@ -87,8 +87,15 @@ impl DockerClient {
     }
 }
 
-/// Default socket path for the Docker daemon.
+/// Default system-wide socket path for the Docker daemon.
 const DEFAULT_SOCKET: &str = "/var/run/docker.sock";
+
+/// Per-user Docker Desktop socket path, relative to `$HOME`.
+///
+/// Recent Docker Desktop releases on macOS (and the rootless Linux flavour)
+/// expose the engine here instead of `/var/run/docker.sock`, so we have to
+/// probe it explicitly.
+const USER_SOCKET_SUFFIX: &str = ".docker/run/docker.sock";
 
 /// Discover the Docker daemon unix socket.
 ///
@@ -96,22 +103,47 @@ const DEFAULT_SOCKET: &str = "/var/run/docker.sock";
 /// 1. `DOCKER_HOST` env var if set. Only the `unix://` scheme is supported in
 ///    v1; `tcp://` (and any other scheme) is rejected with a clear error so
 ///    the user understands the limitation.
-/// 2. `/var/run/docker.sock` (the standard Linux/macOS-with-Docker-Desktop
+/// 2. `/var/run/docker.sock` (the standard Linux / classic Docker Desktop
 ///    location).
+/// 3. `$HOME/.docker/run/docker.sock` (recent Docker Desktop on macOS, and
+///    rootless Linux). Skipped cleanly if `$HOME` is unset.
 ///
-/// Returns an error describing the candidates if none exist.
+/// Returns an error listing every candidate that was probed if none exist.
 pub fn discover_socket() -> Result<PathBuf> {
     if let Ok(env_value) = std::env::var("DOCKER_HOST") {
         return parse_docker_host(&env_value);
     }
-    let p = PathBuf::from(DEFAULT_SOCKET);
-    if p.exists() {
-        return Ok(p);
+    let candidates = socket_candidates(std::env::var("HOME").ok());
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Ok(candidate.clone());
+        }
     }
+    let searched = candidates
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
     Err(anyhow!(
         "no Docker daemon unix socket found. Set DOCKER_HOST=unix:///path or \
-         start Docker.\nSearched: {DEFAULT_SOCKET}"
+         start Docker.\nSearched: {searched}"
     ))
+}
+
+/// Build the ordered list of unix socket paths to probe when `DOCKER_HOST`
+/// is unset. The user-scoped Docker Desktop path is only included when
+/// `home` is `Some` and non-empty — `std::env::home_dir` is unstable, so
+/// callers resolve `$HOME` themselves and pass it in. Taking `home` as a
+/// parameter keeps the function pure and trivially testable without
+/// touching process-wide env state.
+fn socket_candidates(home: Option<String>) -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from(DEFAULT_SOCKET)];
+    if let Some(home) = home
+        && !home.is_empty()
+    {
+        candidates.push(PathBuf::from(home).join(USER_SOCKET_SUFFIX));
+    }
+    candidates
 }
 
 /// Parse the value of `DOCKER_HOST` into a unix socket path.
@@ -230,5 +262,29 @@ mod tests {
     fn parse_docker_host_accepts_bare_path() {
         let p = super::parse_docker_host("/tmp/docker.sock").unwrap();
         assert_eq!(p, PathBuf::from("/tmp/docker.sock"));
+    }
+
+    #[test]
+    fn socket_candidates_includes_user_socket_after_default() {
+        let candidates = super::socket_candidates(Some("/home/tester".to_string()));
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/var/run/docker.sock"),
+                PathBuf::from("/home/tester/.docker/run/docker.sock"),
+            ]
+        );
+    }
+
+    #[test]
+    fn socket_candidates_skips_user_socket_when_home_missing() {
+        let candidates = super::socket_candidates(None);
+        assert_eq!(candidates, vec![PathBuf::from("/var/run/docker.sock")]);
+    }
+
+    #[test]
+    fn socket_candidates_skips_user_socket_when_home_empty() {
+        let candidates = super::socket_candidates(Some(String::new()));
+        assert_eq!(candidates, vec![PathBuf::from("/var/run/docker.sock")]);
     }
 }
