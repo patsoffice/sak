@@ -26,6 +26,7 @@ pub mod env;
 pub mod get;
 pub mod images;
 pub mod kinds;
+pub mod schema;
 
 use std::process::ExitCode;
 
@@ -43,6 +44,8 @@ pub enum K8sCommand {
     Images(images::ImagesArgs),
     /// List env vars on a single pod-bearing resource
     Env(env::EnvArgs),
+    /// Fetch the OpenAPI v3 schema for a kind
+    Schema(schema::SchemaArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -63,5 +66,6 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
         K8sCommand::Get(args) => get::run(args).await,
         K8sCommand::Images(args) => images::run(args).await,
         K8sCommand::Env(args) => env::run(args).await,
+        K8sCommand::Schema(args) => schema::run(args).await,
     }
 }

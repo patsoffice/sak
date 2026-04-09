@@ -67,6 +67,25 @@ pub async fn get_dyn(
     }
 }
 
+/// Issue a `GET` against an arbitrary apiserver path and return the response
+/// body as text. Used by `sak k8s schema` to fetch the OpenAPI v3 index and
+/// per-group documents.
+///
+/// `path` may be either a server-relative URL (e.g. `/openapi/v3`) or a path
+/// with a query string from the OpenAPI index's `serverRelativeURL` field
+/// (e.g. `/openapi/v3/apis/apps/v1?hash=abc...`).
+pub async fn request_text(client: &Client, path: &str) -> Result<String> {
+    let req = http::Request::builder()
+        .method("GET")
+        .uri(path)
+        .body(Vec::new())
+        .with_context(|| format!("building request for {path}"))?;
+    client
+        .request_text(req)
+        .await
+        .with_context(|| format!("GET {path}"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
