@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), and `sqlite` (read-only SQLite databases, opt-in), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -36,17 +36,21 @@ cp target/release/sak /usr/local/bin/
 
 ### Build features
 
-`sak` exposes a single optional feature:
+`sak` exposes two optional features:
 
 | Feature | Default? | What it adds |
 | --- | --- | --- |
 | `k8s` | yes | The `k8s` domain (`kinds`, `get`, `images`, `env`, `schema`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
+| `sqlite` | no | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime). Opt-in until size and build-time impact are measured. |
 
 The `k8s` feature roughly doubles the release binary size and roughly doubles cold link time. Most other domains are filesystem- and git-only, so users who don't need Kubernetes can opt out:
 
 ```sh
-cargo build --release --no-default-features                  # no k8s
-cargo build --release --no-default-features --features k8s   # explicit opt-in
+cargo build --release --no-default-features                                  # no k8s, no sqlite
+cargo build --release --no-default-features --features k8s                   # explicit k8s opt-in
+cargo build --release --features sqlite                                      # default + sqlite
+cargo build --release --no-default-features --features sqlite                # sqlite only
+cargo build --release --all-features                                         # everything
 ```
 
 ### With Nix Flakes
@@ -87,6 +91,7 @@ sak git --help
 sak json --help
 sak config --help
 sak k8s --help            # only present if built with the k8s feature (default)
+sak sqlite --help         # only present if built with the sqlite feature (opt-in)
 
 # Discover options and see examples for a specific command
 sak fs grep --help

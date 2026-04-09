@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.5.3"
+version = "0.6.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -23,6 +23,10 @@ path = "src/main.rs"
 #     cargo build --release --no-default-features --features k8s
 default = ["k8s"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
+# `sqlite` is opt-in (not in `default`) until binary-size and build-time impact
+# are measured. Pulls in `rusqlite` with the `bundled` feature, which compiles
+# libsqlite3 from source — first build is slower, no system dep needed.
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
@@ -47,6 +51,11 @@ tokio = { version = "1", default-features = false, features = ["rt", "macros"], 
 # the OpenAPI v3 endpoint that `sak k8s schema` walks. kube re-exports its own
 # http internals but not the public types we need, so we declare it directly.
 http = { version = "1", optional = true }
+# sqlite domain (opt-in via the `sqlite` feature). `bundled` compiles
+# libsqlite3 from source so there's no system libsqlite dep at runtime or
+# build time. Read-only enforcement is OS-level via SQLITE_OPEN_READ_ONLY +
+# `PRAGMA query_only=ON`, plus a chokepoint grep test in src/sqlite/client.rs.
+rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

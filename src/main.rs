@@ -5,6 +5,8 @@ mod json;
 #[cfg(feature = "k8s")]
 mod k8s;
 mod output;
+#[cfg(feature = "sqlite")]
+mod sqlite;
 mod value;
 
 use std::process::ExitCode;
@@ -64,6 +66,10 @@ enum Command {
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
     K8s(k8s::K8sCommand),
+    /// SQLite database operations (read-only)
+    #[cfg(feature = "sqlite")]
+    #[command(subcommand)]
+    Sqlite(sqlite::SqliteCommand),
 }
 
 fn main() -> ExitCode {
@@ -76,6 +82,8 @@ fn main() -> ExitCode {
         Command::Config(cmd) => config::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
+        #[cfg(feature = "sqlite")]
+        Command::Sqlite(cmd) => sqlite::run(cmd),
     };
 
     match result {

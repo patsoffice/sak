@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster). Run `sak fs glob 'src/*/'` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), and `sqlite` (read-only SQLite databases, opt-in). Run `sak fs glob 'src/*/'` to see current domains and commands.
 
 ## Use sak as your tool
 
@@ -22,8 +22,12 @@ The harness's built-in Glob/Read/Grep tools are still fine — and the rule agai
 ```bash
 cargo build                                                     # Build (default features = with k8s)
 cargo build --no-default-features                               # Lean build (no k8s, no async runtime)
+cargo build --features sqlite                                   # Add the opt-in sqlite domain
+cargo build --all-features                                      # k8s + sqlite together
 cargo test                                                      # Run all tests (with k8s)
 cargo test --no-default-features                                # Run tests without k8s
+cargo test --no-default-features --features sqlite              # sqlite alone
+cargo test --all-features                                       # k8s + sqlite
 cargo clippy --all-features --all-targets                       # Check code quality
 cargo clippy --all-features --all-targets --allow-dirty --fix   # Auto-fix clippy warnings before fixing manually
 cargo fmt                                                       # Format code
@@ -62,6 +66,7 @@ The `k8s` cargo feature is **on by default** so `cargo install sak` ships every 
 - K8s read-only enforcement is convention + a grep test in `src/k8s/client.rs`: every `kube::Api` call and every mutation method (`create`, `delete`, `patch`, ...) must live in `client.rs`. Any other module under `src/k8s/` that mentions those tokens fails the test. This is the cheapest credible defense — `kube` has no read-only client variant
 - K8s container walking (used by `images` and `env`) is a pure function over `serde_json::Value` in `src/k8s/containers.rs` — fully unit-testable on hand-built fixtures with no cluster
 - K8s schema fetching uses the foundation chokepoint `client::request_text` for raw GETs against `/openapi/v3`, then matches schemas by `x-kubernetes-group-version-kind` annotation rather than by package-style key
+- SQLite domain (`src/sqlite/`) is gated behind the **opt-in** `sqlite` cargo feature (not in `default`) — pulls in `rusqlite` with the `bundled` libsqlite3. Read-only enforcement is stronger than k8s's: `client::open_readonly` opens with `SQLITE_OPEN_READ_ONLY` (OS-level) and then sets `PRAGMA query_only=ON` (engine-level), so writes are rejected at two layers, not just by convention. The same chokepoint pattern is enforced by a grep test in `src/sqlite/client.rs` — every `rusqlite::Connection`, `Connection::open`, `.execute(`, and `.execute_batch(` must live in `client.rs`
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
@@ -132,3 +137,5 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - K8s `get_dyn` returns `Result<Option<DynamicObject>>` — apiserver 404s map to `Ok(None)` so callers can produce sak's exit code 1 for "not found" without losing the ability to surface other errors as exit code 2. Don't unwrap it unconditionally
 - K8s `discovery::resolve` returns `(ApiResource, ApiCapabilities)`; cluster-scoped vs namespaced enforcement happens at the command layer by inspecting `caps.scope` *before* the list/get call (cluster-scoped + `--namespace` should be a hard error)
 - Adding new optional dependencies for the `k8s` feature requires both declaring them with `optional = true` *and* adding the `dep:<name>` to the `k8s = [...]` feature list in `Cargo.toml`. `kube` does not re-export the `http::Request` types needed by `client::request_text`, so `http` is its own gated dep
+- The `sqlite` feature uses `rusqlite` with the `bundled` cargo feature, which compiles libsqlite3 from C source. First build with `--features sqlite` is noticeably slower (libsqlite3 is a few MB of C), but there is no system `libsqlite3` runtime dependency — the binary is self-contained
+- `sak sqlite --help` currently lists no subcommands — the foundation issue intentionally only ships `client::open_readonly` and the chokepoint test. Dependent issues (`tables`, `schema`, `query`, `count`, `dump`, `info`) populate the `SqliteCommand` enum
