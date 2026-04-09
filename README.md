@@ -177,6 +177,57 @@ Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `confi
 
 If you already have a `PreToolUse.Bash.hooks` array, append the new entries rather than replacing the array.
 
+### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
+
+The hooks above only catch `git` and `kubectl` — they say nothing about `ls`, `find`, `cat`, `head`, `tail`, `grep`, `cut`, or `awk`. For those, the most reliable lever is a project instruction file that the agent reads at the start of every session. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
+
+```markdown
+## Use sak as your tool
+
+When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist, or
+a live Kubernetes cluster, **prefer `sak <domain> <command>` over shell
+equivalents**:
+
+- `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
+- `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, `sed -n`
+- `sak fs grep <pattern> <path>` instead of `grep` / `rg`
+- `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak git status|log|diff|blame|show` instead of read-only `git`
+- `sak json query|keys|flatten|validate` for `*.json`
+- `sak config query|keys|flatten|validate` for TOML, YAML, plist
+- `sak k8s get|list|images|env|schema` instead of `kubectl` reads
+
+Discover flags with `sak <domain> <command> --help`. If you want a sak
+command that doesn't exist yet, that's a signal to add it, not to fall
+back to shell.
+```
+
+This catches the cases the hooks don't, and — importantly — it also tells the agent *why* to prefer sak (deterministic output, line numbers, bounded results, no decoration), so it picks sak even in novel situations the rule doesn't enumerate. Pair it with the auto-approve permission above and the agent will reach for sak unprompted.
+
+### Make the rule stick across sessions (agent memory)
+
+Project-instruction files are loaded fresh every conversation, but some agents also support a persistent per-project memory that survives across sessions. Claude Code, for example, has an auto-memory system at `~/.claude/projects/<slug>/memory/`. If your agent has something equivalent, save the same rule there as a *feedback* memory so it survives even in conversations where CLAUDE.md isn't read end-to-end. Suggested content:
+
+```markdown
+---
+name: Prefer sak over shell tools in this repo
+description: Reach for `sak <domain> <command>` instead of ls/find/cat/head/grep/cut/awk and read-only git/kubectl
+type: feedback
+---
+
+In this repo, prefer `sak <domain> <command>` over shell equivalents
+whenever a CLI is warranted. [...same substitution table as CLAUDE.md...]
+
+**Why:** the project dogfoods sak; deterministic, bounded, LLM-tuned
+output is the whole point of the tool.
+
+**How to apply:** the harness's built-in file/search tools are still
+fine, but when you do reach for a CLI, reach for sak. Missing command
+= add it, don't fall back to shell.
+```
+
+Belt and braces: hooks block the easy mistakes (`git log`, `kubectl get`), CLAUDE.md teaches the rule each session, and persistent memory keeps it sticky across sessions and context compactions.
+
 ## Output Conventions
 
 - **stdout** — Results only. Clean, parseable, no decoration.

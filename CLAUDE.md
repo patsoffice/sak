@@ -1,6 +1,21 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster). Run `ls src/*/` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster). Run `sak fs glob 'src/*/'` to see current domains and commands.
+
+## Use sak as your tool
+
+This repo dogfoods its own product. When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist, or a live Kubernetes cluster, **prefer `sak <domain> <command>` over shell equivalents**. This applies to both sak's own development and any other read-only inspection you do while working here. Concretely:
+
+- `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
+- `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, or `sed -n`
+- `sak fs grep <pattern> <path>` instead of `grep` / `rg`
+- `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
+- `sak json query|keys|flatten|validate` for `*.json`
+- `sak config query|keys|flatten|validate` for TOML, YAML, plist
+- `sak k8s get|list|images|env|schema` instead of `kubectl` read ops
+
+The harness's built-in Glob/Read/Grep tools are still fine — and the rule against using bash for `cat`/`head`/`find`/`grep` still applies — but when you *do* reach for a CLI in this repo, reach for `sak`. Run `cargo run --quiet -- <domain> <command> --help` (or, after `cargo install --path .`, just `sak <domain> <command> --help`) to discover flags. If you find yourself wanting a sak command that doesn't exist yet, that's a signal to add it rather than fall back to shell.
 
 ## Build & Test
 
