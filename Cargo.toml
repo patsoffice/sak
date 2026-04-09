@@ -9,25 +9,33 @@ name = "sak"
 path = "src/main.rs"
 
 [features]
-# `k8s` and `lxc` are part of the default feature set so `cargo install sak`
-# ships the full domain. They pull in kube + k8s-openapi (for k8s) and
-# hyper + hyperlocal + hyper-util + http-body-util (for lxc), plus the shared
-# tokio + http stack. Together they roughly triple the release binary and cold
-# link time vs the lean build. If you want the lean build (no Kubernetes,
-# no LXD/Incus, no async runtime), opt out explicitly:
+# `k8s`, `lxc`, and `docker` are part of the default feature set so
+# `cargo install sak` ships the full domain. They pull in kube + k8s-openapi
+# (for k8s) and hyper + hyperlocal + hyper-util + http-body-util (shared
+# between lxc and docker), plus the shared tokio + http stack. Together they
+# roughly triple the release binary and cold link time vs the lean build. If
+# you want the lean build (no Kubernetes, no LXD/Incus, no Docker, no async
+# runtime), opt out explicitly:
 #
 #     cargo build --release --no-default-features
 #
-# Either domain can also be re-added on its own:
+# Any single domain can also be re-added on its own:
 #
 #     cargo build --release --no-default-features --features k8s
 #     cargo build --release --no-default-features --features lxc
-default = ["k8s", "lxc"]
+#     cargo build --release --no-default-features --features docker
+default = ["k8s", "lxc", "docker"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 # `lxc` talks to the LXD/Incus REST API over a unix domain socket via raw
 # hyper + hyperlocal. Read-only enforcement is convention + a chokepoint grep
 # test in src/lxc/client.rs that mirrors the k8s pattern.
 lxc = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "dep:tokio", "dep:http"]
+# `docker` talks to the Docker daemon REST API over a unix domain socket via
+# raw hyper + hyperlocal. Shares the same hyper stack as lxc; the two domains
+# remain separate because their response shapes differ (Docker has no envelope,
+# LXD does). Read-only enforcement mirrors the lxc pattern via a chokepoint
+# grep test in src/docker/client.rs.
+docker = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "dep:tokio", "dep:http"]
 # `sqlite` is opt-in (not in `default`) until binary-size and build-time impact
 # are measured. Pulls in `rusqlite` with the `bundled` feature, which compiles
 # libsqlite3 from source — first build is slower, no system dep needed.

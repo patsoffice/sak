@@ -1,4 +1,6 @@
 mod config;
+#[cfg(feature = "docker")]
+mod docker;
 mod fs;
 mod git;
 mod json;
@@ -72,6 +74,10 @@ enum Command {
     #[cfg(feature = "lxc")]
     #[command(subcommand)]
     Lxc(lxc::LxcCommand),
+    /// Docker container operations against a live daemon (read-only)
+    #[cfg(feature = "docker")]
+    #[command(subcommand)]
+    Docker(docker::DockerCommand),
     /// SQLite database operations (read-only)
     #[cfg(feature = "sqlite")]
     #[command(subcommand)]
@@ -90,6 +96,8 @@ fn main() -> ExitCode {
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
         Command::Lxc(cmd) => lxc::run(cmd),
+        #[cfg(feature = "docker")]
+        Command::Docker(cmd) => docker::run(cmd),
         #[cfg(feature = "sqlite")]
         Command::Sqlite(cmd) => sqlite::run(cmd),
     };
