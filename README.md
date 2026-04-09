@@ -183,6 +183,69 @@ Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `versi
 
 If you already have a `PreToolUse.Bash.hooks` array, append the new entries rather than replacing the array.
 
+### Redirect raw `docker` reads to `sak docker`
+
+Same pattern for the Docker CLI. The hook only blocks the read commands that have a direct `sak docker` equivalent today:
+
+| Blocked | Replace with |
+| --- | --- |
+| `docker ps` | `sak docker list` |
+| `docker inspect` | `sak docker info` (or `sak docker config` for the configuration subset) |
+| `docker images` | `sak docker images` |
+
+Other `docker` reads (`logs`, `stats`, `events`, `top`, `port`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak docker` commands land. Mutations (`run`, `exec`, `rm`, `rmi`, `build`, `pull`, `push`, ...) also pass through and go through the agent's permission flow.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*docker\\s+(ps|inspect|images)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak docker instead (sak docker list for docker ps, sak docker info or sak docker config for docker inspect, sak docker images for docker images)\"}}' || true",
+            "statusMessage": "Checking for raw docker commands..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Redirect raw `lxc` reads to `sak lxc`
+
+Same pattern for the LXD/Incus CLI. The hook only blocks the read commands that have a direct `sak lxc` equivalent today:
+
+| Blocked | Replace with |
+| --- | --- |
+| `lxc list` | `sak lxc list` |
+| `lxc info` | `sak lxc info` |
+| `lxc config` (show) | `sak lxc config` |
+| `lxc image list` / `lxc image ls` | `sak lxc images` |
+
+Other `lxc` reads (`storage`, `network`, `profile`, `cluster`, `monitor`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak lxc` commands land. Mutations (`launch`, `start`, `stop`, `delete`, `exec`, `file push`, ...) also pass through and go through the agent's permission flow.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*lxc\\s+(list|info|config|image\\s+(list|ls))\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak lxc instead (sak lxc list for lxc list, sak lxc info for lxc info, sak lxc config for lxc config show, sak lxc images for lxc image list)\"}}' || true",
+            "statusMessage": "Checking for raw lxc commands..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
 The hooks above only catch `git` and `kubectl` — they say nothing about `ls`, `find`, `cat`, `head`, `tail`, `grep`, `cut`, or `awk`. For those, the most reliable lever is a project instruction file that the agent reads at the start of every session. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
