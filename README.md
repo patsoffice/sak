@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), and `sqlite` (read-only SQLite databases, opt-in), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), and `sqlite` (read-only SQLite databases), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -36,21 +36,23 @@ cp target/release/sak /usr/local/bin/
 
 ### Build features
 
-`sak` exposes two optional features:
+`sak` exposes four optional features, all on by default so `cargo install sak` ships every domain:
 
 | Feature | Default? | What it adds |
 | --- | --- | --- |
 | `k8s` | yes | The `k8s` domain (`kinds`, `get`, `images`, `env`, `schema`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
-| `sqlite` | no | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime). Opt-in until size and build-time impact are measured. |
+| `lxc` | yes | The `lxc` domain for read-only access to a live LXD/Incus daemon over a unix socket. Pulls in raw `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio`. |
+| `docker` | yes | The `docker` domain for read-only access to a live Docker Engine over a unix socket. Shares the same hyper stack as `lxc`. |
+| `sqlite` | yes | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime, but adds C compile time on the first build). |
 
-The `k8s` feature roughly doubles the release binary size and roughly doubles cold link time. Most other domains are filesystem- and git-only, so users who don't need Kubernetes can opt out:
+The default-on domains together roughly triple the release binary size and cold link time vs the lean build. Users who don't need them can opt out:
 
 ```sh
-cargo build --release --no-default-features                                  # no k8s, no sqlite
-cargo build --release --no-default-features --features k8s                   # explicit k8s opt-in
-cargo build --release --features sqlite                                      # default + sqlite
-cargo build --release --no-default-features --features sqlite                # sqlite only
-cargo build --release --all-features                                         # everything
+cargo build --release --no-default-features                                  # lean: no k8s, lxc, docker, or sqlite
+cargo build --release --no-default-features --features k8s                   # lean + k8s
+cargo build --release --no-default-features --features sqlite                # lean + sqlite
+cargo build --release --no-default-features --features lxc,docker            # lean + container daemons
+cargo build --release --all-features                                         # everything (same as default today)
 ```
 
 ### With Nix Flakes
@@ -90,8 +92,10 @@ sak fs --help
 sak git --help
 sak json --help
 sak config --help
-sak k8s --help            # only present if built with the k8s feature (default)
-sak sqlite --help         # only present if built with the sqlite feature (opt-in)
+sak k8s --help            # default-on; --no-default-features removes it
+sak lxc --help            # default-on; --no-default-features removes it
+sak docker --help         # default-on; --no-default-features removes it
+sak sqlite --help         # default-on; --no-default-features removes it
 
 # Discover options and see examples for a specific command
 sak fs grep --help

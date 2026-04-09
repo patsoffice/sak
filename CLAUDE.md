@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), and `sqlite` (read-only SQLite databases, opt-in). Run `sak fs glob 'src/*/'` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), and `sqlite` (read-only SQLite databases). Run `sak fs glob 'src/*/'` to see current domains and commands.
 
 ## Use sak as your tool
 
@@ -20,14 +20,14 @@ The harness's built-in Glob/Read/Grep tools are still fine — and the rule agai
 ## Build & Test
 
 ```bash
-cargo build                                                     # Build (default features = with k8s)
-cargo build --no-default-features                               # Lean build (no k8s, no async runtime)
-cargo build --features sqlite                                   # Add the opt-in sqlite domain
-cargo build --all-features                                      # k8s + sqlite together
-cargo test                                                      # Run all tests (with k8s)
-cargo test --no-default-features                                # Run tests without k8s
+cargo build                                                     # Build (default features = k8s + lxc + docker + sqlite)
+cargo build --no-default-features                               # Lean build (no k8s, no lxc, no docker, no sqlite, no async runtime)
+cargo build --no-default-features --features sqlite             # Lean + sqlite alone
+cargo build --all-features                                      # Same as default today
+cargo test                                                      # Run all tests (default features)
+cargo test --no-default-features                                # Run tests with no optional domains
 cargo test --no-default-features --features sqlite              # sqlite alone
-cargo test --all-features                                       # k8s + sqlite
+cargo test --all-features                                       # Everything
 cargo clippy --all-features --all-targets                       # Check code quality
 cargo clippy --all-features --all-targets --allow-dirty --fix   # Auto-fix clippy warnings before fixing manually
 cargo fmt                                                       # Format code
@@ -35,7 +35,7 @@ cargo bench                                                     # Run criterion 
 cargo run -- fs glob '**/*.rs' .                                # Example: find Rust files
 ```
 
-The `k8s` cargo feature is **on by default** so `cargo install sak` ships every domain. It pulls in `kube`, `k8s-openapi`, `tokio`, and `http`, which roughly doubles the release binary size and roughly doubles cold link time. Users who don't need Kubernetes can opt out with `--no-default-features`. Both feature sets must build, test, clippy, and fmt clean before committing.
+The `k8s`, `lxc`, `docker`, and `sqlite` cargo features are **all on by default** so `cargo install sak` ships every domain. They pull in `kube` + `k8s-openapi` (k8s), `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` (shared between lxc and docker), `rusqlite` with bundled libsqlite3 (sqlite), plus a shared `tokio` + `http` stack — together they roughly triple the release binary size and cold link time, and the bundled libsqlite3 adds C compile time on the first build. Users who don't need any of them can opt out with `--no-default-features`. Both the default and `--no-default-features` builds must build, test, clippy, and fmt clean before committing.
 
 - All tests must pass before committing
 - `cargo clippy` must pass with no warnings
@@ -139,10 +139,10 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - K8s `get_dyn` returns `Result<Option<DynamicObject>>` — apiserver 404s map to `Ok(None)` so callers can produce sak's exit code 1 for "not found" without losing the ability to surface other errors as exit code 2. Don't unwrap it unconditionally
 - K8s `discovery::resolve` returns `(ApiResource, ApiCapabilities)`; cluster-scoped vs namespaced enforcement happens at the command layer by inspecting `caps.scope` *before* the list/get call (cluster-scoped + `--namespace` should be a hard error)
 - Adding new optional dependencies for the `k8s` feature requires both declaring them with `optional = true` *and* adding the `dep:<name>` to the `k8s = [...]` feature list in `Cargo.toml`. `kube` does not re-export the `http::Request` types needed by `client::request_text`, so `http` is its own gated dep
-- The `sqlite` feature uses `rusqlite` with the `bundled` cargo feature, which compiles libsqlite3 from C source. First build with `--features sqlite` is noticeably slower (libsqlite3 is a few MB of C), but there is no system `libsqlite3` runtime dependency — the binary is self-contained
+- The `sqlite` feature uses `rusqlite` with the `bundled` cargo feature, which compiles libsqlite3 from C source. The first build is noticeably slower (libsqlite3 is a few MB of C), but there is no system `libsqlite3` runtime dependency — the binary is self-contained. `sqlite` is on by default; pass `--no-default-features` to opt out
 - LXC socket discovery probes `LXD_SOCKET` first, then `/var/snap/lxd/common/lxd/unix.socket`, `/var/lib/lxd/unix.socket`, `/var/lib/incus/unix.sock` in that order. The first existing path wins — if you're testing against Incus on a host that also has a stale LXD snap socket file, set `LXD_SOCKET` explicitly rather than relying on discovery
 - Docker socket discovery probes `DOCKER_HOST` first, then `/var/run/docker.sock`, then `$HOME/.docker/run/docker.sock` (recent Docker Desktop on macOS / rootless Linux). `$HOME` is resolved by the caller (`std::env::home_dir` is unstable) and an unset/empty `$HOME` cleanly skips the user-scoped probe
 - `DOCKER_HOST` is **unix-only** in v1 — `parse_docker_host` accepts `unix:///path` and bare paths but rejects `tcp://` (and any other scheme) with a clear error. TCP transport needs cert handling that is out of scope for the foundation; if you need it, file an issue rather than papering over the rejection
 - LXD's REST API is project-scoped: `/1.0/instances` returns instances in the *default* project unless you append `?project=<name>` (or `?all-projects=true` on newer LXD). Commands that don't pass a project flag are implicitly operating against `default` — keep this in mind when a user reports "missing" instances on a multi-project host
 - `lxc::client::LxcClient::get_json` and `docker::client::DockerClient::get_json` both return `Result<Option<serde_json::Value>>` — apiserver/daemon 404s map to `Ok(None)` so callers can produce sak's exit code 1 for "not found" without losing the ability to surface other errors as exit code 2. This mirrors `k8s::client::get_dyn`; don't unwrap unconditionally
-- `sak sqlite --help` currently lists no subcommands — the foundation issue intentionally only ships `client::open_readonly` and the chokepoint test. Dependent issues (`tables`, `schema`, `query`, `count`, `dump`, `info`) populate the `SqliteCommand` enum
+- SQLite `PRAGMA` results can contain embedded newlines (notably `integrity_check` on a problem database), so `sak sqlite info` runs every PRAGMA value through a sanitizer that replaces `\n` / `\r` / `\t` with spaces before emission. Without that step, a multi-line PRAGMA value would shred the `key<TAB>value` line contract. SQLite also has a legacy DQ-as-string-literal quirk where unrecognized double-quoted identifiers silently become string literals — `sak sqlite dump` defends against typo'd `--order-by` columns by pre-validating them against `PRAGMA table_info` rather than relying on the SELECT to error out

@@ -19,6 +19,9 @@
 //! runtime — [`run`] dispatches directly.
 
 pub mod client;
+pub mod count;
+pub mod dump;
+pub mod info;
 pub mod query;
 pub mod schema;
 pub mod tables;
@@ -31,6 +34,9 @@ use clap::Subcommand;
 /// Subcommands of `sak sqlite`.
 #[derive(Subcommand)]
 pub enum SqliteCommand {
+    Count(count::CountArgs),
+    Dump(dump::DumpArgs),
+    Info(info::InfoArgs),
     Query(query::QueryArgs),
     Schema(schema::SchemaArgs),
     Tables(tables::TablesArgs),
@@ -39,6 +45,9 @@ pub enum SqliteCommand {
 /// Dispatch a `sak sqlite` subcommand.
 pub fn run(cmd: &SqliteCommand) -> Result<ExitCode> {
     match cmd {
+        SqliteCommand::Count(args) => count::run(args),
+        SqliteCommand::Dump(args) => dump::run(args),
+        SqliteCommand::Info(args) => info::run(args),
         SqliteCommand::Query(args) => query::run(args),
         SqliteCommand::Schema(args) => schema::run(args),
         SqliteCommand::Tables(args) => tables::run(args),

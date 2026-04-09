@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.7.12"
+version = "0.8.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -9,13 +9,14 @@ name = "sak"
 path = "src/main.rs"
 
 [features]
-# `k8s`, `lxc`, and `docker` are part of the default feature set so
-# `cargo install sak` ships the full domain. They pull in kube + k8s-openapi
-# (for k8s) and hyper + hyperlocal + hyper-util + http-body-util (shared
-# between lxc and docker), plus the shared tokio + http stack. Together they
-# roughly triple the release binary and cold link time vs the lean build. If
-# you want the lean build (no Kubernetes, no LXD/Incus, no Docker, no async
-# runtime), opt out explicitly:
+# `k8s`, `lxc`, `docker`, and `sqlite` are part of the default feature set so
+# `cargo install sak` ships every domain. They pull in kube + k8s-openapi (for
+# k8s), hyper + hyperlocal + hyper-util + http-body-util (shared between lxc
+# and docker), rusqlite with bundled libsqlite3 (for sqlite), plus the shared
+# tokio + http stack. Together they roughly triple the release binary and cold
+# link time vs the lean build, and the bundled libsqlite3 adds C compile time
+# on the first build. If you want the lean build (no Kubernetes, no LXD/Incus,
+# no Docker, no SQLite, no async runtime), opt out explicitly:
 #
 #     cargo build --release --no-default-features
 #
@@ -24,7 +25,8 @@ path = "src/main.rs"
 #     cargo build --release --no-default-features --features k8s
 #     cargo build --release --no-default-features --features lxc
 #     cargo build --release --no-default-features --features docker
-default = ["k8s", "lxc", "docker"]
+#     cargo build --release --no-default-features --features sqlite
+default = ["k8s", "lxc", "docker", "sqlite"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 # `lxc` talks to the LXD/Incus REST API over a unix domain socket via raw
 # hyper + hyperlocal. Read-only enforcement is convention + a chokepoint grep
@@ -36,9 +38,11 @@ lxc = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "d
 # LXD does). Read-only enforcement mirrors the lxc pattern via a chokepoint
 # grep test in src/docker/client.rs.
 docker = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "dep:tokio", "dep:http"]
-# `sqlite` is opt-in (not in `default`) until binary-size and build-time impact
-# are measured. Pulls in `rusqlite` with the `bundled` feature, which compiles
-# libsqlite3 from source — first build is slower, no system dep needed.
+# `sqlite` pulls in `rusqlite` with the `bundled` feature, which compiles
+# libsqlite3 from source — first build is slower, no system dep needed at
+# runtime. Read-only enforcement is OS-level (`SQLITE_OPEN_READ_ONLY`) plus
+# `PRAGMA query_only=ON` plus a chokepoint grep test in src/sqlite/client.rs,
+# which is strictly stronger than the convention-only k8s/lxc/docker pattern.
 sqlite = ["dep:rusqlite", "dep:base64"]
 
 [dependencies]
