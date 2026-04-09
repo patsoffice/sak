@@ -20,6 +20,7 @@
 //! does not turn the rest of the binary async.
 
 pub mod client;
+pub mod config;
 pub mod info;
 pub mod list;
 
@@ -35,6 +36,8 @@ pub enum DockerCommand {
     List(list::ListArgs),
     /// Show full metadata and state for a single container
     Info(info::InfoArgs),
+    /// Show the configuration subset of a container
+    Config(config::ConfigArgs),
 }
 
 /// Dispatch a `sak docker` subcommand.
@@ -53,5 +56,6 @@ async fn dispatch(cmd: &DockerCommand) -> Result<ExitCode> {
     match cmd {
         DockerCommand::List(args) => list::run(args).await,
         DockerCommand::Info(args) => info::run(args).await,
+        DockerCommand::Config(args) => config::run(args).await,
     }
 }
