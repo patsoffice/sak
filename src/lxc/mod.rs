@@ -19,6 +19,7 @@
 //! not turn the rest of the binary async.
 
 pub mod client;
+pub mod info;
 pub mod list;
 
 use std::process::ExitCode;
@@ -31,6 +32,8 @@ use clap::Subcommand;
 pub enum LxcCommand {
     /// List instances on the local LXD/Incus daemon
     List(list::ListArgs),
+    /// Show full metadata and state for a single instance
+    Info(info::InfoArgs),
 }
 
 /// Dispatch a `sak lxc` subcommand.
@@ -48,5 +51,6 @@ pub fn run(cmd: &LxcCommand) -> Result<ExitCode> {
 async fn dispatch(cmd: &LxcCommand) -> Result<ExitCode> {
     match cmd {
         LxcCommand::List(args) => list::run(args).await,
+        LxcCommand::Info(args) => info::run(args).await,
     }
 }
