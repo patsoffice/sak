@@ -4,10 +4,10 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
-use serde_json::Value;
 
-use crate::json::{read_json_inputs, resolve_expression, type_name};
+use crate::json::read_json_inputs;
 use crate::output::BoundedWriter;
+use crate::value::{collect_keys, resolve_expression};
 
 #[derive(Args)]
 #[command(
@@ -43,35 +43,6 @@ pub struct KeysArgs {
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
-}
-
-fn collect_keys(
-    value: &Value,
-    prefix: &str,
-    current_depth: usize,
-    max_depth: usize,
-    show_types: bool,
-    out: &mut Vec<String>,
-) {
-    if let Value::Object(map) = value {
-        let mut entries: Vec<(&String, &Value)> = map.iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(b.0));
-        for (k, v) in entries {
-            let path = if prefix.is_empty() {
-                k.clone()
-            } else {
-                format!("{}.{}", prefix, k)
-            };
-            if show_types {
-                out.push(format!("{}: {}", path, type_name(v)));
-            } else {
-                out.push(path.clone());
-            }
-            if current_depth + 1 < max_depth {
-                collect_keys(v, &path, current_depth + 1, max_depth, show_types, out);
-            }
-        }
-    }
 }
 
 pub fn run(args: &KeysArgs) -> Result<ExitCode> {
@@ -113,35 +84,5 @@ pub fn run(args: &KeysArgs) -> Result<ExitCode> {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn collect_top_level() {
-        let v = json!({"b": 1, "a": 2});
-        let mut out = Vec::new();
-        collect_keys(&v, "", 0, 1, false, &mut out);
-        assert_eq!(out, vec!["a".to_string(), "b".to_string()]);
-    }
-
-    #[test]
-    fn collect_with_types() {
-        let v = json!({"a": "x", "b": [1]});
-        let mut out = Vec::new();
-        collect_keys(&v, "", 0, 1, true, &mut out);
-        assert_eq!(out, vec!["a: string".to_string(), "b: array".to_string()]);
-    }
-
-    #[test]
-    fn collect_depth_2() {
-        let v = json!({"a": {"b": 1}});
-        let mut out = Vec::new();
-        collect_keys(&v, "", 0, 2, false, &mut out);
-        assert_eq!(out, vec!["a".to_string(), "a.b".to_string()]);
     }
 }

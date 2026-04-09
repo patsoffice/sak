@@ -1,7 +1,9 @@
+mod config;
 mod fs;
 mod git;
 mod json;
 mod output;
+mod value;
 
 use std::process::ExitCode;
 
@@ -31,7 +33,11 @@ Quick start:
   sak json query .name data.json          Extract a JSON value
   sak json keys --types data.json         List keys with value types
   sak json flatten data.json              Flatten to path<TAB>value
-  sak json validate data.json             Check JSON validity"
+  sak json validate data.json             Check JSON validity
+  sak config query .package.name Cargo.toml   Read TOML/YAML/plist values
+  sak config keys --types config.yaml         List config keys with types
+  sak config flatten Info.plist               Flatten any config file
+  sak config validate config.toml             Check syntax validity"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -49,6 +55,9 @@ enum Command {
     /// JSON operations (read-only)
     #[command(subcommand)]
     Json(json::JsonCommand),
+    /// Config file operations — TOML, YAML, plist (read-only)
+    #[command(subcommand)]
+    Config(config::ConfigCommand),
 }
 
 fn main() -> ExitCode {
@@ -58,6 +67,7 @@ fn main() -> ExitCode {
         Command::Fs(cmd) => fs::run(cmd),
         Command::Git(cmd) => git::run(cmd),
         Command::Json(cmd) => json::run(cmd),
+        Command::Config(cmd) => config::run(cmd),
     };
 
     match result {

@@ -5,25 +5,25 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
-use crate::json::read_json_inputs;
+use crate::config::{Format, read_config_inputs};
 use crate::output::BoundedWriter;
 use crate::value::{format_value, resolve_expression};
 
 #[derive(Args)]
 #[command(
-    about = "Extract values from JSON",
-    long_about = "Extract values from JSON using a path expression.\n\n\
-        The expression may use dot notation (e.g. `.users[0].name`) or \
-        JSON Pointer syntax (e.g. `/users/0/name`). JSON Pointer is detected \
-        automatically when the expression starts with `/`. \
-        Reads from stdin if no files are given.",
+    about = "Extract values from TOML, YAML, or plist",
+    long_about = "Extract values from a config file using a path expression.\n\n\
+        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist) \
+        or may be set explicitly with `--format`. The expression may use dot notation \
+        (e.g. `.server.port`) or JSON Pointer syntax (e.g. `/server/port`). \
+        Reads from stdin if no files are given (requires `--format`).",
     after_help = "\
 Examples:
-  echo '{\"name\":\"alice\"}' | sak json query .name
-  sak json query '.users[0].name' data.json
-  sak json query /users/0/name data.json          JSON Pointer
-  sak json query .name --raw data.json            Raw string output
-  sak json query .config --pretty data.json       Pretty-print"
+  sak config query .package.name Cargo.toml
+  sak config query .server.port config.yaml
+  sak config query .CFBundleName Info.plist
+  sak config query .name --raw config.toml         Raw string output
+  echo 'a: 1' | sak config query .a --format yaml  Read from stdin"
 )]
 pub struct QueryArgs {
     /// Path expression (dot notation or JSON Pointer)
@@ -44,13 +44,17 @@ pub struct QueryArgs {
     #[arg(long)]
     pub pretty: bool,
 
+    /// Force a specific format (required for stdin)
+    #[arg(short, long, value_enum)]
+    pub format: Option<Format>,
+
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
 }
 
 pub fn run(args: &QueryArgs) -> Result<ExitCode> {
-    let inputs = read_json_inputs(&args.files)?;
+    let inputs = read_config_inputs(&args.files, args.format)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -83,37 +87,63 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn write_tmp(content: &str) -> (tempfile::TempDir, PathBuf) {
+    fn write_tmp(name: &str, content: &str) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("a.json");
+        let p = dir.path().join(name);
         let mut f = std::fs::File::create(&p).unwrap();
         f.write_all(content.as_bytes()).unwrap();
         (dir, p)
     }
 
     #[test]
-    fn query_simple() {
-        let (_d, p) = write_tmp(r#"{"name":"alice","age":30}"#);
+    fn query_toml() {
+        let (_d, p) = write_tmp("a.toml", "name = \"alice\"\n");
         let args = QueryArgs {
             expression: ".name".to_string(),
             files: vec![p],
             raw: false,
             compact: false,
             pretty: false,
+            format: None,
             limit: None,
         };
         assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
     }
 
     #[test]
-    fn query_pointer() {
-        let (_d, p) = write_tmp(r#"{"a":{"b":1}}"#);
+    fn query_yaml() {
+        let (_d, p) = write_tmp("a.yaml", "server:\n  port: 8080\n");
         let args = QueryArgs {
-            expression: "/a/b".to_string(),
+            expression: ".server.port".to_string(),
             files: vec![p],
             raw: false,
             compact: false,
             pretty: false,
+            format: None,
+            limit: None,
+        };
+        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn query_plist() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>alice</string>
+</dict>
+</plist>
+"#;
+        let (_d, p) = write_tmp("a.plist", xml);
+        let args = QueryArgs {
+            expression: ".name".to_string(),
+            files: vec![p],
+            raw: false,
+            compact: false,
+            pretty: false,
+            format: None,
             limit: None,
         };
         assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
@@ -121,13 +151,14 @@ mod tests {
 
     #[test]
     fn query_missing_returns_1() {
-        let (_d, p) = write_tmp(r#"{"a":1}"#);
+        let (_d, p) = write_tmp("a.toml", "a = 1\n");
         let args = QueryArgs {
             expression: ".missing".to_string(),
             files: vec![p],
             raw: false,
             compact: false,
             pretty: false,
+            format: None,
             limit: None,
         };
         assert_eq!(run(&args).unwrap(), ExitCode::from(1));

@@ -7,8 +7,9 @@ use anyhow::Result;
 use clap::Args;
 use serde_json::Value;
 
-use crate::json::{read_json_inputs, type_name};
+use crate::json::read_json_inputs;
 use crate::output::BoundedWriter;
+use crate::value::type_name;
 
 #[derive(Args)]
 #[command(

@@ -4,19 +4,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Result, bail};
-use clap::{Args, ValueEnum};
-use serde_json::Value;
+use clap::Args;
 
 use crate::json::read_json_inputs;
 use crate::output::BoundedWriter;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub enum ArrayMode {
-    /// Recurse into arrays using numeric indices in the path
-    Index,
-    /// Treat arrays as leaf values (do not recurse)
-    Skip,
-}
+use crate::value::{ArrayMode, flatten_value};
 
 #[derive(Args)]
 #[command(
@@ -56,71 +48,6 @@ pub struct FlattenArgs {
     pub limit: Option<usize>,
 }
 
-fn flatten_value(
-    value: &Value,
-    prefix: &str,
-    separator: &str,
-    current_depth: usize,
-    max_depth: Option<usize>,
-    arrays: ArrayMode,
-    out: &mut BTreeMap<String, String>,
-) {
-    let at_max = matches!(max_depth, Some(d) if current_depth >= d);
-
-    match value {
-        Value::Object(map) if !at_max => {
-            if map.is_empty() {
-                out.insert(prefix.to_string(), "{}".to_string());
-                return;
-            }
-            for (k, v) in map {
-                let path = if prefix.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{}{}{}", prefix, separator, k)
-                };
-                flatten_value(
-                    v,
-                    &path,
-                    separator,
-                    current_depth + 1,
-                    max_depth,
-                    arrays,
-                    out,
-                );
-            }
-        }
-        Value::Array(arr) if !at_max && arrays == ArrayMode::Index => {
-            if arr.is_empty() {
-                out.insert(prefix.to_string(), "[]".to_string());
-                return;
-            }
-            for (i, v) in arr.iter().enumerate() {
-                let path = if prefix.is_empty() {
-                    i.to_string()
-                } else {
-                    format!("{}{}{}", prefix, separator, i)
-                };
-                flatten_value(
-                    v,
-                    &path,
-                    separator,
-                    current_depth + 1,
-                    max_depth,
-                    arrays,
-                    out,
-                );
-            }
-        }
-        _ => {
-            out.insert(
-                prefix.to_string(),
-                serde_json::to_string(value).unwrap_or_default(),
-            );
-        }
-    }
-}
-
 pub fn run(args: &FlattenArgs) -> Result<ExitCode> {
     if args.separator.is_empty() {
         bail!("--separator must not be empty");
@@ -158,53 +85,5 @@ pub fn run(args: &FlattenArgs) -> Result<ExitCode> {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn flatten_object() {
-        let v = json!({"a": 1, "b": {"c": 2}});
-        let mut out = BTreeMap::new();
-        flatten_value(&v, "", ".", 0, None, ArrayMode::Index, &mut out);
-        assert_eq!(out.get("a"), Some(&"1".to_string()));
-        assert_eq!(out.get("b.c"), Some(&"2".to_string()));
-    }
-
-    #[test]
-    fn flatten_array_indices() {
-        let v = json!({"users": [{"name": "alice"}, {"name": "bob"}]});
-        let mut out = BTreeMap::new();
-        flatten_value(&v, "", ".", 0, None, ArrayMode::Index, &mut out);
-        assert_eq!(out.get("users.0.name"), Some(&"\"alice\"".to_string()));
-        assert_eq!(out.get("users.1.name"), Some(&"\"bob\"".to_string()));
-    }
-
-    #[test]
-    fn flatten_arrays_skip() {
-        let v = json!({"a": [1, 2, 3]});
-        let mut out = BTreeMap::new();
-        flatten_value(&v, "", ".", 0, None, ArrayMode::Skip, &mut out);
-        assert_eq!(out.get("a"), Some(&"[1,2,3]".to_string()));
-    }
-
-    #[test]
-    fn flatten_max_depth() {
-        let v = json!({"a": {"b": {"c": 1}}});
-        let mut out = BTreeMap::new();
-        flatten_value(&v, "", ".", 0, Some(1), ArrayMode::Index, &mut out);
-        assert_eq!(out.get("a"), Some(&r#"{"b":{"c":1}}"#.to_string()));
-    }
-
-    #[test]
-    fn flatten_custom_separator() {
-        let v = json!({"a": {"b": 1}});
-        let mut out = BTreeMap::new();
-        flatten_value(&v, "", "/", 0, None, ArrayMode::Index, &mut out);
-        assert_eq!(out.get("a/b"), Some(&"1".to_string()));
     }
 }

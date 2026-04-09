@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), and `json`. Run `ls src/*/` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, and `config` (TOML, YAML, plist). Run `ls src/*/` to see current domains and commands.
 
 ## Build & Test
 
@@ -34,9 +34,10 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
   - `sak --help` — list domains and quick-start examples
   - `sak <domain> --help` — list commands in a domain
   - `sak <domain> <command> --help` — detailed options and examples
-- Future domains (e.g., `csv`, `config`) add new modules under `src/`
+- Future domains (e.g., `csv`, `k8s`) add new modules under `src/`
 - Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
-- JSON domain uses `serde_json::Value` for dynamic traversal; shared path parser (dot notation + JSON Pointer) lives in `src/json/mod.rs`
+- JSON and config domains share `serde_json::Value` as the internal representation; format-agnostic helpers (path parsing, value resolution, key collection, flattening, type names, `ArrayMode`) live in `src/value.rs` and are consumed by both domains
+- Config domain parses TOML, YAML, and plist (XML and binary) into `serde_json::Value` via each format's serde integration; format auto-detected by extension or set with `--format` (required for stdin)
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
@@ -58,6 +59,7 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
 ```
 src/main.rs           # Top-level CLI, domain dispatch
 src/output.rs         # BoundedWriter (stdout-only), line formatting, path utils, binary detection
+src/value.rs          # Shared serde_json::Value helpers (path parsing, walking, type names) used by json + config
 src/<domain>/mod.rs   # Domain subcommand dispatch (one per domain)
 src/<domain>/<cmd>.rs # Individual command implementation (one per command)
 benches/benchmarks.rs # Criterion benchmarks
@@ -101,3 +103,5 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - Cut reads stdin when no files are given — enable piping from other sak commands
 - Multiline grep (`-U`) reads entire files into memory; single-line mode reads line-by-line
 - Glob uses `globset` (not `glob` crate) for `{a,b}` alternation and `**` support
+- Config domain collapses lossy types when parsing into `serde_json::Value`: TOML datetimes, plist dates, and plist binary data become JSON-friendly representations rather than preserving the source-format type — acceptable for read-only LLM consumption
+- `sak <domain> keys` takes an optional positional `path` *before* `files`; passing only a filename will be parsed as a path. Example: `sak config keys . Cargo.toml` (use `.` to mean root)
