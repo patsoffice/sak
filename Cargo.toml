@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -31,13 +31,27 @@ k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 # `lxc` talks to the LXD/Incus REST API over a unix domain socket via raw
 # hyper + hyperlocal. Read-only enforcement is convention + a chokepoint grep
 # test in src/lxc/client.rs that mirrors the k8s pattern.
-lxc = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "dep:tokio", "dep:http"]
+lxc = [
+    "dep:hyper",
+    "dep:hyperlocal",
+    "dep:hyper-util",
+    "dep:http-body-util",
+    "dep:tokio",
+    "dep:http",
+]
 # `docker` talks to the Docker daemon REST API over a unix domain socket via
 # raw hyper + hyperlocal. Shares the same hyper stack as lxc; the two domains
 # remain separate because their response shapes differ (Docker has no envelope,
 # LXD does). Read-only enforcement mirrors the lxc pattern via a chokepoint
 # grep test in src/docker/client.rs.
-docker = ["dep:hyper", "dep:hyperlocal", "dep:hyper-util", "dep:http-body-util", "dep:tokio", "dep:http"]
+docker = [
+    "dep:hyper",
+    "dep:hyperlocal",
+    "dep:hyper-util",
+    "dep:http-body-util",
+    "dep:tokio",
+    "dep:http",
+]
 # `sqlite` pulls in `rusqlite` with the `bundled` feature, which compiles
 # libsqlite3 from source — first build is slower, no system dep needed at
 # runtime. Read-only enforcement is OS-level (`SQLITE_OPEN_READ_ONLY`) plus
@@ -61,9 +75,18 @@ plist = "1.6"
 # - kube: client + rustls-tls only; no runtime, derive, ws, oauth, oidc, gzip
 # - k8s-openapi: pinned to a single API version (never `latest`)
 # - tokio: current-thread runtime only; no rt-multi-thread
-kube = { version = "3", default-features = false, features = ["client", "rustls-tls", "ring"], optional = true }
-k8s-openapi = { version = "0.27", default-features = false, features = ["v1_33"], optional = true }
-tokio = { version = "1", default-features = false, features = ["rt", "macros"], optional = true }
+kube = { version = "3", default-features = false, features = [
+    "client",
+    "rustls-tls",
+    "ring",
+], optional = true }
+k8s-openapi = { version = "0.27", default-features = false, features = [
+    "v1_33",
+], optional = true }
+tokio = { version = "1", default-features = false, features = [
+    "rt",
+    "macros",
+], optional = true }
 # `http` is needed by `client::request_text` to construct raw GET requests for
 # the OpenAPI v3 endpoint that `sak k8s schema` walks. kube re-exports its own
 # http internals but not the public types we need, so we declare it directly.
@@ -72,20 +95,31 @@ http = { version = "1", optional = true }
 # domain socket. hyperlocal provides the UnixConnector; hyper-util provides
 # the legacy Client builder; http-body-util provides Full<Bytes> request bodies
 # and BodyExt::collect for response bodies.
-hyper = { version = "1", default-features = false, features = ["client", "http1"], optional = true }
+hyper = { version = "1", default-features = false, features = [
+    "client",
+    "http1",
+], optional = true }
 hyperlocal = { version = "0.9", optional = true }
-hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "http1", "tokio"], optional = true }
+hyper-util = { version = "0.1", default-features = false, features = [
+    "client-legacy",
+    "http1",
+    "tokio",
+], optional = true }
 http-body-util = { version = "0.1", optional = true }
 # sqlite domain (opt-in via the `sqlite` feature). `bundled` compiles
 # libsqlite3 from source so there's no system libsqlite dep at runtime or
 # build time. Read-only enforcement is OS-level via SQLITE_OPEN_READ_ONLY +
 # `PRAGMA query_only=ON`, plus a chokepoint grep test in src/sqlite/client.rs.
-rusqlite = { version = "0.32", default-features = false, features = ["bundled"], optional = true }
+rusqlite = { version = "0.32", default-features = false, features = [
+    "bundled",
+], optional = true }
 # `base64` is used by `sak sqlite query` (and the dump command that shares its
 # row-formatting helpers) to render BLOB cells as base64 strings in both JSON
 # and TSV output. Gated on the `sqlite` feature so non-sqlite builds stay
 # unchanged.
-base64 = { version = "0.22", default-features = false, features = ["std"], optional = true }
+base64 = { version = "0.22", default-features = false, features = [
+    "std",
+], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

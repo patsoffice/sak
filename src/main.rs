@@ -60,7 +60,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s schema deployment.apps/v1           OpenAPI v3 schema for a kind
   sak k8s restarts -A                         Pod containers with restarts
   sak k8s failing -A                          Pods not Running or Succeeded
-  sak k8s pending -A                          Pods stuck in Pending",
+  sak k8s pending -A                          Pods stuck in Pending
+  sak k8s events -A --limit 20                Recent cluster events
+  sak k8s describe deploy api -n api          Aggregated description of one resource",
     );
     #[cfg(feature = "lxc")]
     s.push_str(

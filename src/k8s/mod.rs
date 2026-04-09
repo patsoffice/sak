@@ -22,8 +22,10 @@
 pub mod client;
 pub mod containers;
 pub mod contexts;
+pub mod describe;
 pub mod discovery;
 pub mod env;
+pub mod events;
 pub mod failing;
 pub mod get;
 pub mod images;
@@ -58,6 +60,10 @@ pub enum K8sCommand {
     Failing(failing::FailingArgs),
     /// List pods stuck in Pending
     Pending(pending::PendingArgs),
+    /// List cluster events, newest first
+    Events(events::EventsArgs),
+    /// Aggregated description of one resource (object/status/containers/owners/events)
+    Describe(describe::DescribeArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -83,5 +89,7 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
         K8sCommand::Restarts(args) => restarts::run(args).await,
         K8sCommand::Failing(args) => failing::run(args).await,
         K8sCommand::Pending(args) => pending::run(args).await,
+        K8sCommand::Events(args) => events::run(args).await,
+        K8sCommand::Describe(args) => describe::run(args).await,
     }
 }
