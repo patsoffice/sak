@@ -98,6 +98,85 @@ sak k8s get --help
 
 Every subcommand includes `long_about` descriptions and `after_help` with concrete usage examples, so `--help` is always sufficient to learn a command without external documentation.
 
+## Using SAK from an LLM agent
+
+SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for read-only filesystem, git, json, config, and Kubernetes operations:
+
+1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
+2. **A pre-tool hook that redirects raw `git` and `kubectl` read commands** to their `sak` equivalents, with a clear error message the agent can act on.
+
+The examples below are for Claude Code's `~/.claude/settings.json`. The same patterns adapt to any agent harness that supports per-tool permissions and pre-tool hooks.
+
+### Auto-approve `sak`
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(sak:*)"
+    ]
+  }
+}
+```
+
+Every operation is read-only, so blanket-allowing `sak` is safe — there is no command in the tool that can mutate state, write files, or hit a remote API destructively.
+
+### Redirect raw `git` reads to `sak git`
+
+The hook below catches the read-only `git` subcommands sak implements (`diff`, `log`, `status`, `show`, `blame`, `branch`, `tag`, `remote`) and returns a `deny` decision that tells the agent to use `sak git` instead. Mutations (`git push`, `git commit`, `git reset`, ...) are not blocked — they pass through and the agent's normal permission flow handles them.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*git\\s+(diff|log|status|show|blame|branch|tag|remote)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak git instead (e.g. sak git diff, sak git log, sak git status, sak git show, sak git blame)\"}}' || true",
+            "statusMessage": "Checking for raw git commands..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Redirect raw `kubectl` reads to `sak k8s`
+
+Same pattern for `kubectl`. The hook only blocks the kubectl read commands that have a direct `sak k8s` equivalent today:
+
+| Blocked | Replace with |
+| --- | --- |
+| `kubectl get` | `sak k8s get` |
+| `kubectl api-resources` | `sak k8s kinds` |
+| `kubectl explain` | `sak k8s schema` |
+
+Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `config get-contexts`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain)\"}}' || true",
+            "statusMessage": "Checking for raw kubectl commands..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If you already have a `PreToolUse.Bash.hooks` array, append the new entries rather than replacing the array.
+
 ## Output Conventions
 
 - **stdout** — Results only. Clean, parseable, no decoration.

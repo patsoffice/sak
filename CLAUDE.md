@@ -22,6 +22,7 @@ The `k8s` cargo feature is **on by default** so `cargo install sak` ships every 
 - `cargo clippy` must pass with no warnings
 - `cargo fmt` must pass with no formatting changes
 - Bump the version in `Cargo.toml` before committing new capabilities: minor for a new domain (0.1.0 -> 0.2.0), patch for a new command within an existing domain (0.1.0 -> 0.1.1)
+- When a new command shadows a `kubectl` or `git` read operation that the example agent hooks in [README.md](README.md)'s "Using SAK from an LLM agent" section don't yet redirect, extend the regex's alternation list in that section to add the new verb. Examples: a `sak k8s describe` command means the kubectl hook regex should add `describe`; a `sak git stash` command means the git hook regex should add `stash`. Call out the hook update in the commit message — users running Claude Code (or any other agent that copies the hook) need to update their own settings.json manually, and the change will be silently lost otherwise.
 
 ## Commit Style
 
