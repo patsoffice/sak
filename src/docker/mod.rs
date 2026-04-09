@@ -21,6 +21,7 @@
 
 pub mod client;
 pub mod config;
+pub mod images;
 pub mod info;
 pub mod list;
 
@@ -34,6 +35,8 @@ use clap::Subcommand;
 pub enum DockerCommand {
     /// List containers on the local Docker daemon
     List(list::ListArgs),
+    /// List images on the local Docker daemon
+    Images(images::ImagesArgs),
     /// Show full metadata and state for a single container
     Info(info::InfoArgs),
     /// Show the configuration subset of a container
@@ -55,6 +58,7 @@ pub fn run(cmd: &DockerCommand) -> Result<ExitCode> {
 async fn dispatch(cmd: &DockerCommand) -> Result<ExitCode> {
     match cmd {
         DockerCommand::List(args) => list::run(args).await,
+        DockerCommand::Images(args) => images::run(args).await,
         DockerCommand::Info(args) => info::run(args).await,
         DockerCommand::Config(args) => config::run(args).await,
     }
