@@ -20,8 +20,11 @@
 //! not turn the rest of the binary async.
 
 pub mod client;
+pub mod containers;
 pub mod discovery;
+pub mod env;
 pub mod get;
+pub mod images;
 pub mod kinds;
 
 use std::process::ExitCode;
@@ -36,6 +39,10 @@ pub enum K8sCommand {
     Kinds(kinds::KindsArgs),
     /// List or get resources of a kind
     Get(get::GetArgs),
+    /// List container images across resources
+    Images(images::ImagesArgs),
+    /// List env vars on a single pod-bearing resource
+    Env(env::EnvArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -54,5 +61,7 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
     match cmd {
         K8sCommand::Kinds(args) => kinds::run(args).await,
         K8sCommand::Get(args) => get::run(args).await,
+        K8sCommand::Images(args) => images::run(args).await,
+        K8sCommand::Env(args) => env::run(args).await,
     }
 }
