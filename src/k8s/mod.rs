@@ -24,9 +24,12 @@ pub mod containers;
 pub mod contexts;
 pub mod discovery;
 pub mod env;
+pub mod failing;
 pub mod get;
 pub mod images;
 pub mod kinds;
+pub mod pending;
+pub mod restarts;
 pub mod schema;
 
 use std::process::ExitCode;
@@ -49,6 +52,12 @@ pub enum K8sCommand {
     Env(env::EnvArgs),
     /// Fetch the OpenAPI v3 schema for a kind
     Schema(schema::SchemaArgs),
+    /// List pod containers with restarts
+    Restarts(restarts::RestartsArgs),
+    /// List pods that are not Running or Succeeded
+    Failing(failing::FailingArgs),
+    /// List pods stuck in Pending
+    Pending(pending::PendingArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -71,5 +80,8 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
         K8sCommand::Images(args) => images::run(args).await,
         K8sCommand::Env(args) => env::run(args).await,
         K8sCommand::Schema(args) => schema::run(args).await,
+        K8sCommand::Restarts(args) => restarts::run(args).await,
+        K8sCommand::Failing(args) => failing::run(args).await,
+        K8sCommand::Pending(args) => pending::run(args).await,
     }
 }

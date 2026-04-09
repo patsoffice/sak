@@ -40,7 +40,7 @@ cp target/release/sak /usr/local/bin/
 
 | Feature | Default? | What it adds |
 | --- | --- | --- |
-| `k8s` | yes | The `k8s` domain (`kinds`, `get`, `images`, `env`, `schema`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
+| `k8s` | yes | The `k8s` domain (`contexts`, `kinds`, `get`, `images`, `env`, `schema`, `restarts`, `failing`, `pending`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
 | `lxc` | yes | The `lxc` domain for read-only access to a live LXD/Incus daemon over a unix socket. Pulls in raw `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio`. |
 | `docker` | yes | The `docker` domain for read-only access to a live Docker Engine over a unix socket. Shares the same hyper stack as `lxc`. |
 | `sqlite` | yes | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime, but adds C compile time on the first build). |
