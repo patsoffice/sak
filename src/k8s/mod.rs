@@ -21,6 +21,7 @@
 
 pub mod client;
 pub mod containers;
+pub mod contexts;
 pub mod discovery;
 pub mod env;
 pub mod get;
@@ -36,6 +37,8 @@ use clap::Subcommand;
 /// Subcommands of `sak k8s`.
 #[derive(Subcommand)]
 pub enum K8sCommand {
+    /// List every context in the merged kubeconfig (no apiserver call)
+    Contexts(contexts::ContextsArgs),
     /// List every group/version/kind exposed by the cluster
     Kinds(kinds::KindsArgs),
     /// List or get resources of a kind
@@ -62,6 +65,7 @@ pub fn run(cmd: &K8sCommand) -> Result<ExitCode> {
 
 async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
     match cmd {
+        K8sCommand::Contexts(args) => contexts::run(args).await,
         K8sCommand::Kinds(args) => kinds::run(args).await,
         K8sCommand::Get(args) => get::run(args).await,
         K8sCommand::Images(args) => images::run(args).await,

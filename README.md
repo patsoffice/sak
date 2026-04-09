@@ -158,8 +158,9 @@ Same pattern for `kubectl`. The hook only blocks the kubectl read commands that 
 | `kubectl get` | `sak k8s get` |
 | `kubectl api-resources` | `sak k8s kinds` |
 | `kubectl explain` | `sak k8s schema` |
+| `kubectl config get-contexts` | `sak k8s contexts` |
 
-Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `config get-contexts`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
+Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
 
 ```json
 {
@@ -170,7 +171,7 @@ Other `kubectl` reads (`describe`, `logs`, `top`, `events`, `auth can-i`, `confi
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain)\"}}' || true",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain|config\\s+get-contexts)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain, sak k8s contexts for kubectl config get-contexts)\"}}' || true",
             "statusMessage": "Checking for raw kubectl commands..."
           }
         ]
