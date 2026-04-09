@@ -2,6 +2,8 @@ mod config;
 mod fs;
 mod git;
 mod json;
+#[cfg(feature = "k8s")]
+mod k8s;
 mod output;
 mod value;
 
@@ -58,6 +60,10 @@ enum Command {
     /// Config file operations — TOML, YAML, plist (read-only)
     #[command(subcommand)]
     Config(config::ConfigCommand),
+    /// Kubernetes operations against a live cluster (read-only)
+    #[cfg(feature = "k8s")]
+    #[command(subcommand)]
+    K8s(k8s::K8sCommand),
 }
 
 fn main() -> ExitCode {
@@ -68,6 +74,8 @@ fn main() -> ExitCode {
         Command::Git(cmd) => git::run(cmd),
         Command::Json(cmd) => json::run(cmd),
         Command::Config(cmd) => config::run(cmd),
+        #[cfg(feature = "k8s")]
+        Command::K8s(cmd) => k8s::run(cmd),
     };
 
     match result {

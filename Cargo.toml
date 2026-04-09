@@ -1,12 +1,19 @@
 [package]
 name = "sak"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
 [[bin]]
 name = "sak"
 path = "src/main.rs"
+
+[features]
+default = []
+# Live-cluster Kubernetes operations. Off by default because it pulls in
+# kube + k8s-openapi + tokio, which significantly inflate binary size and
+# build time. Enable with `cargo build --features k8s`.
+k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
@@ -20,6 +27,13 @@ serde_json = "1"
 toml = "0.8"
 serde_yaml = "0.9"
 plist = "1.6"
+# k8s domain (opt-in via the `k8s` feature). Minimal feature sets:
+# - kube: client + rustls-tls only; no runtime, derive, ws, oauth, oidc, gzip
+# - k8s-openapi: pinned to a single API version (never `latest`)
+# - tokio: current-thread runtime only; no rt-multi-thread
+kube = { version = "3", default-features = false, features = ["client", "rustls-tls", "ring"], optional = true }
+k8s-openapi = { version = "0.27", default-features = false, features = ["v1_33"], optional = true }
+tokio = { version = "1", default-features = false, features = ["rt", "macros"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
