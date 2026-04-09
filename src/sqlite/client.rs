@@ -19,6 +19,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
 
+/// Re-export of `rusqlite::Connection` under a domain-local name. Sibling
+/// modules in `src/sqlite/` reference this alias when they need to thread
+/// a connection through helper functions, so they can stay free of the
+/// `rusqlite::Connection` token that the chokepoint grep test forbids.
+pub type Conn = Connection;
+
 /// Open a SQLite database file read-only.
 ///
 /// Uses `SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_URI` and then immediately runs

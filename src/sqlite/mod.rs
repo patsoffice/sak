@@ -19,6 +19,7 @@
 //! runtime — [`run`] dispatches directly.
 
 pub mod client;
+pub mod schema;
 pub mod tables;
 
 use std::process::ExitCode;
@@ -29,12 +30,14 @@ use clap::Subcommand;
 /// Subcommands of `sak sqlite`.
 #[derive(Subcommand)]
 pub enum SqliteCommand {
+    Schema(schema::SchemaArgs),
     Tables(tables::TablesArgs),
 }
 
 /// Dispatch a `sak sqlite` subcommand.
 pub fn run(cmd: &SqliteCommand) -> Result<ExitCode> {
     match cmd {
+        SqliteCommand::Schema(args) => schema::run(args),
         SqliteCommand::Tables(args) => tables::run(args),
     }
 }
