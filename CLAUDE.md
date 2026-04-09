@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem) and `git` (repository).
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), and `json`. Run `ls src/*/` to see current domains and commands.
 
 ## Build & Test
 
@@ -34,8 +34,9 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
   - `sak --help` — list domains and quick-start examples
   - `sak <domain> --help` — list commands in a domain
   - `sak <domain> <command> --help` — detailed options and examples
-- Future domains (e.g., `json`, `csv`) add new modules under `src/`
+- Future domains (e.g., `csv`, `config`) add new modules under `src/`
 - Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
+- JSON domain uses `serde_json::Value` for dynamic traversal; shared path parser (dot notation + JSON Pointer) lives in `src/json/mod.rs`
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
