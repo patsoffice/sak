@@ -10,7 +10,7 @@
 //! `hyper` does not provide a read-only client variant, so this convention is
 //! the only thing that keeps the domain provably free of writes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 use http_body_util::{BodyExt, Full};
@@ -22,17 +22,11 @@ use hyperlocal::{UnixClientExt, UnixConnector, Uri};
 /// A connected Docker client. Bundles the hyper client and the resolved
 /// socket path so callers don't have to thread both arguments through every
 /// helper.
-//
-// `#[allow(dead_code)]` until the first docker subcommand wires it in. The
-// foundation issue intentionally adds no commands; dependent issues
-// (`list`, `info`, `config`, `images`) consume this helper.
-#[allow(dead_code)]
 pub struct DockerClient {
     http: Client<UnixConnector, Full<Bytes>>,
     socket: PathBuf,
 }
 
-#[allow(dead_code)]
 impl DockerClient {
     /// Build a client by discovering the Docker daemon unix socket.
     ///
@@ -41,11 +35,6 @@ impl DockerClient {
         let socket = discover_socket()?;
         let http: Client<UnixConnector, Full<Bytes>> = Client::unix();
         Ok(Self { http, socket })
-    }
-
-    /// The socket path this client is talking to. Useful for error messages.
-    pub fn socket(&self) -> &Path {
-        &self.socket
     }
 
     /// Issue a `GET` against a Docker Engine API path (e.g.
@@ -99,7 +88,6 @@ impl DockerClient {
 }
 
 /// Default socket path for the Docker daemon.
-#[allow(dead_code)]
 const DEFAULT_SOCKET: &str = "/var/run/docker.sock";
 
 /// Discover the Docker daemon unix socket.
@@ -112,7 +100,6 @@ const DEFAULT_SOCKET: &str = "/var/run/docker.sock";
 ///    location).
 ///
 /// Returns an error describing the candidates if none exist.
-#[allow(dead_code)]
 pub fn discover_socket() -> Result<PathBuf> {
     if let Ok(env_value) = std::env::var("DOCKER_HOST") {
         return parse_docker_host(&env_value);
@@ -132,7 +119,6 @@ pub fn discover_socket() -> Result<PathBuf> {
 /// Accepts `unix:///path/to/socket`. Rejects every other scheme (notably
 /// `tcp://`) because v1 of the docker domain is unix-socket only — TCP
 /// transport needs cert handling that is out of scope for the foundation.
-#[allow(dead_code)]
 fn parse_docker_host(value: &str) -> Result<PathBuf> {
     if let Some(rest) = value.strip_prefix("unix://") {
         if rest.is_empty() {

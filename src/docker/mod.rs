@@ -20,6 +20,7 @@
 //! does not turn the rest of the binary async.
 
 pub mod client;
+pub mod list;
 
 use std::process::ExitCode;
 
@@ -27,11 +28,11 @@ use anyhow::Result;
 use clap::Subcommand;
 
 /// Subcommands of `sak docker`.
-///
-/// Currently empty — this is the foundation issue. Dependent issues
-/// (`list`, `info`, `config`, `images`) populate it.
 #[derive(Subcommand)]
-pub enum DockerCommand {}
+pub enum DockerCommand {
+    /// List containers on the local Docker daemon
+    List(list::ListArgs),
+}
 
 /// Dispatch a `sak docker` subcommand.
 ///
@@ -46,7 +47,7 @@ pub fn run(cmd: &DockerCommand) -> Result<ExitCode> {
 }
 
 async fn dispatch(cmd: &DockerCommand) -> Result<ExitCode> {
-    // The enum is currently uninhabited — this match is exhaustive with no
-    // arms. Dependent issues add the real arms.
-    match *cmd {}
+    match cmd {
+        DockerCommand::List(args) => list::run(args).await,
+    }
 }
