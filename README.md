@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, and `config` (TOML, YAML, plist), with more planned (e.g., `csv`, `k8s`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -11,21 +11,42 @@ Commands are organized by domain. Current domains: `fs` (filesystem), `git` (rep
 - **LLM-optimized output** — No ANSI colors, no spinners, no interactive prompts. Deterministic sort order. Line numbers on by default. Every subcommand includes `--help` examples.
 - **Bounded output** — All output flows through `BoundedWriter`, which enforces `--limit` and emits a truncation notice to stderr. This prevents LLMs from drowning in unbounded results.
 - **Single binary** — One crate, no workspace. Keeps compilation fast and deployment simple.
-- **Minimal dependencies** — Runtime dependencies: `clap`, `globset`, `walkdir`, `regex`, `anyhow`, `git2`, `serde`, `serde_json`, `toml`, `serde_yaml`, `plist`.
+- **Minimal dependencies** — Runtime dependencies: `clap`, `globset`, `walkdir`, `regex`, `anyhow`, `git2`, `serde`, `serde_json`, `toml`, `serde_yaml`, `plist`. The `k8s` domain adds `kube`, `k8s-openapi`, `tokio`, and `http` on top.
+- **Opt-out k8s domain** — `k8s` is part of the default feature set so `cargo install sak` ships it, but it can be disabled with `--no-default-features` for a leaner build that drops the Kubernetes client, the OpenAPI generated code, and the async runtime. See [Build features](#build-features) below.
 
 ## Installing
 
 ### From Source
 
 ```sh
+# Default build — includes every domain, including k8s
 cargo install --path .
+
+# Lean build — drops the k8s domain (and its kube/k8s-openapi/tokio/http deps)
+cargo install --path . --no-default-features
 ```
 
 ### From a Local Build
 
 ```sh
-cargo build --release
+cargo build --release                       # default (with k8s)
+cargo build --release --no-default-features # lean build
 cp target/release/sak /usr/local/bin/
+```
+
+### Build features
+
+`sak` exposes a single optional feature:
+
+| Feature | Default? | What it adds |
+| --- | --- | --- |
+| `k8s` | yes | The `k8s` domain (`kinds`, `get`, `images`, `env`, `schema`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
+
+The `k8s` feature roughly doubles the release binary size and roughly doubles cold link time. Most other domains are filesystem- and git-only, so users who don't need Kubernetes can opt out:
+
+```sh
+cargo build --release --no-default-features                  # no k8s
+cargo build --release --no-default-features --features k8s   # explicit opt-in
 ```
 
 ### With Nix Flakes
@@ -65,12 +86,14 @@ sak fs --help
 sak git --help
 sak json --help
 sak config --help
+sak k8s --help            # only present if built with the k8s feature (default)
 
 # Discover options and see examples for a specific command
 sak fs grep --help
 sak git log --help
 sak json query --help
 sak config query --help
+sak k8s get --help
 ```
 
 Every subcommand includes `long_about` descriptions and `after_help` with concrete usage examples, so `--help` is always sufficient to learn a command without external documentation.
@@ -98,10 +121,13 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 | `toml` | TOML parsing for `config` domain |
 | `serde_yaml` | YAML parsing for `config` domain |
 | `plist` | Apple property list parsing (XML and binary) for `config` domain |
+| `kube` | Kubernetes client (k8s domain, behind the `k8s` feature) |
+| `k8s-openapi` | Generated Kubernetes API types (k8s domain, behind the `k8s` feature) |
+| `tokio` | Current-thread async runtime for the k8s domain (behind the `k8s` feature) |
+| `http` | Raw `GET` request construction for `sak k8s schema` (behind the `k8s` feature) |
 
 Dev dependencies: `criterion` (benchmarks), `tempfile` (test fixtures).
 
 ## Planned Domains
 
 - `csv` — CSV filtering and projection
-- `k8s` — Read-only Kubernetes operations (get, describe, logs)

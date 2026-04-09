@@ -9,10 +9,19 @@ name = "sak"
 path = "src/main.rs"
 
 [features]
-default = []
-# Live-cluster Kubernetes operations. Off by default because it pulls in
-# kube + k8s-openapi + tokio + http, which significantly inflate binary size
-# and build time. Enable with `cargo build --features k8s`.
+# `k8s` is part of the default feature set so `cargo install sak` ships the
+# full domain. It pulls in kube + k8s-openapi + tokio + http, which roughly
+# doubles the release binary (~3.4 MB → ~6.4 MB) and roughly doubles cold
+# link time. If you want the lean build (no Kubernetes, no async runtime,
+# no OpenAPI generated code), opt out explicitly:
+#
+#     cargo build --release --no-default-features
+#
+# The `k8s` feature can also be re-added on its own without enabling other
+# (currently nonexistent) optional features:
+#
+#     cargo build --release --no-default-features --features k8s
+default = ["k8s"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 
 [dependencies]

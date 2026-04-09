@@ -1,18 +1,22 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, and `config` (TOML, YAML, plist). Run `ls src/*/` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), and `k8s` (read-only Kubernetes against a live cluster). Run `ls src/*/` to see current domains and commands.
 
 ## Build & Test
 
 ```bash
-cargo build                                                     # Build
-cargo test                                                      # Run all tests
+cargo build                                                     # Build (default features = with k8s)
+cargo build --no-default-features                               # Lean build (no k8s, no async runtime)
+cargo test                                                      # Run all tests (with k8s)
+cargo test --no-default-features                                # Run tests without k8s
 cargo clippy --all-features --all-targets                       # Check code quality
 cargo clippy --all-features --all-targets --allow-dirty --fix   # Auto-fix clippy warnings before fixing manually
 cargo fmt                                                       # Format code
 cargo bench                                                     # Run criterion benchmarks
 cargo run -- fs glob '**/*.rs' .                                # Example: find Rust files
 ```
+
+The `k8s` cargo feature is **on by default** so `cargo install sak` ships every domain. It pulls in `kube`, `k8s-openapi`, `tokio`, and `http`, which roughly doubles the release binary size and roughly doubles cold link time. Users who don't need Kubernetes can opt out with `--no-default-features`. Both feature sets must build, test, clippy, and fmt clean before committing.
 
 - All tests must pass before committing
 - `cargo clippy` must pass with no warnings
@@ -34,10 +38,14 @@ cargo run -- fs glob '**/*.rs' .                                # Example: find 
   - `sak --help` — list domains and quick-start examples
   - `sak <domain> --help` — list commands in a domain
   - `sak <domain> <command> --help` — detailed options and examples
-- Future domains (e.g., `csv`, `k8s`) add new modules under `src/`
+- Future domains (e.g., `csv`) add new modules under `src/`
 - Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
 - JSON and config domains share `serde_json::Value` as the internal representation; format-agnostic helpers (path parsing, value resolution, key collection, flattening, type names, `ArrayMode`) live in `src/value.rs` and are consumed by both domains
 - Config domain parses TOML, YAML, and plist (XML and binary) into `serde_json::Value` via each format's serde integration; format auto-detected by extension or set with `--format` (required for stdin)
+- K8s domain talks to a live cluster via the `kube` crate using kubeconfig (or in-cluster service account). Gated behind the `k8s` cargo feature (on by default). The rest of sak stays sync — `k8s::run` builds a current-thread tokio runtime locally and `block_on`s the async dispatcher
+- K8s read-only enforcement is convention + a grep test in `src/k8s/client.rs`: every `kube::Api` call and every mutation method (`create`, `delete`, `patch`, ...) must live in `client.rs`. Any other module under `src/k8s/` that mentions those tokens fails the test. This is the cheapest credible defense — `kube` has no read-only client variant
+- K8s container walking (used by `images` and `env`) is a pure function over `serde_json::Value` in `src/k8s/containers.rs` — fully unit-testable on hand-built fixtures with no cluster
+- K8s schema fetching uses the foundation chokepoint `client::request_text` for raw GETs against `/openapi/v3`, then matches schemas by `x-kubernetes-group-version-kind` annotation rather than by package-style key
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
@@ -105,3 +113,6 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - Glob uses `globset` (not `glob` crate) for `{a,b}` alternation and `**` support
 - Config domain collapses lossy types when parsing into `serde_json::Value`: TOML datetimes, plist dates, and plist binary data become JSON-friendly representations rather than preserving the source-format type — acceptable for read-only LLM consumption
 - `sak <domain> keys` takes an optional positional `path` *before* `files`; passing only a filename will be parsed as a path. Example: `sak config keys . Cargo.toml` (use `.` to mean root)
+- K8s `get_dyn` returns `Result<Option<DynamicObject>>` — apiserver 404s map to `Ok(None)` so callers can produce sak's exit code 1 for "not found" without losing the ability to surface other errors as exit code 2. Don't unwrap it unconditionally
+- K8s `discovery::resolve` returns `(ApiResource, ApiCapabilities)`; cluster-scoped vs namespaced enforcement happens at the command layer by inspecting `caps.scope` *before* the list/get call (cluster-scoped + `--namespace` should be a hard error)
+- Adding new optional dependencies for the `k8s` feature requires both declaring them with `optional = true` *and* adding the `dep:<name>` to the `k8s = [...]` feature list in `Cargo.toml`. `kube` does not re-export the `http::Request` types needed by `client::request_text`, so `http` is its own gated dep
