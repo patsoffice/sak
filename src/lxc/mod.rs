@@ -19,6 +19,7 @@
 //! not turn the rest of the binary async.
 
 pub mod client;
+pub mod config;
 pub mod info;
 pub mod list;
 
@@ -34,6 +35,8 @@ pub enum LxcCommand {
     List(list::ListArgs),
     /// Show full metadata and state for a single instance
     Info(info::InfoArgs),
+    /// Show the configuration subset of a single instance
+    Config(config::ConfigArgs),
 }
 
 /// Dispatch a `sak lxc` subcommand.
@@ -52,5 +55,6 @@ async fn dispatch(cmd: &LxcCommand) -> Result<ExitCode> {
     match cmd {
         LxcCommand::List(args) => list::run(args).await,
         LxcCommand::Info(args) => info::run(args).await,
+        LxcCommand::Config(args) => config::run(args).await,
     }
 }
