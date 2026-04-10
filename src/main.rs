@@ -62,7 +62,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s failing -A                          Pods not Running or Succeeded
   sak k8s pending -A                          Pods stuck in Pending
   sak k8s events -A --limit 20                Recent cluster events
-  sak k8s describe deploy api -n api          Aggregated description of one resource",
+  sak k8s describe deploy api -n api          Aggregated description of one resource
+  sak k8s logs web-0 -n web --tail 50         Last 50 log lines from a pod",
     );
     #[cfg(feature = "lxc")]
     s.push_str(

@@ -10,7 +10,8 @@
 //! the only thing that keeps the domain provably free of writes.
 
 use anyhow::{Context, Result};
-use kube::api::{ApiResource, DynamicObject, ListParams, ObjectList};
+use k8s_openapi::api::core::v1::Pod;
+use kube::api::{ApiResource, DynamicObject, ListParams, LogParams, ObjectList};
 use kube::{Api, Client};
 
 /// Build a `kube::Client` from the standard sources, in order:
@@ -65,6 +66,25 @@ pub async fn get_dyn(
         Err(kube::Error::Api(e)) if e.code == 404 => Ok(None),
         Err(e) => Err(e).with_context(|| format!("failed to get {} {}", ar.kind, name)),
     }
+}
+
+/// Fetch container logs from a pod, returning the buffered body as a String.
+///
+/// `Api::<Pod>::logs` is technically a read, not a mutation, but the chokepoint
+/// grep test forbids `kube::Api` mentions outside this module — so this helper
+/// is the only place callers may go for `sak k8s logs`. Caller fills in
+/// container/tail/since/previous on the supplied [`LogParams`]; this helper is
+/// otherwise format-agnostic.
+pub async fn pod_logs(
+    client: &Client,
+    namespace: &str,
+    pod: &str,
+    lp: &LogParams,
+) -> Result<String> {
+    let api: Api<Pod> = Api::namespaced(client.clone(), namespace);
+    api.logs(pod, lp)
+        .await
+        .with_context(|| format!("failed to fetch logs for pod {namespace}/{pod}"))
 }
 
 /// Issue a `GET` against an arbitrary apiserver path and return the response

@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 

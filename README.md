@@ -40,7 +40,7 @@ cp target/release/sak /usr/local/bin/
 
 | Feature | Default? | What it adds |
 | --- | --- | --- |
-| `k8s` | yes | The `k8s` domain (`contexts`, `kinds`, `get`, `images`, `env`, `schema`, `restarts`, `failing`, `pending`, `events`, `describe`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
+| `k8s` | yes | The `k8s` domain (`contexts`, `kinds`, `get`, `images`, `env`, `schema`, `restarts`, `failing`, `pending`, `events`, `describe`, `logs`) and the `kube` / `k8s-openapi` / `tokio` / `http` dependencies needed to talk to a live cluster. |
 | `lxc` | yes | The `lxc` domain for read-only access to a live LXD/Incus daemon over a unix socket. Pulls in raw `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio`. |
 | `docker` | yes | The `docker` domain for read-only access to a live Docker Engine over a unix socket. Shares the same hyper stack as `lxc`. |
 | `sqlite` | yes | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime, but adds C compile time on the first build). |
@@ -165,8 +165,9 @@ Same pattern for `kubectl`. The hook only blocks the kubectl read commands that 
 | `kubectl config get-contexts` | `sak k8s contexts` |
 | `kubectl events` | `sak k8s events` |
 | `kubectl describe` | `sak k8s describe` |
+| `kubectl logs` | `sak k8s logs` |
 
-Other `kubectl` reads (`logs`, `top`, `auth can-i`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
+Other `kubectl` reads (`top`, `auth can-i`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
 
 ```json
 {
@@ -177,7 +178,7 @@ Other `kubectl` reads (`logs`, `top`, `auth can-i`, `version`, ...) pass through
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain|config\\s+get-contexts|events|describe)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain, sak k8s contexts for kubectl config get-contexts, sak k8s events for kubectl events, sak k8s describe for kubectl describe)\"}}' || true",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain|config\\s+get-contexts|events|describe|logs)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain, sak k8s contexts for kubectl config get-contexts, sak k8s events for kubectl events, sak k8s describe for kubectl describe, sak k8s logs for kubectl logs)\"}}' || true",
             "statusMessage": "Checking for raw kubectl commands..."
           }
         ]

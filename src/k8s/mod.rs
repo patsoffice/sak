@@ -30,6 +30,7 @@ pub mod failing;
 pub mod get;
 pub mod images;
 pub mod kinds;
+pub mod logs;
 pub mod pending;
 pub mod restarts;
 pub mod schema;
@@ -64,6 +65,8 @@ pub enum K8sCommand {
     Events(events::EventsArgs),
     /// Aggregated description of one resource (object/status/containers/owners/events)
     Describe(describe::DescribeArgs),
+    /// Fetch container logs from a pod
+    Logs(logs::LogsArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -91,5 +94,6 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
         K8sCommand::Pending(args) => pending::run(args).await,
         K8sCommand::Events(args) => events::run(args).await,
         K8sCommand::Describe(args) => describe::run(args).await,
+        K8sCommand::Logs(args) => logs::run(args).await,
     }
 }
