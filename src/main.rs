@@ -9,6 +9,8 @@ mod k8s;
 #[cfg(feature = "lxc")]
 mod lxc;
 mod output;
+#[cfg(feature = "prom")]
+mod prom;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 mod value;
@@ -139,6 +141,10 @@ enum Command {
     #[cfg(feature = "sqlite")]
     #[command(subcommand)]
     Sqlite(sqlite::SqliteCommand),
+    /// Prometheus / Alertmanager HTTP API operations (read-only)
+    #[cfg(feature = "prom")]
+    #[command(subcommand)]
+    Prom(prom::PromCommand),
 }
 
 fn main() -> ExitCode {
@@ -157,6 +163,8 @@ fn main() -> ExitCode {
         Command::Docker(cmd) => docker::run(cmd),
         #[cfg(feature = "sqlite")]
         Command::Sqlite(cmd) => sqlite::run(cmd),
+        #[cfg(feature = "prom")]
+        Command::Prom(cmd) => prom::run(cmd),
     };
 
     match result {

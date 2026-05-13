@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.8.3"
+version = "0.9.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -9,14 +9,16 @@ name = "sak"
 path = "src/main.rs"
 
 [features]
-# `k8s`, `lxc`, `docker`, and `sqlite` are part of the default feature set so
-# `cargo install sak` ships every domain. They pull in kube + k8s-openapi (for
-# k8s), hyper + hyperlocal + hyper-util + http-body-util (shared between lxc
-# and docker), rusqlite with bundled libsqlite3 (for sqlite), plus the shared
-# tokio + http stack. Together they roughly triple the release binary and cold
-# link time vs the lean build, and the bundled libsqlite3 adds C compile time
-# on the first build. If you want the lean build (no Kubernetes, no LXD/Incus,
-# no Docker, no SQLite, no async runtime), opt out explicitly:
+# `k8s`, `lxc`, `docker`, `sqlite`, and `prom` are part of the default feature
+# set so `cargo install sak` ships every domain. They pull in kube +
+# k8s-openapi (for k8s), hyper + hyperlocal + hyper-util + http-body-util
+# (shared between lxc and docker), rusqlite with bundled libsqlite3 (for
+# sqlite), ureq + rustls (for prom), plus the shared tokio + http stack
+# (k8s/lxc/docker only — prom is synchronous and pulls no tokio). Together
+# they roughly triple the release binary and cold link time vs the lean
+# build, and the bundled libsqlite3 adds C compile time on the first build.
+# If you want the lean build (no Kubernetes, no LXD/Incus, no Docker, no
+# SQLite, no Prometheus, no async runtime), opt out explicitly:
 #
 #     cargo build --release --no-default-features
 #
@@ -26,7 +28,8 @@ path = "src/main.rs"
 #     cargo build --release --no-default-features --features lxc
 #     cargo build --release --no-default-features --features docker
 #     cargo build --release --no-default-features --features sqlite
-default = ["k8s", "lxc", "docker", "sqlite"]
+#     cargo build --release --no-default-features --features prom
+default = ["k8s", "lxc", "docker", "sqlite", "prom"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 # `lxc` talks to the LXD/Incus REST API over a unix domain socket via raw
 # hyper + hyperlocal. Read-only enforcement is convention + a chokepoint grep
@@ -58,6 +61,13 @@ docker = [
 # `PRAGMA query_only=ON` plus a chokepoint grep test in src/sqlite/client.rs,
 # which is strictly stronger than the convention-only k8s/lxc/docker pattern.
 sqlite = ["dep:rusqlite", "dep:base64"]
+# `prom` talks to a Prometheus or Alertmanager HTTP API over TCP+TLS using
+# `ureq` (blocking) with rustls. Unlike `lxc`/`docker`, which speak unix
+# sockets, the prom domain hits remote endpoints, so hyper + hyperlocal is
+# not a fit; ureq keeps the prom domain synchronous (no tokio) and brings
+# in a small rustls stack. Read-only enforcement is convention + a chokepoint
+# grep test in src/prom/client.rs mirroring the k8s/lxc/docker pattern.
+prom = ["dep:ureq"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
@@ -119,6 +129,15 @@ rusqlite = { version = "0.32", default-features = false, features = [
 # unchanged.
 base64 = { version = "0.22", default-features = false, features = [
     "std",
+], optional = true }
+# prom domain (opt-in via the `prom` feature). Blocking HTTP+TLS to a remote
+# Prometheus or Alertmanager API. `default-features = false` strips gzip /
+# brotli / cookies / charset (none of which Prometheus needs); we keep `tls`
+# (rustls + webpki-roots) so HTTPS endpoints work. Response bodies are
+# parsed via `serde_json::from_str` so ureq's optional `json` feature is
+# unnecessary.
+ureq = { version = "2", default-features = false, features = [
+    "tls",
 ], optional = true }
 
 [dev-dependencies]
