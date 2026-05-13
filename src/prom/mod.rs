@@ -22,24 +22,29 @@
 //! `ureq` is a blocking client, and each command is one HTTP round trip.
 //! Adding `prom` does not pull tokio into the binary.
 
+pub mod alerts;
 pub mod client;
+pub mod query;
 
 use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Subcommand;
 
-/// Subcommands of `sak prom`.
-///
-/// Currently empty — this is the foundation commit. Subsequent commits add
-/// `alerts`, `query`, `query-range`, `targets`, `rules`, `histogram`, and
-/// `am alerts | silences`.
+/// Subcommands of `sak prom`. Subsequent commits add `query-range`,
+/// `targets`, `rules`, `histogram`, and `am alerts | silences`.
 #[derive(Subcommand)]
-pub enum PromCommand {}
+pub enum PromCommand {
+    /// List alerts on a Prometheus server
+    Alerts(alerts::AlertsArgs),
+    /// Run an instant PromQL query
+    Query(query::QueryArgs),
+}
 
 /// Dispatch a `sak prom` subcommand. Synchronous — no tokio runtime.
 pub fn run(cmd: &PromCommand) -> Result<ExitCode> {
-    // The enum is currently uninhabited — this match is exhaustive with no
-    // arms. Subsequent commits add the real arms.
-    match *cmd {}
+    match cmd {
+        PromCommand::Alerts(args) => alerts::run(args),
+        PromCommand::Query(args) => query::run(args),
+    }
 }

@@ -19,17 +19,11 @@ use ureq::Agent;
 /// A connected Prometheus / Alertmanager client. Bundles the ureq agent and
 /// the resolved base URL so callers don't have to thread both arguments
 /// through every helper.
-//
-// `#[allow(dead_code)]` until the first prom subcommand wires it in. The
-// foundation commit intentionally adds no commands; subsequent commits
-// (`alerts`, `query`, ...) consume this helper.
-#[allow(dead_code)]
 pub struct PromClient {
     agent: Agent,
     base_url: String,
 }
 
-#[allow(dead_code)]
 impl PromClient {
     /// Build a client against an explicit base URL (e.g. `https://prom:9090`).
     ///
@@ -45,11 +39,6 @@ impl PromClient {
             agent: Agent::new(),
             base_url: base,
         }
-    }
-
-    /// The base URL this client is talking to. Useful for error messages.
-    pub fn base_url(&self) -> &str {
-        &self.base_url
     }
 
     /// Issue a `GET` against `<base_url><path>` and return the response body
@@ -148,10 +137,6 @@ fn unwrap_prom_envelope(raw: &Value, path: &str) -> Result<Value> {
 /// Auto-discovery via a Kubernetes service selector + transparent
 /// port-forward is a planned follow-up; for the foundation, URL or env var
 /// is required.
-//
-// `#[allow(dead_code)]` until the first prom subcommand wires it in — same
-// reason as `PromClient` above.
-#[allow(dead_code)]
 pub fn resolve_endpoint(flag: Option<&str>, env_var: &str) -> Result<String> {
     resolve_endpoint_inner(flag, env_var, std::env::var(env_var).ok())
 }
@@ -159,7 +144,6 @@ pub fn resolve_endpoint(flag: Option<&str>, env_var: &str) -> Result<String> {
 /// Inner pure form of [`resolve_endpoint`] for unit testing — accepts the
 /// env-var value as a parameter so tests don't have to mutate process-wide
 /// env state (which is `unsafe` in Rust 2024 and racy across tests).
-#[allow(dead_code)]
 fn resolve_endpoint_inner(
     flag: Option<&str>,
     env_var: &str,
@@ -253,15 +237,15 @@ mod tests {
     #[test]
     fn new_strips_trailing_slashes() {
         let c = super::PromClient::new("https://prom:9090/");
-        assert_eq!(c.base_url(), "https://prom:9090");
+        assert_eq!(c.base_url, "https://prom:9090");
         let c = super::PromClient::new("https://prom:9090////");
-        assert_eq!(c.base_url(), "https://prom:9090");
+        assert_eq!(c.base_url, "https://prom:9090");
     }
 
     #[test]
     fn new_preserves_no_trailing_slash() {
         let c = super::PromClient::new("https://prom:9090");
-        assert_eq!(c.base_url(), "https://prom:9090");
+        assert_eq!(c.base_url, "https://prom:9090");
     }
 
     #[test]

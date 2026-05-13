@@ -29,7 +29,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
             feature = "k8s",
             feature = "lxc",
             feature = "docker",
-            feature = "sqlite"
+            feature = "sqlite",
+            feature = "prom"
         )),
         allow(unused_mut)
     )]
@@ -89,6 +90,13 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak sqlite count users app.db               Count rows in a table
   sak sqlite query 'SELECT * FROM users' app.db   Run a read-only query
   sak sqlite info app.db                      Database-level metadata",
+    );
+    #[cfg(feature = "prom")]
+    s.push_str(
+        "
+  sak prom alerts --url http://prom:9090      Firing+pending alerts
+  sak prom alerts --all --name 'Cert.*'       Alerts filtered by name regex
+  sak prom query 'up'                         Run a PromQL instant query",
     );
     s
 });
