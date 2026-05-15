@@ -1,10 +1,10 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), and `sqlite` (read-only SQLite databases). Run `sak fs glob 'src/*/'` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API). Run `sak fs glob 'src/*/'` to see current domains and commands.
 
 ## Use sak as your tool
 
-This repo dogfoods its own product. When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist, or a live Kubernetes cluster, **prefer `sak <domain> <command>` over shell equivalents**. This applies to both sak's own development and any other read-only inspection you do while working here. Concretely:
+This repo dogfoods its own product. When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist, a live Kubernetes cluster, an LXD/Incus or Docker daemon, a SQLite database, or a Prometheus / Alertmanager endpoint, **prefer `sak <domain> <command>` over shell equivalents**. This applies to both sak's own development and any other read-only inspection you do while working here. Concretely:
 
 - `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, or `sed -n`
@@ -13,20 +13,26 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
 - `sak json query|keys|flatten|validate` for `*.json`
 - `sak config query|keys|flatten|validate` for TOML, YAML, plist
-- `sak k8s get|list|images|env|schema` instead of `kubectl` read ops
+- `sak k8s get|images|env|schema` instead of `kubectl` read ops
+- `sak lxc list|info|config|images` instead of `lxc` read ops
+- `sak docker list|info|config|images` instead of `docker` read ops
+- `sak sqlite tables|schema|query|info` instead of `sqlite3` read ops
+- `sak prom alerts|query|query-range|histogram|targets|rules|am alerts|am silences` instead of `curl + jq + base64` against a Prometheus or Alertmanager API
 
 The harness's built-in Glob/Read/Grep tools are still fine — and the rule against using bash for `cat`/`head`/`find`/`grep` still applies — but when you *do* reach for a CLI in this repo, reach for `sak`. Run `cargo run --quiet -- <domain> <command> --help` (or, after `cargo install --path .`, just `sak <domain> <command> --help`) to discover flags. If you find yourself wanting a sak command that doesn't exist yet, that's a signal to add it rather than fall back to shell.
 
 ## Build & Test
 
 ```bash
-cargo build                                                     # Build (default features = k8s + lxc + docker + sqlite)
-cargo build --no-default-features                               # Lean build (no k8s, no lxc, no docker, no sqlite, no async runtime)
+cargo build                                                     # Build (default features = k8s + lxc + docker + sqlite + prom)
+cargo build --no-default-features                               # Lean build (no k8s, lxc, docker, sqlite, prom, async runtime)
 cargo build --no-default-features --features sqlite             # Lean + sqlite alone
+cargo build --no-default-features --features prom               # Lean + prom alone (no tokio — prom is sync)
 cargo build --all-features                                      # Same as default today
 cargo test                                                      # Run all tests (default features)
 cargo test --no-default-features                                # Run tests with no optional domains
 cargo test --no-default-features --features sqlite              # sqlite alone
+cargo test --no-default-features --features prom                # prom alone
 cargo test --all-features                                       # Everything
 cargo clippy --all-features --all-targets                       # Check code quality
 cargo clippy --all-features --all-targets --allow-dirty --fix   # Auto-fix clippy warnings before fixing manually
@@ -35,7 +41,7 @@ cargo bench                                                     # Run criterion 
 cargo run -- fs glob '**/*.rs' .                                # Example: find Rust files
 ```
 
-The `k8s`, `lxc`, `docker`, and `sqlite` cargo features are **all on by default** so `cargo install sak` ships every domain. They pull in `kube` + `k8s-openapi` (k8s), `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` (shared between lxc and docker), `rusqlite` with bundled libsqlite3 (sqlite), plus a shared `tokio` + `http` stack — together they roughly triple the release binary size and cold link time, and the bundled libsqlite3 adds C compile time on the first build. Users who don't need any of them can opt out with `--no-default-features`. Both the default and `--no-default-features` builds must build, test, clippy, and fmt clean before committing.
+The `k8s`, `lxc`, `docker`, `sqlite`, and `prom` cargo features are **all on by default** so `cargo install sak` ships every domain. They pull in `kube` + `k8s-openapi` (k8s), `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` (shared between lxc and docker), `rusqlite` with bundled libsqlite3 (sqlite), `ureq` + rustls (prom), plus a shared `tokio` + `http` stack used by k8s/lxc/docker (prom is sync — `ureq` is blocking and pulls no tokio). Together they roughly triple the release binary size and cold link time, and the bundled libsqlite3 adds C compile time on the first build. Users who don't need any of them can opt out with `--no-default-features`. Both the default and `--no-default-features` builds must build, test, clippy, and fmt clean before committing.
 
 - All tests must pass before committing
 - `cargo clippy` must pass with no warnings
@@ -69,6 +75,8 @@ The `k8s`, `lxc`, `docker`, and `sqlite` cargo features are **all on by default*
 - LXC and docker domains talk to the local LXD/Incus or Docker Engine REST API over a unix socket via `hyper` + `hyperlocal`. Each domain is gated behind its own cargo feature (`lxc`, `docker`, both on by default) and shares the k8s pattern of running async code on a per-invocation current-thread tokio runtime built locally in `lxc::run` / `docker::run` so the rest of sak stays sync. The chokepoint module (`src/lxc/client.rs`, `src/docker/client.rs`) is the only place allowed to construct a `hyper::Client`, import `hyperlocal::*`, or build a `Request` — every command goes through `LxcClient::get_json` / `DockerClient::get_json`, which return `Ok(None)` on a 404 so callers can map "not found" to sak's exit code 1 (mirrors `k8s::client::get_dyn`). LXD additionally unwraps the `{type, status, status_code, metadata}` envelope and exposes a `get_json_recursive` helper for `?recursion=N`; Docker returns the daemon's JSON verbatim
 - Read-only enforcement for `lxc` and `docker` is the same convention + grep test as k8s: each `client.rs` has a `tests::no_mutation_methods_outside_client_module` test that scans every other `*.rs` in its domain for `hyper::Client`, `hyperlocal::`, `Request::builder`, and any `Method::POST|PUT|PATCH|DELETE` (or the equivalent `Request::post` / `put` / `patch` / `delete` constructors). Comment lines are exempt so the chokepoint can be referenced from doc comments. As with k8s, this is the cheapest credible defense — `hyper` has no read-only client variant
 - SQLite domain (`src/sqlite/`) is gated behind the **opt-in** `sqlite` cargo feature (not in `default`) — pulls in `rusqlite` with the `bundled` libsqlite3. Read-only enforcement is stronger than k8s's: `client::open_readonly` opens with `SQLITE_OPEN_READ_ONLY` (OS-level) and then sets `PRAGMA query_only=ON` (engine-level), so writes are rejected at two layers, not just by convention. The same chokepoint pattern is enforced by a grep test in `src/sqlite/client.rs` — every `rusqlite::Connection`, `Connection::open`, `.execute(`, and `.execute_batch(` must live in `client.rs`
+- Prom domain (`src/prom/`) talks to a remote Prometheus or Alertmanager endpoint over HTTP + TLS via `ureq` (blocking, with rustls). Gated behind the `prom` cargo feature (on by default). Unlike k8s/lxc/docker, the prom domain stays **synchronous** — `ureq` is blocking and each command is one HTTP round trip, so adding `prom` does not pull `tokio` into the binary. Connection is `--url <URL>` or per-server env vars (`PROMETHEUS_URL`, `ALERTMANAGER_URL`); auto-discovery via a Kubernetes service selector + transparent port-forward is a planned follow-up
+- Read-only enforcement for `prom` mirrors the k8s/lxc/docker pattern: every `ureq::Agent` construction and every mutation method (`.post(`/`.put(`/`.patch(`/`.delete(`) must live in `src/prom/client.rs`, enforced by a grep test. Prometheus's admin write endpoints under `/api/v1/admin/tsdb/*` (enabled with `--web.enable-admin-api`) make this a real guardrail. `PromClient::get_prom` unwraps the Prometheus `{status, data, errorType?, error?}` envelope and surfaces `status=error` as `anyhow::Error`; `PromClient::get_json` returns the raw body (used by Alertmanager v2 endpoints, which are envelope-less arrays). Both map HTTP 404 to `Ok(None)` so callers can produce sak's exit code 1 for "not found", mirroring `k8s::client::get_dyn` / `lxc::client::get_json` / `docker::client::get_json`. Shared output helpers (`emit_json`, `collapse_newlines`) live in `src/prom/output.rs`; the duration parser shared by `query-range` and `histogram` lives in `src/prom/duration.rs`
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
 - Exit codes: 0 = results found, 1 = no results, 2 = error
@@ -146,3 +154,8 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - LXD's REST API is project-scoped: `/1.0/instances` returns instances in the *default* project unless you append `?project=<name>` (or `?all-projects=true` on newer LXD). Commands that don't pass a project flag are implicitly operating against `default` — keep this in mind when a user reports "missing" instances on a multi-project host
 - `lxc::client::LxcClient::get_json` and `docker::client::DockerClient::get_json` both return `Result<Option<serde_json::Value>>` — apiserver/daemon 404s map to `Ok(None)` so callers can produce sak's exit code 1 for "not found" without losing the ability to surface other errors as exit code 2. This mirrors `k8s::client::get_dyn`; don't unwrap unconditionally
 - SQLite `PRAGMA` results can contain embedded newlines (notably `integrity_check` on a problem database), so `sak sqlite info` runs every PRAGMA value through a sanitizer that replaces `\n` / `\r` / `\t` with spaces before emission. Without that step, a multi-line PRAGMA value would shred the `key<TAB>value` line contract. SQLite also has a legacy DQ-as-string-literal quirk where unrecognized double-quoted identifiers silently become string literals — `sak sqlite dump` defends against typo'd `--order-by` columns by pre-validating them against `PRAGMA table_info` rather than relying on the SELECT to error out
+- `PromClient::get_json` reads the response body via `into_reader()` rather than `into_string()`. ureq's `into_string()` caps at 10 MiB and `/api/v1/targets` on a real cluster (with the full `discoveredLabels` set per target) exceeds that. Input is otherwise unbounded — consistent with the kube/docker/lxc clients, which also buffer whole API responses; `--limit` bounds *output*, not the response body
+- The prom domain is split into two URL env vars: `PROMETHEUS_URL` for `sak prom alerts|query|query-range|histogram|targets|rules` and `ALERTMANAGER_URL` for `sak prom am alerts|silences`. Both are overridable per-command with `--url`, so a single shell can target both servers without re-exporting. `resolve_endpoint` takes the env-var name as a parameter; its `_inner` form takes the env value too, so tests avoid the `unsafe std::env::set_var` dance under Rust 2024
+- `PromClient::get_prom` unwraps the Prometheus `{status, data, errorType?, error?}` envelope; for Alertmanager v2 endpoints (which return JSON arrays with no envelope) use `get_json` directly. A new command targeting `/api/v1/*` should reach for `get_prom`; anything under `/api/v2/*` should use `get_json`
+- `sak prom histogram` parses `le` labels via `f64::from_str`, which accepts `"+Inf"` as `f64::INFINITY` — sorting buckets by the parsed value naturally places `+Inf` last. The `le` unit (raw vs duration vs bytes) is auto-detected from the metric name suffix (`_seconds` → duration, `_bytes` → bytes, else raw); pass `--unit` to override. Negative `delta` values in the output are a *signal*, not a bug — they happen when `sum by (le)` aggregates heterogeneous bucket layouts (e.g. mixed apiserver versions)
+- Alertmanager silence matchers default `isEqual` to `true` when the field is absent (older AM releases don't emit it; the v2 schema documents the default). `format_matchers` honors that default, so a regex-only matcher renders as `=~` not `!~`. Operator picked from `(isEqual, isRegex)` — `(true, false)` → `=`, `(true, true)` → `=~`, `(false, false)` → `!=`, `(false, true)` → `!~`
