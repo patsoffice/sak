@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -274,7 +274,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of read-only `git`
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff` for `*.json`
-- `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff` for TOML, YAML, plist
+- `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads

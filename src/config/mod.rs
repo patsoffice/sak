@@ -1,11 +1,17 @@
-//! `config` domain — read-only operations on TOML, YAML, and plist files.
+//! `config` domain — read-only operations on TOML, YAML, plist, and JSON files.
 //!
 //! Every command in this module parses inputs into `serde_json::Value` so that
 //! the format-agnostic helpers in [`crate::value`] can do the actual work. This
 //! is intentionally lossy at the edges (TOML datetimes, plist dates, plist
 //! binary data all collapse to JSON-friendly representations) — acceptable for
 //! an LLM-facing read-only tool.
+//!
+//! JSON is supported as both an input and a (via [`convert`]) output format so
+//! cross-format operations like `sak config diff a.toml b.json` and
+//! `sak config convert --to yaml a.json` are uniform with the TOML/YAML/plist
+//! cases.
 
+pub mod convert;
 pub mod diff;
 pub mod exists;
 pub mod flatten;
@@ -41,6 +47,7 @@ pub enum ConfigCommand {
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
     Diff(diff::DiffArgs),
+    Convert(convert::ConvertArgs),
 }
 
 pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
@@ -56,6 +63,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
         ConfigCommand::Type(args) => type_::run(args),
         ConfigCommand::Validate(args) => validate::run(args),
         ConfigCommand::Diff(args) => diff::run(args),
+        ConfigCommand::Convert(args) => convert::run(args),
     }
 }
 
@@ -65,6 +73,7 @@ pub enum Format {
     Toml,
     Yaml,
     Plist,
+    Json,
 }
 
 impl fmt::Display for Format {
@@ -73,6 +82,7 @@ impl fmt::Display for Format {
             Format::Toml => "toml",
             Format::Yaml => "yaml",
             Format::Plist => "plist",
+            Format::Json => "json",
         })
     }
 }
@@ -108,8 +118,9 @@ pub fn detect_format(path: &Path, override_: Option<Format>) -> Result<Format> {
         Some("toml") => Ok(Format::Toml),
         Some("yaml" | "yml") => Ok(Format::Yaml),
         Some("plist") => Ok(Format::Plist),
+        Some("json") => Ok(Format::Json),
         _ => bail!(
-            "cannot detect format for {} — pass --format toml|yaml|plist",
+            "cannot detect format for {} — pass --format toml|yaml|plist|json",
             path.display()
         ),
     }
@@ -156,6 +167,11 @@ pub fn parse_one(format: Format, content: &[u8]) -> std::result::Result<Value, P
         Format::Plist => plist::from_bytes::<Value>(content).map_err(|e| ParseError {
             line: None,
             col: None,
+            message: e.to_string(),
+        }),
+        Format::Json => serde_json::from_slice::<Value>(content).map_err(|e| ParseError {
+            line: Some(e.line()),
+            col: Some(e.column()),
             message: e.to_string(),
         }),
     }
@@ -233,6 +249,10 @@ mod tests {
             detect_format(Path::new("a.plist"), None).unwrap(),
             Format::Plist
         );
+        assert_eq!(
+            detect_format(Path::new("a.json"), None).unwrap(),
+            Format::Json
+        );
     }
 
     #[test]
@@ -283,5 +303,19 @@ mod tests {
     fn parse_toml_invalid_reports_position() {
         let err = parse_one(Format::Toml, b"a = =").unwrap_err();
         assert!(err.line.is_some());
+    }
+
+    #[test]
+    fn parse_json_basic() {
+        let v = parse_one(Format::Json, b"{\"name\": \"alice\", \"age\": 30}").unwrap();
+        assert_eq!(v["name"], "alice");
+        assert_eq!(v["age"], 30);
+    }
+
+    #[test]
+    fn parse_json_invalid_reports_position() {
+        let err = parse_one(Format::Json, b"{\"a\":").unwrap_err();
+        assert!(err.line.is_some());
+        assert!(err.col.is_some());
     }
 }
