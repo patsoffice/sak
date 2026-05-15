@@ -11,6 +11,7 @@ pub mod exists;
 pub mod flatten;
 pub mod grep;
 pub mod keys;
+pub mod length;
 pub mod paths;
 pub mod query;
 pub mod schema;
@@ -34,6 +35,7 @@ pub enum ConfigCommand {
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Grep(grep::GrepArgs),
+    Length(length::LengthArgs),
     Paths(paths::PathsArgs),
     Schema(schema::SchemaArgs),
     Type(type_::TypeArgs),
@@ -48,6 +50,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
         ConfigCommand::Keys(args) => keys::run(args),
         ConfigCommand::Flatten(args) => flatten::run(args),
         ConfigCommand::Grep(args) => grep::run(args),
+        ConfigCommand::Length(args) => length::run(args),
         ConfigCommand::Paths(args) => paths::run(args),
         ConfigCommand::Schema(args) => schema::run(args),
         ConfigCommand::Type(args) => type_::run(args),

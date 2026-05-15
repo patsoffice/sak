@@ -120,6 +120,21 @@ pub fn type_name(value: &Value) -> &'static str {
     }
 }
 
+/// The "length" of a value for the `length` commands.
+///
+/// Arrays return their element count, objects their key count, strings their
+/// Unicode scalar count (not byte length). Scalar number, boolean, and null
+/// values have no meaningful length and return `None` — callers should surface
+/// this as an error.
+pub fn value_length(value: &Value) -> Option<usize> {
+    match value {
+        Value::Array(a) => Some(a.len()),
+        Value::Object(o) => Some(o.len()),
+        Value::String(s) => Some(s.chars().count()),
+        Value::Null | Value::Bool(_) | Value::Number(_) => None,
+    }
+}
+
 /// Recursively collect the keys of a value's object into `out`, sorted.
 pub fn collect_keys(
     value: &Value,
@@ -633,6 +648,31 @@ mod tests {
         assert_eq!(type_name(&json!("x")), "string");
         assert_eq!(type_name(&json!([])), "array");
         assert_eq!(type_name(&json!({})), "object");
+    }
+
+    #[test]
+    fn length_of_containers_and_strings() {
+        assert_eq!(value_length(&json!([1, 2, 3])), Some(3));
+        assert_eq!(value_length(&json!({"a": 1, "b": 2})), Some(2));
+        assert_eq!(value_length(&json!("hello")), Some(5));
+        assert_eq!(value_length(&json!("")), Some(0));
+        assert_eq!(value_length(&json!([])), Some(0));
+        assert_eq!(value_length(&json!({})), Some(0));
+    }
+
+    #[test]
+    fn length_counts_unicode_scalars_not_bytes() {
+        // "é" is 2 UTF-8 bytes but 1 char; "🦀" is 4 bytes but 1 char.
+        assert_eq!(value_length(&json!("héllo")), Some(5));
+        assert_eq!(value_length(&json!("🦀🦀")), Some(2));
+    }
+
+    #[test]
+    fn length_of_scalars_is_none() {
+        assert_eq!(value_length(&json!(null)), None);
+        assert_eq!(value_length(&json!(true)), None);
+        assert_eq!(value_length(&json!(42)), None);
+        assert_eq!(value_length(&json!(2.5)), None);
     }
 
     #[test]
