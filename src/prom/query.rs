@@ -220,7 +220,10 @@ fn escape_label_value(s: &str) -> String {
 /// Minimal `application/x-www-form-urlencoded` encoder for query parameter
 /// values. Encodes anything outside the unreserved set (RFC 3986). Avoids
 /// pulling in a dedicated URL crate just to escape PromQL braces.
-fn urlencode(s: &str) -> String {
+///
+/// `pub(super)` so `sak prom query-range` and `sak prom histogram` reuse
+/// the same encoder when building their request paths.
+pub(super) fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for byte in s.bytes() {
         match byte {

@@ -96,7 +96,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
         "
   sak prom alerts --url http://prom:9090      Firing+pending alerts
   sak prom alerts --all --name 'Cert.*'       Alerts filtered by name regex
-  sak prom query 'up'                         Run a PromQL instant query",
+  sak prom query 'up'                         Run a PromQL instant query
+  sak prom query-range 'up' --since 1h        Range query over the last hour
+  sak prom histogram apiserver_request_duration_seconds   Pretty-print buckets",
     );
     s
 });
