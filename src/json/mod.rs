@@ -3,6 +3,7 @@ pub mod exists;
 pub mod flatten;
 pub mod grep;
 pub mod keys;
+pub mod paths;
 pub mod query;
 pub mod schema;
 pub mod type_;
@@ -23,6 +24,7 @@ pub enum JsonCommand {
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Grep(grep::GrepArgs),
+    Paths(paths::PathsArgs),
     Schema(schema::SchemaArgs),
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
@@ -36,6 +38,7 @@ pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
         JsonCommand::Keys(args) => keys::run(args),
         JsonCommand::Flatten(args) => flatten::run(args),
         JsonCommand::Grep(args) => grep::run(args),
+        JsonCommand::Paths(args) => paths::run(args),
         JsonCommand::Schema(args) => schema::run(args),
         JsonCommand::Type(args) => type_::run(args),
         JsonCommand::Validate(args) => validate::run(args),
