@@ -6,6 +6,7 @@
 //! binary data all collapse to JSON-friendly representations) — acceptable for
 //! an LLM-facing read-only tool.
 
+pub mod diff;
 pub mod exists;
 pub mod flatten;
 pub mod keys;
@@ -33,6 +34,7 @@ pub enum ConfigCommand {
     Schema(schema::SchemaArgs),
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
+    Diff(diff::DiffArgs),
 }
 
 pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
@@ -44,6 +46,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
         ConfigCommand::Schema(args) => schema::run(args),
         ConfigCommand::Type(args) => type_::run(args),
         ConfigCommand::Validate(args) => validate::run(args),
+        ConfigCommand::Diff(args) => diff::run(args),
     }
 }
 

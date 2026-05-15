@@ -1,3 +1,4 @@
+pub mod diff;
 pub mod exists;
 pub mod flatten;
 pub mod keys;
@@ -23,6 +24,7 @@ pub enum JsonCommand {
     Schema(schema::SchemaArgs),
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
+    Diff(diff::DiffArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
@@ -34,6 +36,7 @@ pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
         JsonCommand::Schema(args) => schema::run(args),
         JsonCommand::Type(args) => type_::run(args),
         JsonCommand::Validate(args) => validate::run(args),
+        JsonCommand::Diff(args) => diff::run(args),
     }
 }
 

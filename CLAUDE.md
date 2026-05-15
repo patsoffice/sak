@@ -11,8 +11,8 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg`
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
-- `sak json query|exists|keys|flatten|schema|type|validate` for `*.json`
-- `sak config query|exists|keys|flatten|schema|type|validate` for TOML, YAML, plist
+- `sak json query|exists|keys|flatten|schema|type|validate|diff` for `*.json`
+- `sak config query|exists|keys|flatten|schema|type|validate|diff` for TOML, YAML, plist
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops
@@ -66,7 +66,7 @@ The `k8s`, `lxc`, `docker`, `sqlite`, and `prom` cargo features are **all on by 
   - `sak <domain> <command> --help` — detailed options and examples
 - Future domains (e.g., `csv`) add new modules under `src/`
 - Git domain uses the `git2` crate (libgit2 bindings) — no shelling out to git
-- JSON and config domains share `serde_json::Value` as the internal representation; format-agnostic helpers (path parsing, value resolution, key collection, flattening, type names, `ArrayMode`) live in `src/value.rs` and are consumed by both domains
+- JSON and config domains share `serde_json::Value` as the internal representation; format-agnostic helpers (path parsing, value resolution, key collection, flattening, type names, `ArrayMode`, structural diff via `value::diff`) live in `src/value.rs` and are consumed by both domains. `sak json diff` and `sak config diff` both wrap the same `value::diff` helper and only differ in how they load inputs — cross-format diffs (e.g. TOML vs YAML) fall out for free because both formats normalize through `serde_json::Value`
 - Config domain parses TOML, YAML, and plist (XML and binary) into `serde_json::Value` via each format's serde integration; format auto-detected by extension or set with `--format` (required for stdin)
 - K8s domain talks to a live cluster via the `kube` crate using kubeconfig (or in-cluster service account). Gated behind the `k8s` cargo feature (on by default). The rest of sak stays sync — `k8s::run` builds a current-thread tokio runtime locally and `block_on`s the async dispatcher
 - K8s read-only enforcement is convention + a grep test in `src/k8s/client.rs`: every `kube::Api` call and every mutation method (`create`, `delete`, `patch`, ...) must live in `client.rs`. Any other module under `src/k8s/` that mentions those tokens fails the test. This is the cheapest credible defense — `kube` has no read-only client variant
