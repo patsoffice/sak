@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -94,6 +94,7 @@ sak fs --help
 sak git --help
 sak json --help
 sak config --help
+sak cert --help
 sak k8s --help            # default-on; --no-default-features removes it
 sak lxc --help            # default-on; --no-default-features removes it
 sak docker --help         # default-on; --no-default-features removes it
@@ -112,7 +113,7 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 
 ## Using SAK from an LLM agent
 
-SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
+SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
 2. **A set of pre-tool hooks that redirect raw read-only `git`, `kubectl`, `docker`, and `lxc` commands** to their `sak` equivalents, with a clear error message the agent can act on. (No `prom` hook — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)

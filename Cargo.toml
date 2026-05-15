@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.9.8"
+version = "0.10.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -60,7 +60,7 @@ docker = [
 # runtime. Read-only enforcement is OS-level (`SQLITE_OPEN_READ_ONLY`) plus
 # `PRAGMA query_only=ON` plus a chokepoint grep test in src/sqlite/client.rs,
 # which is strictly stronger than the convention-only k8s/lxc/docker pattern.
-sqlite = ["dep:rusqlite", "dep:base64"]
+sqlite = ["dep:rusqlite"]
 # `prom` talks to a Prometheus or Alertmanager HTTP API over TCP+TLS using
 # `ureq` (blocking) with rustls. Unlike `lxc`/`docker`, which speak unix
 # sockets, the prom domain hits remote endpoints, so hyper + hyperlocal is
@@ -81,6 +81,15 @@ serde_json = "1"
 toml = "0.8"
 serde_yaml = "0.9"
 plist = "1.6"
+# cert domain (always on — pure Rust, no native deps, no network). x509-parser
+# brings nom + asn1-rs + oid-registry for ASN.1/DER decoding; sha2 is used for
+# fingerprints; base64 (also used by `sqlite`) is needed to strip the base64
+# wrapping on `client-certificate-data` style fields. The combined footprint
+# is on the order of `serde_yaml`, so this lives alongside json/config rather
+# than behind an opt-in cargo feature.
+x509-parser = "0.16"
+sha2 = "0.10"
+base64 = { version = "0.22", default-features = false, features = ["std"] }
 # k8s domain (opt-in via the `k8s` feature). Minimal feature sets:
 # - kube: client + rustls-tls only; no runtime, derive, ws, oauth, oidc, gzip
 # - k8s-openapi: pinned to a single API version (never `latest`)
@@ -122,13 +131,6 @@ http-body-util = { version = "0.1", optional = true }
 # `PRAGMA query_only=ON`, plus a chokepoint grep test in src/sqlite/client.rs.
 rusqlite = { version = "0.32", default-features = false, features = [
     "bundled",
-], optional = true }
-# `base64` is used by `sak sqlite query` (and the dump command that shares its
-# row-formatting helpers) to render BLOB cells as base64 strings in both JSON
-# and TSV output. Gated on the `sqlite` feature so non-sqlite builds stay
-# unchanged.
-base64 = { version = "0.22", default-features = false, features = [
-    "std",
 ], optional = true }
 # prom domain (opt-in via the `prom` feature). Blocking HTTP+TLS to a remote
 # Prometheus or Alertmanager API. `default-features = false` strips gzip /

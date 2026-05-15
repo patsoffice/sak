@@ -1,3 +1,4 @@
+mod cert;
 mod config;
 #[cfg(feature = "docker")]
 mod docker;
@@ -55,7 +56,10 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config flatten Info.plist               Flatten any config file
   sak config paths config.yaml                List leaf paths (no values)
   sak config diff a.toml b.yaml               Cross-format structural diff
-  sak config validate config.toml             Check syntax validity",
+  sak config validate config.toml             Check syntax validity
+  sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
+  sak cert expiring --days 30 *.pem           Certs expiring within a window
+  sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs",
     );
     #[cfg(feature = "k8s")]
     s.push_str(
@@ -143,6 +147,9 @@ enum Command {
     /// Config file operations — TOML, YAML, plist (read-only)
     #[command(subcommand)]
     Config(config::ConfigCommand),
+    /// X.509 certificate inspection (read-only)
+    #[command(subcommand)]
+    Cert(cert::CertCommand),
     /// Kubernetes operations against a live cluster (read-only)
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
@@ -173,6 +180,7 @@ fn main() -> ExitCode {
         Command::Git(cmd) => git::run(cmd),
         Command::Json(cmd) => json::run(cmd),
         Command::Config(cmd) => config::run(cmd),
+        Command::Cert(cmd) => cert::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
