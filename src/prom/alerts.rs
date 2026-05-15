@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::output::{collapse_newlines, emit_json};
 
 #[derive(Args)]
 #[command(
@@ -141,15 +142,6 @@ pub(super) fn format_alert_row(row: &AlertRow) -> String {
     )
 }
 
-/// Collapse `\n` and `\r` in `s` to spaces. Same trick as
-/// `k8s::events::collapse_newlines` — implemented via `chars().map()`
-/// rather than `str::replace` so it doesn't bait the chokepoint grep test.
-fn collapse_newlines(s: &str) -> String {
-    s.chars()
-        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-        .collect()
-}
-
 /// Sort by `(state, alertname, instance)` for determinism.
 pub(super) fn sort_rows(rows: &mut [AlertRow]) {
     rows.sort_by(|a, b| {
@@ -242,20 +234,6 @@ pub fn run(args: &AlertsArgs) -> Result<ExitCode> {
     } else {
         ExitCode::from(1)
     })
-}
-
-fn emit_json(data: &Value, limit: Option<usize>) -> Result<ExitCode> {
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, limit);
-    let pretty = serde_json::to_string_pretty(data)?;
-    for line in pretty.lines() {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]

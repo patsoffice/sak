@@ -12,6 +12,8 @@
 //! is started with `--web.enable-admin-api`, so the chokepoint is genuinely
 //! guarding something, not just decorative.
 
+use std::io::Read;
+
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use ureq::Agent;
@@ -52,6 +54,13 @@ impl PromClient {
     /// directly. For Prometheus `/api/v1/*` endpoints, use
     /// [`PromClient::get_prom`], which unwraps the
     /// `{status, data, errorType?, error?}` envelope.
+    ///
+    /// The body is read via `into_reader()` rather than `into_string()`:
+    /// the latter caps at 10 MiB and `/api/v1/targets` (which carries the
+    /// full `discoveredLabels` set for every target) routinely exceeds that
+    /// on a real cluster. Input is otherwise unbounded — consistent with
+    /// the rest of sak (kube and the docker/lxc clients also buffer whole
+    /// API responses); `--limit` bounds *output*, not the response body.
     pub fn get_json(&self, path: &str) -> Result<Option<Value>> {
         let url = format!("{}{}", self.base_url, path);
         let response = match self.agent.get(&url).call() {
@@ -65,8 +74,10 @@ impl PromClient {
             }
             Err(e) => return Err(e).with_context(|| format!("GET {url}")),
         };
-        let body = response
-            .into_string()
+        let mut body = String::new();
+        response
+            .into_reader()
+            .read_to_string(&mut body)
             .with_context(|| format!("reading response body for GET {url}"))?;
         let value: Value = serde_json::from_str(&body)
             .with_context(|| format!("parsing JSON response for GET {url}"))?;

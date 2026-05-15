@@ -16,11 +16,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
-use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::duration::parse_duration;
+use crate::prom::output::emit_json;
 use crate::prom::query::{format_result, urlencode};
 
 #[derive(Args)]
@@ -128,20 +128,6 @@ fn unix_now() -> Result<u64> {
         .duration_since(UNIX_EPOCH)
         .map_err(|e| anyhow!("system clock is before the unix epoch: {e}"))?
         .as_secs())
-}
-
-fn emit_json(data: &Value, limit: Option<usize>) -> Result<ExitCode> {
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, limit);
-    let pretty = serde_json::to_string_pretty(data)?;
-    for line in pretty.lines() {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]

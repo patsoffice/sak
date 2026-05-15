@@ -23,6 +23,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::output::emit_json;
 
 #[derive(Args)]
 #[command(
@@ -234,20 +235,6 @@ pub(super) fn urlencode(s: &str) -> String {
         }
     }
     out
-}
-
-fn emit_json(data: &Value, limit: Option<usize>) -> Result<ExitCode> {
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, limit);
-    let pretty = serde_json::to_string_pretty(data)?;
-    for line in pretty.lines() {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]

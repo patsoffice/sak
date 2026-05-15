@@ -26,16 +26,19 @@ pub mod alerts;
 pub mod client;
 pub mod duration;
 pub mod histogram;
+pub mod output;
 pub mod query;
 pub mod range;
+pub mod rules;
+pub mod targets;
 
 use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Subcommand;
 
-/// Subcommands of `sak prom`. Subsequent commits add `targets`, `rules`,
-/// and `am alerts | silences`.
+/// Subcommands of `sak prom`. Subsequent commits add `am alerts | silences`
+/// (Alertmanager).
 #[derive(Subcommand)]
 pub enum PromCommand {
     /// List alerts on a Prometheus server
@@ -46,6 +49,10 @@ pub enum PromCommand {
     QueryRange(range::RangeArgs),
     /// Pretty-print a Prometheus histogram's buckets
     Histogram(histogram::HistogramArgs),
+    /// List scrape targets on a Prometheus server
+    Targets(targets::TargetsArgs),
+    /// List recording and alerting rules
+    Rules(rules::RulesArgs),
 }
 
 /// Dispatch a `sak prom` subcommand. Synchronous — no tokio runtime.
@@ -55,5 +62,7 @@ pub fn run(cmd: &PromCommand) -> Result<ExitCode> {
         PromCommand::Query(args) => query::run(args),
         PromCommand::QueryRange(args) => range::run(args),
         PromCommand::Histogram(args) => histogram::run(args),
+        PromCommand::Targets(args) => targets::run(args),
+        PromCommand::Rules(args) => rules::run(args),
     }
 }
