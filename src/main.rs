@@ -100,7 +100,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak prom query-range 'up' --since 1h        Range query over the last hour
   sak prom histogram apiserver_request_duration_seconds   Pretty-print buckets
   sak prom targets --down                     Unhealthy scrape targets
-  sak prom rules --firing                     Currently-firing rules",
+  sak prom rules --firing                     Currently-firing rules
+  sak prom am alerts                          Alertmanager active alerts
+  sak prom am silences                        Alertmanager active silences",
     );
     s
 });

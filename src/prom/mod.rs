@@ -23,6 +23,7 @@
 //! Adding `prom` does not pull tokio into the binary.
 
 pub mod alerts;
+pub mod am;
 pub mod client;
 pub mod duration;
 pub mod histogram;
@@ -37,8 +38,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Subcommand;
 
-/// Subcommands of `sak prom`. Subsequent commits add `am alerts | silences`
-/// (Alertmanager).
+/// Subcommands of `sak prom`.
 #[derive(Subcommand)]
 pub enum PromCommand {
     /// List alerts on a Prometheus server
@@ -53,6 +53,22 @@ pub enum PromCommand {
     Targets(targets::TargetsArgs),
     /// List recording and alerting rules
     Rules(rules::RulesArgs),
+    /// Alertmanager operations (alerts, silences)
+    #[command(subcommand)]
+    Am(AmCommand),
+}
+
+/// Sub-subcommands of `sak prom am`. Sibling to the other Prometheus
+/// commands; lives under `am` because Alertmanager has its own v2 API,
+/// its own URL/env var, and its own response shapes (arrays, not the
+/// Prom-style envelope) — folding it into the same enum would be
+/// misleading.
+#[derive(Subcommand)]
+pub enum AmCommand {
+    /// List alerts on an Alertmanager server
+    Alerts(am::AmAlertsArgs),
+    /// List silences on an Alertmanager server
+    Silences(am::AmSilencesArgs),
 }
 
 /// Dispatch a `sak prom` subcommand. Synchronous — no tokio runtime.
@@ -64,5 +80,9 @@ pub fn run(cmd: &PromCommand) -> Result<ExitCode> {
         PromCommand::Histogram(args) => histogram::run(args),
         PromCommand::Targets(args) => targets::run(args),
         PromCommand::Rules(args) => rules::run(args),
+        PromCommand::Am(sub) => match sub {
+            AmCommand::Alerts(args) => am::alerts(args),
+            AmCommand::Silences(args) => am::silences(args),
+        },
     }
 }
