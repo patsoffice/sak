@@ -6,6 +6,7 @@
 //! binary data all collapse to JSON-friendly representations) — acceptable for
 //! an LLM-facing read-only tool.
 
+pub mod exists;
 pub mod flatten;
 pub mod keys;
 pub mod query;
@@ -26,6 +27,7 @@ use serde_json::Value;
 #[derive(Subcommand)]
 pub enum ConfigCommand {
     Query(query::QueryArgs),
+    Exists(exists::ExistsArgs),
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Schema(schema::SchemaArgs),
@@ -36,6 +38,7 @@ pub enum ConfigCommand {
 pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
     match cmd {
         ConfigCommand::Query(args) => query::run(args),
+        ConfigCommand::Exists(args) => exists::run(args),
         ConfigCommand::Keys(args) => keys::run(args),
         ConfigCommand::Flatten(args) => flatten::run(args),
         ConfigCommand::Schema(args) => schema::run(args),

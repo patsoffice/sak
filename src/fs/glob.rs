@@ -155,7 +155,7 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
             let tb = b.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
             ta.cmp(&tb)
         }),
-        SortOrder::Size => results.sort_by(|(_, a), (_, b)| a.len().cmp(&b.len())),
+        SortOrder::Size => results.sort_by_key(|(_, a)| a.len()),
         SortOrder::None => {}
     }
 

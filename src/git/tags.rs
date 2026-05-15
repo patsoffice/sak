@@ -97,7 +97,7 @@ pub fn run(args: &TagsArgs) -> Result<ExitCode> {
 
     match args.sort {
         TagSort::Name => entries.sort_by(|a, b| a.0.cmp(&b.0)),
-        TagSort::Date => entries.sort_by(|a, b| b.1.cmp(&a.1)),
+        TagSort::Date => entries.sort_by_key(|b| std::cmp::Reverse(b.1)),
     }
 
     let stdout = io::stdout();

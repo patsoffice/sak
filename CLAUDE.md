@@ -11,8 +11,8 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg`
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
-- `sak json query|keys|flatten|schema|type|validate` for `*.json`
-- `sak config query|keys|flatten|schema|type|validate` for TOML, YAML, plist
+- `sak json query|exists|keys|flatten|schema|type|validate` for `*.json`
+- `sak config query|exists|keys|flatten|schema|type|validate` for TOML, YAML, plist
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops

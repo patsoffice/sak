@@ -1,3 +1,4 @@
+pub mod exists;
 pub mod flatten;
 pub mod keys;
 pub mod query;
@@ -16,6 +17,7 @@ use serde_json::Value;
 #[derive(Subcommand)]
 pub enum JsonCommand {
     Query(query::QueryArgs),
+    Exists(exists::ExistsArgs),
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Schema(schema::SchemaArgs),
@@ -26,6 +28,7 @@ pub enum JsonCommand {
 pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
     match cmd {
         JsonCommand::Query(args) => query::run(args),
+        JsonCommand::Exists(args) => exists::run(args),
         JsonCommand::Keys(args) => keys::run(args),
         JsonCommand::Flatten(args) => flatten::run(args),
         JsonCommand::Schema(args) => schema::run(args),
