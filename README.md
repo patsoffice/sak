@@ -273,8 +273,8 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg`
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of read-only `git`
-- `sak json query|keys|flatten|schema|validate` for `*.json`
-- `sak config query|keys|flatten|schema|validate` for TOML, YAML, plist
+- `sak json query|keys|flatten|schema|type|validate` for `*.json`
+- `sak config query|keys|flatten|schema|type|validate` for TOML, YAML, plist
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads

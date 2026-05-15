@@ -2,6 +2,7 @@ pub mod flatten;
 pub mod keys;
 pub mod query;
 pub mod schema;
+pub mod type_;
 pub mod validate;
 
 use std::io::{self, Read};
@@ -18,6 +19,7 @@ pub enum JsonCommand {
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Schema(schema::SchemaArgs),
+    Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
 }
 
@@ -27,6 +29,7 @@ pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
         JsonCommand::Keys(args) => keys::run(args),
         JsonCommand::Flatten(args) => flatten::run(args),
         JsonCommand::Schema(args) => schema::run(args),
+        JsonCommand::Type(args) => type_::run(args),
         JsonCommand::Validate(args) => validate::run(args),
     }
 }

@@ -10,6 +10,7 @@ pub mod flatten;
 pub mod keys;
 pub mod query;
 pub mod schema;
+pub mod type_;
 pub mod validate;
 
 use std::ffi::OsStr;
@@ -28,6 +29,7 @@ pub enum ConfigCommand {
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
     Schema(schema::SchemaArgs),
+    Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
 }
 
@@ -37,6 +39,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
         ConfigCommand::Keys(args) => keys::run(args),
         ConfigCommand::Flatten(args) => flatten::run(args),
         ConfigCommand::Schema(args) => schema::run(args),
+        ConfigCommand::Type(args) => type_::run(args),
         ConfigCommand::Validate(args) => validate::run(args),
     }
 }
