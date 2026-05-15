@@ -9,6 +9,7 @@
 pub mod diff;
 pub mod exists;
 pub mod flatten;
+pub mod grep;
 pub mod keys;
 pub mod query;
 pub mod schema;
@@ -31,6 +32,7 @@ pub enum ConfigCommand {
     Exists(exists::ExistsArgs),
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
+    Grep(grep::GrepArgs),
     Schema(schema::SchemaArgs),
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
@@ -43,6 +45,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
         ConfigCommand::Exists(args) => exists::run(args),
         ConfigCommand::Keys(args) => keys::run(args),
         ConfigCommand::Flatten(args) => flatten::run(args),
+        ConfigCommand::Grep(args) => grep::run(args),
         ConfigCommand::Schema(args) => schema::run(args),
         ConfigCommand::Type(args) => type_::run(args),
         ConfigCommand::Validate(args) => validate::run(args),

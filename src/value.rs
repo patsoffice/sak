@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
+use regex::Regex;
 use serde_json::Value;
 
 /// A single segment in a parsed dot-notation path.
@@ -397,6 +398,122 @@ pub fn format_diff_entry(entry: &DiffEntry) -> String {
             encode(entry.new.as_ref().unwrap())
         ),
     }
+}
+
+/// JSON-type filter for structural grep.
+///
+/// Variant names map directly to [`type_name`] output (lowercased by clap on the
+/// CLI: `--type string`, `--type number`, ...).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum TypeFilter {
+    String,
+    Number,
+    Boolean,
+    Null,
+    Array,
+    Object,
+}
+
+impl TypeFilter {
+    /// Returns true if `value` is of this type.
+    pub fn matches(self, value: &Value) -> bool {
+        match self {
+            TypeFilter::String => value.is_string(),
+            TypeFilter::Number => value.is_number(),
+            TypeFilter::Boolean => value.is_boolean(),
+            TypeFilter::Null => value.is_null(),
+            TypeFilter::Array => value.is_array(),
+            TypeFilter::Object => value.is_object(),
+        }
+    }
+}
+
+/// Which axis to match against in [`grep`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GrepMode {
+    /// Test the pattern against object keys.
+    Keys,
+    /// Test the pattern against scalar leaf values.
+    Values,
+}
+
+/// Walk `value` and return paths whose key or scalar value matches `pattern`.
+///
+/// In [`GrepMode::Keys`] the pattern is tested against each object key; matching
+/// entries emit `(path-to-value, value)`. Array indices are never tested but
+/// arrays are still descended into. In [`GrepMode::Values`] the pattern is
+/// tested against the string form of each scalar leaf — unquoted for
+/// `Value::String`, the JSON text for numbers (`"30"`), booleans (`"true"`),
+/// and null (`"null"`). Matching leaves emit `(path-to-leaf, value)`. When
+/// `type_filter` is supplied, only matches whose value is of that JSON type
+/// are emitted.
+///
+/// Object keys are visited in sorted order so the returned vector is
+/// deterministic and already sorted by path. Paths use the leading-dot dot
+/// notation shared with [`format_diff_entry`] and `json schema`
+/// (e.g. `.users[0].name`); the empty root path is represented by the empty
+/// string and rendered as `(root)` by callers via [`format_grep_path`].
+pub fn grep<'a>(
+    value: &'a Value,
+    pattern: &Regex,
+    mode: GrepMode,
+    type_filter: Option<TypeFilter>,
+) -> Vec<(String, &'a Value)> {
+    let mut out = Vec::new();
+    grep_walk(value, "", pattern, mode, type_filter, &mut out);
+    out
+}
+
+fn grep_walk<'a>(
+    value: &'a Value,
+    prefix: &str,
+    pattern: &Regex,
+    mode: GrepMode,
+    type_filter: Option<TypeFilter>,
+    out: &mut Vec<(String, &'a Value)>,
+) {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (k, v) in entries {
+                let path = format!("{}.{}", prefix, k);
+                if mode == GrepMode::Keys
+                    && pattern.is_match(k)
+                    && type_filter.is_none_or(|t| t.matches(v))
+                {
+                    out.push((path.clone(), v));
+                }
+                grep_walk(v, &path, pattern, mode, type_filter, out);
+            }
+        }
+        Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                let path = format!("{}[{}]", prefix, i);
+                grep_walk(v, &path, pattern, mode, type_filter, out);
+            }
+        }
+        _ => {
+            if mode == GrepMode::Values {
+                let s = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => "null".to_string(),
+                    _ => unreachable!("scalar branch"),
+                };
+                if pattern.is_match(&s) && type_filter.is_none_or(|t| t.matches(value)) {
+                    out.push((prefix.to_string(), value));
+                }
+            }
+        }
+    }
+}
+
+/// Render a grep result path for output. The empty path is shown as `(root)`
+/// (matches [`format_diff_entry`] and `json schema`).
+pub fn format_grep_path(path: &str) -> &str {
+    if path.is_empty() { "(root)" } else { path }
 }
 
 #[cfg(test)]
@@ -818,5 +935,158 @@ mod tests {
             new: Some(json!(2)),
         };
         assert_eq!(format_diff_entry(&e), "~ (root)\t1 -> 2");
+    }
+
+    fn grep_paths(
+        v: &Value,
+        pattern: &str,
+        mode: GrepMode,
+        type_filter: Option<TypeFilter>,
+    ) -> Vec<String> {
+        let re = Regex::new(pattern).unwrap();
+        grep(v, &re, mode, type_filter)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
+    }
+
+    #[test]
+    fn grep_keys_top_level() {
+        let v = json!({"name": "alice", "age": 30});
+        assert_eq!(
+            grep_paths(&v, "name", GrepMode::Keys, None),
+            vec![".name".to_string()]
+        );
+    }
+
+    #[test]
+    fn grep_keys_nested() {
+        let v = json!({"server": {"port": 80}, "client": {"port": 81}});
+        let mut paths = grep_paths(&v, "port", GrepMode::Keys, None);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![".client.port".to_string(), ".server.port".to_string()]
+        );
+    }
+
+    #[test]
+    fn grep_keys_prefix_pattern() {
+        let v = json!({"aws_region": "us-east-1", "aws_profile": "dev", "port": 80});
+        let paths = grep_paths(&v, "^aws_", GrepMode::Keys, None);
+        // sorted order: aws_profile before aws_region
+        assert_eq!(
+            paths,
+            vec![".aws_profile".to_string(), ".aws_region".to_string()]
+        );
+    }
+
+    #[test]
+    fn grep_keys_inside_arrays() {
+        let v = json!({"users": [{"name": "alice"}, {"name": "bob"}]});
+        let paths = grep_paths(&v, "name", GrepMode::Keys, None);
+        assert_eq!(
+            paths,
+            vec![".users[0].name".to_string(), ".users[1].name".to_string(),]
+        );
+    }
+
+    #[test]
+    fn grep_keys_does_not_match_indices() {
+        // Array indices aren't keys: pattern `0` should match the key "0_foo"
+        // but never an index even when it's "0".
+        let v = json!({"items": [1, 2], "0_foo": "x"});
+        let paths = grep_paths(&v, "^0", GrepMode::Keys, None);
+        assert_eq!(paths, vec![".0_foo".to_string()]);
+    }
+
+    #[test]
+    fn grep_values_string_match() {
+        let v = json!({"a": "alice", "b": "bob", "c": "alfonso"});
+        let paths = grep_paths(&v, "^al", GrepMode::Values, None);
+        assert_eq!(paths, vec![".a".to_string(), ".c".to_string()]);
+    }
+
+    #[test]
+    fn grep_values_string_unquoted() {
+        // The pattern is tested against the raw string, not the JSON-encoded
+        // form — so `"hello"` (5 chars) should match `^hello$`.
+        let v = json!({"greeting": "hello"});
+        let paths = grep_paths(&v, "^hello$", GrepMode::Values, None);
+        assert_eq!(paths, vec![".greeting".to_string()]);
+    }
+
+    #[test]
+    fn grep_values_match_numbers_and_bools() {
+        let v = json!({"port": 8080, "enabled": true, "missing": null});
+        let mut paths = grep_paths(&v, "^(8080|true|null)$", GrepMode::Values, None);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                ".enabled".to_string(),
+                ".missing".to_string(),
+                ".port".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn grep_values_skips_containers() {
+        // Pattern would textually match `[1,2]` if we encoded the array,
+        // but containers are descended into rather than matched as leaves.
+        let v = json!({"a": [1, 2]});
+        let paths = grep_paths(&v, ",", GrepMode::Values, None);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn grep_root_scalar() {
+        let v = json!("just a string");
+        let paths = grep_paths(&v, "string", GrepMode::Values, None);
+        assert_eq!(paths, vec!["".to_string()]);
+        assert_eq!(format_grep_path(&paths[0]), "(root)");
+    }
+
+    #[test]
+    fn grep_type_filter_strings_only() {
+        let v = json!({"a": "x", "b": 1, "ax": "y", "bx": 2});
+        // Match any key starting with "a" or "b", but only emit strings.
+        let paths = grep_paths(&v, "^[ab]", GrepMode::Keys, Some(TypeFilter::String));
+        assert_eq!(paths, vec![".a".to_string(), ".ax".to_string()]);
+    }
+
+    #[test]
+    fn grep_type_filter_arrays_only() {
+        let v = json!({"items": [1, 2], "items_count": 2});
+        let paths = grep_paths(&v, "^items", GrepMode::Keys, Some(TypeFilter::Array));
+        assert_eq!(paths, vec![".items".to_string()]);
+    }
+
+    #[test]
+    fn grep_match_emits_value_reference() {
+        let v = json!({"port": 8080});
+        let re = Regex::new("port").unwrap();
+        let hits = grep(&v, &re, GrepMode::Keys, None);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].0, ".port");
+        assert_eq!(hits[0].1, &json!(8080));
+    }
+
+    #[test]
+    fn grep_output_sorted_by_path() {
+        // Object keys are visited in sorted order — output should already be sorted.
+        let v = json!({"z": 1, "m": 2, "a": 3});
+        let paths = grep_paths(&v, ".", GrepMode::Keys, None);
+        assert_eq!(
+            paths,
+            vec![".a".to_string(), ".m".to_string(), ".z".to_string()]
+        );
+    }
+
+    #[test]
+    fn format_grep_path_root() {
+        assert_eq!(format_grep_path(""), "(root)");
+        assert_eq!(format_grep_path(".a"), ".a");
     }
 }
