@@ -1,15 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
-use serde_json::Value;
 
 use crate::json::read_json_inputs;
 use crate::output::BoundedWriter;
-use crate::value::type_name;
+use crate::value::{SchemaMap, collect_schema, format_schema_types, type_name};
 
 #[derive(Args)]
 #[command(
@@ -40,46 +39,6 @@ pub struct SchemaArgs {
     pub limit: Option<usize>,
 }
 
-type Schema = BTreeMap<String, BTreeSet<&'static str>>;
-
-fn collect(
-    value: &Value,
-    prefix: &str,
-    current_depth: usize,
-    max_depth: Option<usize>,
-    out: &mut Schema,
-) {
-    let at_max = matches!(max_depth, Some(d) if current_depth >= d);
-
-    match value {
-        Value::Object(map) if !at_max => {
-            for (k, v) in map {
-                let path = format!("{}.{}", prefix, k);
-                out.entry(path.clone()).or_default().insert(type_name(v));
-                collect(v, &path, current_depth + 1, max_depth, out);
-            }
-        }
-        Value::Array(arr) if !at_max => {
-            let path = format!("{}[]", prefix);
-            if arr.is_empty() {
-                // No element type known; record nothing extra. The parent
-                // entry already states "array".
-                return;
-            }
-            for elem in arr {
-                out.entry(path.clone()).or_default().insert(type_name(elem));
-                collect(elem, &path, current_depth + 1, max_depth, out);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn format_types(types: &BTreeSet<&'static str>) -> String {
-    let v: Vec<&&str> = types.iter().collect();
-    v.iter().map(|s| **s).collect::<Vec<_>>().join("|")
-}
-
 pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
     let inputs = read_json_inputs(&args.files)?;
 
@@ -89,14 +48,14 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
 
     let mut any = false;
     for (_name, value) in &inputs {
-        let mut schema = Schema::new();
+        let mut schema = SchemaMap::new();
 
         // Record the root type as "(root): <type>"
         let mut root_types = BTreeSet::new();
         root_types.insert(type_name(value));
         schema.insert(String::new(), root_types);
 
-        collect(value, "", 0, args.depth, &mut schema);
+        collect_schema(value, "", 0, args.depth, &mut schema);
 
         for (path, types) in &schema {
             any = true;
@@ -105,7 +64,7 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
             } else {
                 path.clone()
             };
-            let line = format!("{}: {}", label, format_types(types));
+            let line = format!("{}: {}", label, format_schema_types(types));
             if !writer.write_line(&line)? {
                 writer.flush()?;
                 return Ok(ExitCode::SUCCESS);
@@ -124,14 +83,14 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn schema_of(v: &Value) -> Vec<String> {
-        let mut s = Schema::new();
+        let mut s = SchemaMap::new();
         let mut roots = BTreeSet::new();
         roots.insert(type_name(v));
         s.insert(String::new(), roots);
-        collect(v, "", 0, None, &mut s);
+        collect_schema(v, "", 0, None, &mut s);
         s.into_iter()
             .map(|(p, t)| {
                 let label = if p.is_empty() {
@@ -139,7 +98,7 @@ mod tests {
                 } else {
                     p
                 };
-                format!("{}: {}", label, format_types(&t))
+                format!("{}: {}", label, format_schema_types(&t))
             })
             .collect()
     }
@@ -220,11 +179,11 @@ mod tests {
     #[test]
     fn schema_max_depth() {
         let v = json!({"a": {"b": {"c": 1}}});
-        let mut s = Schema::new();
+        let mut s = SchemaMap::new();
         let mut roots = BTreeSet::new();
         roots.insert(type_name(&v));
         s.insert(String::new(), roots);
-        collect(&v, "", 0, Some(2), &mut s);
+        collect_schema(&v, "", 0, Some(2), &mut s);
         // depth 2: see .a (depth 1) and .a.b (depth 2), but not .a.b.c
         assert!(s.contains_key(".a"));
         assert!(s.contains_key(".a.b"));

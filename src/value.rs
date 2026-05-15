@@ -5,7 +5,7 @@
 //! resolution, key collection, flattening, and type naming all live here so the
 //! command implementations can stay format-neutral.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
@@ -224,6 +224,55 @@ pub fn flatten_value(
     }
 }
 
+/// Mapping from dot-path to the set of types observed at that path.
+///
+/// Used by the schema commands (`json schema`, `config schema`) to accumulate
+/// types across array elements and produce union types where shapes differ.
+pub type SchemaMap = BTreeMap<String, BTreeSet<&'static str>>;
+
+/// Walk `value` and populate `out` with the inferred structural schema.
+///
+/// Each object key becomes a `prefix.key` entry; each array becomes a
+/// `prefix[]` entry whose value type is the union of all element types.
+/// Recursion stops at `max_depth` (None = unbounded). The caller is responsible
+/// for seeding the root entry (e.g., `"" -> type_name(root)`).
+pub fn collect_schema(
+    value: &Value,
+    prefix: &str,
+    current_depth: usize,
+    max_depth: Option<usize>,
+    out: &mut SchemaMap,
+) {
+    let at_max = matches!(max_depth, Some(d) if current_depth >= d);
+
+    match value {
+        Value::Object(map) if !at_max => {
+            for (k, v) in map {
+                let path = format!("{}.{}", prefix, k);
+                out.entry(path.clone()).or_default().insert(type_name(v));
+                collect_schema(v, &path, current_depth + 1, max_depth, out);
+            }
+        }
+        Value::Array(arr) if !at_max => {
+            let path = format!("{}[]", prefix);
+            if arr.is_empty() {
+                // No element type known; the parent entry already records "array".
+                return;
+            }
+            for elem in arr {
+                out.entry(path.clone()).or_default().insert(type_name(elem));
+                collect_schema(elem, &path, current_depth + 1, max_depth, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Format a set of type names as a pipe-separated union (e.g. `"number|string"`).
+pub fn format_schema_types(types: &BTreeSet<&'static str>) -> String {
+    types.iter().copied().collect::<Vec<_>>().join("|")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,5 +456,52 @@ mod tests {
         let mut out = BTreeMap::new();
         flatten_value(&v, "", "/", 0, None, ArrayMode::Index, &mut out);
         assert_eq!(out.get("a/b"), Some(&"1".to_string()));
+    }
+
+    fn schema_of(v: &Value, max_depth: Option<usize>) -> SchemaMap {
+        let mut out = SchemaMap::new();
+        let mut roots = BTreeSet::new();
+        roots.insert(type_name(v));
+        out.insert(String::new(), roots);
+        collect_schema(v, "", 0, max_depth, &mut out);
+        out
+    }
+
+    #[test]
+    fn schema_object_keys() {
+        let s = schema_of(&json!({"a": 1, "b": "x"}), None);
+        assert_eq!(s.get("").unwrap().iter().next(), Some(&"object"));
+        assert_eq!(s.get(".a").unwrap().iter().next(), Some(&"number"));
+        assert_eq!(s.get(".b").unwrap().iter().next(), Some(&"string"));
+    }
+
+    #[test]
+    fn schema_array_unions_element_types() {
+        let s = schema_of(&json!([1, "x", true]), None);
+        let elems: Vec<&&str> = s.get("[]").unwrap().iter().collect();
+        assert_eq!(elems, vec![&"boolean", &"number", &"string"]);
+    }
+
+    #[test]
+    fn schema_empty_array_no_element_entry() {
+        let s = schema_of(&json!({"a": []}), None);
+        assert!(s.contains_key(".a"));
+        assert!(!s.contains_key(".a[]"));
+    }
+
+    #[test]
+    fn schema_respects_max_depth() {
+        let s = schema_of(&json!({"a": {"b": {"c": 1}}}), Some(2));
+        assert!(s.contains_key(".a"));
+        assert!(s.contains_key(".a.b"));
+        assert!(!s.contains_key(".a.b.c"));
+    }
+
+    #[test]
+    fn format_schema_types_joins_with_pipe() {
+        let mut s = BTreeSet::new();
+        s.insert("number");
+        s.insert("string");
+        assert_eq!(format_schema_types(&s), "number|string");
     }
 }
