@@ -1,5 +1,6 @@
 mod cert;
 mod config;
+mod csv;
 #[cfg(feature = "docker")]
 mod docker;
 mod fs;
@@ -59,6 +60,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config paths config.yaml                List leaf paths (no values)
   sak config diff a.toml b.yaml               Cross-format structural diff
   sak config validate config.toml             Check syntax validity
+  sak csv headers data.csv                    List CSV column names and indices
   sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
   sak cert expiring --days 30 *.pem           Certs expiring within a window
   sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
@@ -160,6 +162,9 @@ enum Command {
     /// Config file operations — TOML, YAML, plist (read-only)
     #[command(subcommand)]
     Config(config::ConfigCommand),
+    /// CSV operations (read-only)
+    #[command(subcommand)]
+    Csv(csv::CsvCommand),
     /// X.509 certificate inspection (read-only)
     #[command(subcommand)]
     Cert(cert::CertCommand),
@@ -199,6 +204,7 @@ fn main() -> ExitCode {
         Command::Git(cmd) => git::run(cmd),
         Command::Json(cmd) => json::run(cmd),
         Command::Config(cmd) => config::run(cmd),
+        Command::Csv(cmd) => csv::run(cmd),
         Command::Cert(cmd) => cert::run(cmd),
         Command::Talos(cmd) => talos::run(cmd),
         #[cfg(feature = "k8s")]

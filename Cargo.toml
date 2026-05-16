@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.12.2"
+version = "0.13.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -76,6 +76,12 @@ walkdir = "2"
 regex = "1"
 anyhow = "1"
 git2 = "0.20"
+# csv domain (always on — small, pure-Rust). The `csv` crate handles RFC 4180
+# parsing including quoted fields, embedded newlines, and configurable
+# delimiters. From inside `src/csv/` the bare name `csv` resolves to this
+# external crate via Rust's extern_prelude; the local `mod csv;` only shadows
+# at the crate root (main.rs), which doesn't need to import the crate.
+csv = "1.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
