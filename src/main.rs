@@ -61,6 +61,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config diff a.toml b.yaml               Cross-format structural diff
   sak config validate config.toml             Check syntax validity
   sak csv headers data.csv                    List CSV column names and indices
+  sak csv validate data.csv                   Check CSV structure / parse errors
   sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
   sak cert expiring --days 30 *.pem           Certs expiring within a window
   sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
