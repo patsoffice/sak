@@ -184,7 +184,7 @@ The rule set lives in `src/hook/claude_code.rs` with an inline test suite that p
 
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
-The hook above catches most CLI-shaped mistakes, but it can't redirect things that have no canonical CLI — Prometheus and Alertmanager are the big ones (`sak prom alerts|query|query-range|histogram|targets|rules|am alerts|am silences` vs. ad-hoc `curl + jq` against the HTTP API). It also won't *teach* the agent the underlying habit — when the agent reaches for `sed -n '10,20p'`, the hook stays silent, and the agent thinks it solved the problem. A project instruction file fills both gaps. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
+The hook above catches most CLI-shaped mistakes, but it can't redirect things that have no canonical CLI — Prometheus and Alertmanager are the big ones (`sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences` vs. ad-hoc `curl + jq` against the HTTP API). It also won't *teach* the agent the underlying habit — when the agent reaches for `sed -n '10,20p'`, the hook stays silent, and the agent thinks it solved the problem. A project instruction file fills both gaps. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
 
 ```markdown
 ## Use sak as your tool
@@ -205,7 +205,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
-- `sak prom alerts|query|query-range|histogram|targets|rules|am alerts|am silences`
+- `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API
 
 Discover flags with `sak <domain> <command> --help`. If you want a sak

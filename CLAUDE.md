@@ -19,11 +19,13 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` read ops
-- `sak prom alerts|query|query-range|histogram|targets|rules|am alerts|am silences` instead of `curl + jq + base64` against a Prometheus or Alertmanager API
+- `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences` instead of `curl + jq + base64` against a Prometheus or Alertmanager API
 
 The harness's built-in Glob/Read/Grep tools are still fine — and the rule against using bash for `cat`/`head`/`find`/`grep` still applies — but when you *do* reach for a CLI in this repo, reach for `sak`. Run `cargo run --quiet -- <domain> <command> --help` (or, after `cargo install --path .`, just `sak <domain> <command> --help`) to discover flags. If you find yourself wanting a sak command that doesn't exist yet, that's a signal to add it rather than fall back to shell.
 
 ## Build & Test
+
+The repo ships a Nix `flake.nix` + `.envrc` that pins the Rust toolchain and a C compiler. If your shell wasn't started inside the dev shell (no `cc` / `cargo` on PATH, or `cargo build` fails with `linker 'cc' not found`), prefix the relevant command with `nix develop -c` — e.g. `nix develop -c cargo build`, `nix develop -c cargo test`, `nix develop -c cargo clippy …`, `nix develop -c cargo fmt`. The dev shell is the source of truth for the toolchain; don't try to install a system Rust to work around it.
 
 ```bash
 cargo build                                                     # Build (default features = k8s + lxc + docker + sqlite + prom)

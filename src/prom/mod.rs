@@ -26,12 +26,19 @@ pub mod alerts;
 pub mod am;
 pub mod client;
 pub mod duration;
+pub mod flags;
 pub mod histogram;
+pub mod label_values;
+pub mod labels;
+pub mod metadata;
 pub mod output;
+pub mod prom_config;
 pub mod query;
 pub mod range;
 pub mod rules;
+pub mod series;
 pub mod targets;
+pub mod tsdb;
 
 use std::process::ExitCode;
 
@@ -53,6 +60,20 @@ pub enum PromCommand {
     Targets(targets::TargetsArgs),
     /// List recording and alerting rules
     Rules(rules::RulesArgs),
+    /// List all label names
+    Labels(labels::LabelsArgs),
+    /// List values for one label
+    LabelValues(label_values::LabelValuesArgs),
+    /// List series matching a label selector
+    Series(series::SeriesArgs),
+    /// Metric metadata (type, help, unit)
+    Metadata(metadata::MetadataArgs),
+    /// Top-K cardinality offenders (TSDB status)
+    TsdbStats(tsdb::TsdbStatsArgs),
+    /// Daemon command-line flags
+    Flags(flags::FlagsArgs),
+    /// Prometheus runtime YAML config
+    Config(prom_config::ConfigArgs),
     /// Alertmanager operations (alerts, silences)
     #[command(subcommand)]
     Am(AmCommand),
@@ -80,6 +101,13 @@ pub fn run(cmd: &PromCommand) -> Result<ExitCode> {
         PromCommand::Histogram(args) => histogram::run(args),
         PromCommand::Targets(args) => targets::run(args),
         PromCommand::Rules(args) => rules::run(args),
+        PromCommand::Labels(args) => labels::run(args),
+        PromCommand::LabelValues(args) => label_values::run(args),
+        PromCommand::Series(args) => series::run(args),
+        PromCommand::Metadata(args) => metadata::run(args),
+        PromCommand::TsdbStats(args) => tsdb::run(args),
+        PromCommand::Flags(args) => flags::run(args),
+        PromCommand::Config(args) => prom_config::run(args),
         PromCommand::Am(sub) => match sub {
             AmCommand::Alerts(args) => am::alerts(args),
             AmCommand::Silences(args) => am::silences(args),

@@ -115,6 +115,13 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak prom histogram apiserver_request_duration_seconds   Pretty-print buckets
   sak prom targets --down                     Unhealthy scrape targets
   sak prom rules --firing                     Currently-firing rules
+  sak prom labels                             List all label names
+  sak prom label-values namespace             Values of one label
+  sak prom series 'up'                        Series matching a selector
+  sak prom metadata up                        Type/help/unit for a metric
+  sak prom tsdb-stats                         Top-K cardinality offenders
+  sak prom flags                              Daemon command-line flags
+  sak prom config                             Daemon YAML config
   sak prom am alerts                          Alertmanager active alerts
   sak prom am silences                        Alertmanager active silences",
     );
