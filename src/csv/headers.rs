@@ -51,8 +51,9 @@ pub(super) fn parse_delimiter(s: &str) -> Result<u8> {
     Ok(bytes[0])
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InferredType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum InferredType {
+    #[default]
     Empty,
     Bool,
     Integer,
@@ -61,7 +62,7 @@ enum InferredType {
 }
 
 impl InferredType {
-    fn promote(self, other: InferredType) -> InferredType {
+    pub(super) fn promote(self, other: InferredType) -> InferredType {
         use InferredType::*;
         match (self, other) {
             (Empty, t) | (t, Empty) => t,
@@ -73,7 +74,7 @@ impl InferredType {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             InferredType::Empty => "empty",
             InferredType::Bool => "bool",
@@ -82,9 +83,13 @@ impl InferredType {
             InferredType::String => "string",
         }
     }
+
+    pub(super) fn is_numeric(self) -> bool {
+        matches!(self, InferredType::Integer | InferredType::Float)
+    }
 }
 
-fn infer_cell(s: &str) -> InferredType {
+pub(super) fn infer_cell(s: &str) -> InferredType {
     if s.is_empty() {
         return InferredType::Empty;
     }

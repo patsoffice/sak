@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
 
 ## Design Decisions
 
@@ -94,6 +94,7 @@ sak fs --help
 sak git --help
 sak json --help
 sak config --help
+sak csv --help
 sak cert --help
 sak talos --help
 sak k8s --help            # default-on; --no-default-features removes it
@@ -201,6 +202,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak git status|log|diff|blame|show` instead of read-only `git`
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
+- `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads
@@ -272,6 +274,3 @@ Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `ku
 
 Dev dependencies: `criterion` (benchmarks), `tempfile` (test fixtures).
 
-## Planned Domains
-
-- `csv` — CSV filtering and projection
