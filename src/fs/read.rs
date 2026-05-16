@@ -27,7 +27,7 @@ pub struct ReadArgs {
     pub file: PathBuf,
 
     /// Line range to read (e.g., "1-50", "100-", "-20")
-    #[arg(short = 'n', long = "lines")]
+    #[arg(short = 'n', long = "lines", allow_hyphen_values = true)]
     pub lines: Option<String>,
 
     /// Omit line numbers from output
@@ -168,6 +168,32 @@ pub fn run(args: &ReadArgs) -> Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    /// Wrapper so we can drive `ReadArgs` through clap parsing in tests.
+    #[derive(Parser)]
+    struct ReadCli {
+        #[command(flatten)]
+        args: ReadArgs,
+    }
+
+    #[test]
+    fn test_clap_parses_negative_n() {
+        let cli = ReadCli::try_parse_from(["read", "file.txt", "-n", "-20"]).unwrap();
+        assert_eq!(cli.args.lines.as_deref(), Some("-20"));
+        let (s, e) = parse_line_range(cli.args.lines.as_deref().unwrap()).unwrap();
+        assert_eq!(s, None);
+        assert_eq!(e, Some(20));
+    }
+
+    #[test]
+    fn test_clap_parses_range_forms() {
+        // Make sure allow_hyphen_values didn't regress the other forms.
+        let cli = ReadCli::try_parse_from(["read", "file.txt", "-n", "1-50"]).unwrap();
+        assert_eq!(cli.args.lines.as_deref(), Some("1-50"));
+        let cli = ReadCli::try_parse_from(["read", "file.txt", "-n", "100-"]).unwrap();
+        assert_eq!(cli.args.lines.as_deref(), Some("100-"));
+    }
 
     #[test]
     fn test_parse_range_full() {
