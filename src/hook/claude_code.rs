@@ -1,0 +1,625 @@
+//! Claude Code pre-tool-use hook.
+//!
+//! Reads the Claude Code `PreToolUse` JSON payload from stdin and decides
+//! whether the about-to-run Bash command should be redirected to a `sak`
+//! equivalent. Exits 0 to allow, exits 2 with a stderr message to block.
+//! Set `SAK_HOOK_BYPASS=1` in the Bash command's environment to disable the
+//! hook for one call.
+//!
+//! Configure in `~/.claude/settings.json`:
+//!
+//! ```json
+//! {
+//!   "hooks": {
+//!     "PreToolUse": [
+//!       {
+//!         "matcher": "Bash",
+//!         "hooks": [{ "type": "command", "command": "sak hook claude-code" }]
+//!       }
+//!     ]
+//!   }
+//! }
+//! ```
+
+use std::io::{self, Read};
+use std::process::ExitCode;
+
+use anyhow::Result;
+use clap::Args;
+use serde::Deserialize;
+
+#[derive(Args)]
+#[command(
+    about = "Pre-tool-use hook for Claude Code",
+    long_about = "Pre-tool-use hook for Claude Code (claude.com/claude-code).\n\n\
+        Reads the harness's PreToolUse JSON payload from stdin. When the \
+        about-to-run Bash command has a read-only `sak` equivalent, exit 2 \
+        with a stderr message naming the replacement (Claude Code surfaces \
+        that message back to the model). All other commands pass through with \
+        exit 0.\n\n\
+        Set SAK_HOOK_BYPASS=1 in the Bash command's environment to disable the \
+        hook for one call.",
+    after_help = "\
+Configure in ~/.claude/settings.json:
+
+  {
+    \"hooks\": {
+      \"PreToolUse\": [
+        {
+          \"matcher\": \"Bash\",
+          \"hooks\": [{ \"type\": \"command\", \"command\": \"sak hook claude-code\" }]
+        }
+      ]
+    }
+  }
+
+Examples:
+  sak hook claude-code                   Read JSON payload from stdin (normal use)
+  sak hook claude-code --check 'git log' Test a command directly (no stdin)
+  SAK_HOOK_BYPASS=1 git status           One-shot escape hatch"
+)]
+pub struct ClaudeCodeArgs {
+    /// Classify this command string directly instead of reading stdin.
+    /// Intended for debugging the rule set from the shell.
+    #[arg(long, value_name = "COMMAND")]
+    pub check: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HookPayload {
+    #[serde(default)]
+    tool_name: String,
+    #[serde(default)]
+    tool_input: ToolInput,
+}
+
+#[derive(Default, Deserialize)]
+struct ToolInput {
+    #[serde(default)]
+    command: String,
+}
+
+pub fn run(args: &ClaudeCodeArgs) -> Result<ExitCode> {
+    if std::env::var("SAK_HOOK_BYPASS").as_deref() == Ok("1") {
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let command = match &args.check {
+        Some(cmd) => cmd.clone(),
+        None => {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            // Empty stdin → nothing to check.
+            if buf.trim().is_empty() {
+                return Ok(ExitCode::SUCCESS);
+            }
+            let payload: HookPayload = match serde_json::from_str(&buf) {
+                Ok(p) => p,
+                // Malformed JSON shouldn't block real work — fail open.
+                Err(_) => return Ok(ExitCode::SUCCESS),
+            };
+            // Only intercept Bash tool calls.
+            if payload.tool_name != "Bash" {
+                return Ok(ExitCode::SUCCESS);
+            }
+            payload.tool_input.command
+        }
+    };
+
+    if command.trim().is_empty() {
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if let Some(msg) = classify(&command) {
+        eprintln!("{}", msg);
+        return Ok(ExitCode::from(2));
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+const BYPASS_HINT: &str = " Set SAK_HOOK_BYPASS=1 to override.";
+
+/// Classify a full command string. Splits on shell separators (|, ||, &&, ;, &)
+/// while respecting quotes, then evaluates each piece. First block wins.
+pub(crate) fn classify(command: &str) -> Option<String> {
+    for part in split_pipeline(command) {
+        let tokens = tokenize(&part);
+        let tokens = strip_env_assignments(tokens);
+        if tokens.is_empty() {
+            continue;
+        }
+        if let Some(msg) = check(&tokens) {
+            return Some(msg);
+        }
+    }
+    None
+}
+
+/// Split on `|`, `||`, `&&`, `;`, `&` outside of single/double quotes and
+/// outside of backslash escapes.
+fn split_pipeline(cmd: &str) -> Vec<String> {
+    let bytes = cmd.as_bytes();
+    let mut parts = Vec::new();
+    let mut buf = String::new();
+    let mut i = 0;
+    let n = bytes.len();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    while i < n {
+        let c = bytes[i] as char;
+        if in_single {
+            buf.push(c);
+            if c == '\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            if c == '\\' && i + 1 < n {
+                buf.push(c);
+                buf.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            buf.push(c);
+            if c == '"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '\'' {
+            in_single = true;
+            buf.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_double = true;
+            buf.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '\\' && i + 1 < n {
+            buf.push(c);
+            buf.push(bytes[i + 1] as char);
+            i += 2;
+            continue;
+        }
+        if c == '|' {
+            push_trimmed(&mut parts, &mut buf);
+            i += if i + 1 < n && bytes[i + 1] == b'|' {
+                2
+            } else {
+                1
+            };
+            continue;
+        }
+        if c == '&' {
+            push_trimmed(&mut parts, &mut buf);
+            i += if i + 1 < n && bytes[i + 1] == b'&' {
+                2
+            } else {
+                1
+            };
+            continue;
+        }
+        if c == ';' {
+            push_trimmed(&mut parts, &mut buf);
+            i += 1;
+            continue;
+        }
+        buf.push(c);
+        i += 1;
+    }
+    push_trimmed(&mut parts, &mut buf);
+    parts.retain(|p| !p.is_empty());
+    parts
+}
+
+fn push_trimmed(parts: &mut Vec<String>, buf: &mut String) {
+    let trimmed = buf.trim().to_string();
+    if !trimmed.is_empty() {
+        parts.push(trimmed);
+    }
+    buf.clear();
+}
+
+/// Tokenize a single command part using rough shell semantics: split on
+/// whitespace outside of quotes, strip the outer quote chars, honor backslash
+/// escapes. Unclosed quotes are silently tolerated (we'd rather under-block
+/// than panic on weird input).
+fn tokenize(part: &str) -> Vec<String> {
+    let bytes = part.as_bytes();
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut in_token = false;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut i = 0;
+    let n = bytes.len();
+
+    while i < n {
+        let c = bytes[i] as char;
+        if in_single {
+            if c == '\'' {
+                in_single = false;
+            } else {
+                cur.push(c);
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            if c == '\\' && i + 1 < n {
+                cur.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            if c == '"' {
+                in_double = false;
+            } else {
+                cur.push(c);
+            }
+            i += 1;
+            continue;
+        }
+        if c.is_whitespace() {
+            if in_token {
+                tokens.push(std::mem::take(&mut cur));
+                in_token = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '\'' {
+            in_single = true;
+            in_token = true;
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_double = true;
+            in_token = true;
+            i += 1;
+            continue;
+        }
+        if c == '\\' && i + 1 < n {
+            cur.push(bytes[i + 1] as char);
+            in_token = true;
+            i += 2;
+            continue;
+        }
+        cur.push(c);
+        in_token = true;
+        i += 1;
+    }
+    if in_token {
+        tokens.push(cur);
+    }
+    tokens
+}
+
+/// Drop leading `FOO=bar BAZ=qux` env-var assignments — they prefix the real
+/// command name in shell syntax.
+fn strip_env_assignments(tokens: Vec<String>) -> Vec<String> {
+    let mut i = 0;
+    while i < tokens.len() {
+        let t = &tokens[i];
+        let Some(eq) = t.find('=') else { break };
+        if eq == 0 {
+            break;
+        }
+        let name = &t[..eq];
+        let first = name.as_bytes()[0];
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            break;
+        }
+        if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            break;
+        }
+        i += 1;
+    }
+    tokens[i..].to_vec()
+}
+
+/// Args that don't start with `-`.
+fn positionals(args: &[String]) -> Vec<&str> {
+    args.iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(|s| s.as_str())
+        .collect()
+}
+
+fn basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+fn block(msg: &str) -> Option<String> {
+    Some(format!("{}{}", msg, BYPASS_HINT))
+}
+
+fn check(tokens: &[String]) -> Option<String> {
+    let cmd_base = basename(&tokens[0]);
+    let args: &[String] = &tokens[1..];
+    let pos = positionals(args);
+
+    match cmd_base {
+        "cat" | "head" | "tail" => check_cat(cmd_base, args, &pos),
+        "grep" | "egrep" | "fgrep" => check_grep(cmd_base, args, &pos),
+        "rg" | "ripgrep" => block(&format!(
+            "Use `sak fs grep <pattern> <path>` instead of `{cmd_base}`."
+        )),
+        "find" => check_find(args),
+        "jq" => check_jq(&pos),
+        "yq" | "tomlq" => check_yq(cmd_base, &pos),
+        "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
+        "openssl" => check_openssl(args),
+        "git" => check_git(args),
+        "kubectl" => check_kubectl(&pos),
+        "talosctl" => check_talosctl(&pos),
+        "docker" => check_docker(&pos),
+        "lxc" | "incus" => check_lxc(cmd_base, &pos),
+        "sqlite3" => check_sqlite(args),
+        _ => None,
+    }
+}
+
+fn check_cat(base: &str, args: &[String], pos: &[&str]) -> Option<String> {
+    // Heredoc (`<<EOF`) means stdin, not a file — allow.
+    if args.iter().any(|a| a.contains("<<")) {
+        return None;
+    }
+    if pos.is_empty() {
+        return None;
+    }
+    block(&format!(
+        "Use `sak fs read <file>` instead of `{base}` for reading files. \
+         Ranges: `-n 1-50` (lines), `-n -20` (last 20)."
+    ))
+}
+
+fn check_grep(_base: &str, args: &[String], pos: &[&str]) -> Option<String> {
+    let recursive = args.iter().any(|a| {
+        a == "-r"
+            || a == "-R"
+            || a == "--recursive"
+            || (a.starts_with('-') && !a.starts_with("--") && a.contains('r'))
+            || (a.starts_with('-') && !a.starts_with("--") && a.contains('R'))
+    });
+    if recursive || pos.len() >= 2 {
+        return block(
+            "Use `sak fs grep <pattern> <path>` instead of `grep`. \
+             Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline.",
+        );
+    }
+    None
+}
+
+fn check_find(args: &[String]) -> Option<String> {
+    let write_flags = [
+        "-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprintf",
+    ];
+    if args.iter().any(|a| write_flags.contains(&a.as_str())) {
+        return None;
+    }
+    block(
+        "Use `sak fs glob '<pattern>'` instead of `find`. \
+         Example: `sak fs glob '**/*.rs'`.",
+    )
+}
+
+fn check_jq(pos: &[&str]) -> Option<String> {
+    // jq FILTER (stdin) is 1 positional; jq FILTER FILE is 2+.
+    if pos.len() >= 2 {
+        return block(
+            "Use `sak json query <path> <file>` instead of `jq` for files. \
+             Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
+        );
+    }
+    None
+}
+
+fn check_yq(base: &str, pos: &[&str]) -> Option<String> {
+    if pos.len() >= 2 {
+        return block(&format!(
+            "Use `sak config query <path> <file>` instead of `{base}` for files. \
+             Handles TOML/YAML/JSON/plist."
+        ));
+    }
+    None
+}
+
+fn check_openssl(args: &[String]) -> Option<String> {
+    if args.first().map(|s| s.as_str()) == Some("x509") {
+        return block(
+            "Use `sak cert inspect <cert>` instead of `openssl x509`. \
+             Also: `sak cert expiring --days 30`, `sak cert from-kubeconfig`.",
+        );
+    }
+    None
+}
+
+fn check_git(args: &[String]) -> Option<String> {
+    // Strip git global flags to find the actual subcommand.
+    let mut i = 0;
+    while i < args.len() && args[i].starts_with('-') {
+        let a = &args[i];
+        if matches!(
+            a.as_str(),
+            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace"
+        ) && i + 1 < args.len()
+        {
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    if i >= args.len() {
+        return None;
+    }
+    let sub = args[i].as_str();
+    let rest: Vec<&str> = args[i + 1..].iter().map(String::as_str).collect();
+
+    match sub {
+        "status" => block("Use `sak git status` instead of `git status`."),
+        "diff" => block(
+            "Use `sak git diff` (--staged, --name-only, --stat, --commit supported) \
+             instead of `git diff`.",
+        ),
+        "log" => block(
+            "Use `sak git log` (--oneline, -n, --author, --grep, --since, -- <path> supported) \
+             instead of `git log`.",
+        ),
+        "show" => block(
+            "Use `sak git show` (--stat, --name-only, --format supported) \
+             instead of `git show`.",
+        ),
+        "blame" => block("Use `sak git blame` (-L 10,20 supported) instead of `git blame`."),
+        "shortlog" => block("Use `sak git contributors` instead of `git shortlog`."),
+        "branch" => {
+            // Listing-only forms: no args, or only list-like flags.
+            let list_flags = [
+                "-a",
+                "--all",
+                "-r",
+                "--remotes",
+                "-l",
+                "--list",
+                "-v",
+                "-vv",
+                "--verbose",
+                "--show-current",
+            ];
+            if rest.is_empty() || rest.iter().all(|a| list_flags.contains(a)) {
+                return block(
+                    "Use `sak git branch` to list branches. \
+                     (`git branch -d/-D/-m/-c/<name>` is allowed.)",
+                );
+            }
+            None
+        }
+        "tag" => {
+            // Listing-only forms.
+            let list_ok = |a: &&str| {
+                matches!(*a, "-l" | "--list" | "-n" | "--column" | "--no-column")
+                    || a.starts_with("-n")
+                    || a.starts_with("--sort")
+            };
+            if rest.is_empty() || rest.iter().all(list_ok) {
+                return block(
+                    "Use `sak git tags` to list tags. \
+                     (`git tag -a/-d <name>` is allowed.)",
+                );
+            }
+            None
+        }
+        "remote" => {
+            if rest.is_empty()
+                || matches!(
+                    rest.first().copied(),
+                    Some("-v" | "--verbose" | "show" | "get-url")
+                )
+            {
+                return block(
+                    "Use `sak git remote` to list remotes. \
+                     (`git remote add/remove/set-url` is allowed.)",
+                );
+            }
+            None
+        }
+        "stash" => {
+            if rest.first().copied() == Some("list") {
+                return block("Use `sak git stash-list` instead of `git stash list`.");
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn check_kubectl(pos: &[&str]) -> Option<String> {
+    match pos.first().copied() {
+        Some("get") | Some("describe") | Some("logs") | Some("events") => {
+            let sub = pos[0];
+            block(&format!(
+                "Use `sak k8s {sub}` instead of `kubectl {sub}`. \
+                 Also: sak k8s failing/pending/restarts/images/contexts/kinds/schema."
+            ))
+        }
+        // `kubectl api-resources` → `sak k8s kinds`
+        Some("api-resources") => block("Use `sak k8s kinds` instead of `kubectl api-resources`."),
+        // `kubectl explain` → `sak k8s schema`
+        Some("explain") => {
+            block("Use `sak k8s schema <group/version/Kind>` instead of `kubectl explain`.")
+        }
+        // `kubectl config get-contexts` → `sak k8s contexts`
+        Some("config") if pos.get(1).copied() == Some("get-contexts") => {
+            block("Use `sak k8s contexts` instead of `kubectl config get-contexts`.")
+        }
+        _ => None,
+    }
+}
+
+fn check_talosctl(pos: &[&str]) -> Option<String> {
+    match pos.first().copied() {
+        Some("get") | Some("read") => {
+            let sub = pos[0];
+            block(&format!(
+                "Use `sak talos {sub}` instead of `talosctl {sub}` \
+                 (fans out across nodes; also `sak talos certs` for fleet cert inventory)."
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn check_docker(pos: &[&str]) -> Option<String> {
+    match pos.first().copied() {
+        Some("ps") => block("Use `sak docker list` instead of `docker ps`."),
+        Some("images") => block("Use `sak docker images` instead of `docker images`."),
+        Some("inspect") => block(
+            "Use `sak docker info <container>` or `sak docker config <container>` \
+             instead of `docker inspect`.",
+        ),
+        _ => None,
+    }
+}
+
+fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
+    match pos.first().copied() {
+        Some("list") => block(&format!("Use `sak lxc list` instead of `{base} list`.")),
+        Some("info") => block(&format!(
+            "Use `sak lxc info <instance>` instead of `{base} info`."
+        )),
+        Some("config") if pos.get(1).copied() == Some("show") => block(&format!(
+            "Use `sak lxc config <instance>` instead of `{base} config show`."
+        )),
+        Some("image") if matches!(pos.get(1).copied(), Some("list") | Some("ls")) => block(
+            &format!("Use `sak lxc images` instead of `{base} image list`."),
+        ),
+        _ => None,
+    }
+}
+
+fn check_sqlite(args: &[String]) -> Option<String> {
+    let joined = args.join(" ").to_lowercase();
+    let markers = [
+        ".tables",
+        ".schema",
+        ".dump",
+        ".indexes",
+        ".databases",
+        "select ",
+    ];
+    if markers.iter().any(|m| joined.contains(m)) {
+        return block(
+            "Use `sak sqlite tables/schema/count/query/dump/info <db>` \
+             instead of `sqlite3` for reads.",
+        );
+    }
+    None
+}

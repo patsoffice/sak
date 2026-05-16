@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -101,6 +101,7 @@ sak lxc --help            # default-on; --no-default-features removes it
 sak docker --help         # default-on; --no-default-features removes it
 sak sqlite --help         # default-on; --no-default-features removes it
 sak prom --help           # default-on; --no-default-features removes it
+sak hook --help
 
 # Discover options and see examples for a specific command
 sak fs grep --help
@@ -117,9 +118,9 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **A set of pre-tool hooks that redirect raw read-only `git`, `kubectl`, `docker`, `lxc`, and `talosctl` commands** to their `sak` equivalents, with a clear error message the agent can act on. (No `prom` hook — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
 
-The examples below are for Claude Code's `~/.claude/settings.json`. The same patterns adapt to any agent harness that supports per-tool permissions and pre-tool hooks.
+The configuration below is for Claude Code's `~/.claude/settings.json`. The pattern adapts to any agent harness that supports per-tool permissions and pre-tool hooks.
 
 ### Auto-approve `sak`
 
@@ -135,9 +136,7 @@ The examples below are for Claude Code's `~/.claude/settings.json`. The same pat
 
 Every operation is read-only, so blanket-allowing `sak` is safe — there is no command in the tool that can mutate state, write files, or hit a remote API destructively.
 
-### Redirect raw `git` reads to `sak git`
-
-The hook below catches the read-only `git` subcommands sak implements (`diff`, `log`, `status`, `show`, `blame`, `branch`, `tag`, `remote`) and returns a `deny` decision that tells the agent to use `sak git` instead. Mutations (`git push`, `git commit`, `git reset`, ...) are not blocked — they pass through and the agent's normal permission flow handles them.
+### Install the pre-tool hook
 
 ```json
 {
@@ -148,8 +147,8 @@ The hook below catches the read-only `git` subcommands sak implements (`diff`, `
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*git\\s+(diff|log|status|show|blame|branch|tag|remote)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak git instead (e.g. sak git diff, sak git log, sak git status, sak git show, sak git blame)\"}}' || true",
-            "statusMessage": "Checking for raw git commands..."
+            "command": "sak hook claude-code",
+            "timeout": 5
           }
         ]
       }
@@ -158,141 +157,34 @@ The hook below catches the read-only `git` subcommands sak implements (`diff`, `
 }
 ```
 
-### Redirect raw `kubectl` reads to `sak k8s`
+That's the whole hook. `sak hook claude-code` reads Claude Code's `PreToolUse` JSON payload from stdin, splits the about-to-run command on shell separators (`|`, `||`, `&&`, `;`, `&` — quote-aware), and for each piece checks the command name against an intent-aware rule set:
 
-Same pattern for `kubectl`. The hook only blocks the kubectl read commands that have a direct `sak k8s` equivalent today:
+- **Read vs. write** — `git status`/`diff`/`log`/`show`/`blame`/`shortlog` block; `git commit`/`push`/`add`/`fetch`/`pull`/`checkout`/`rebase`/`merge`/`reset` pass through. `git branch`/`tag`/`remote` block only for listing forms; modifying forms (`-d`/`-D`/`-m`/`-c`/add/set-url) pass.
+- **stdin vs. file** — `jq .name pkg.json` blocks (file arg); `echo … | jq .` passes (stdin). Same logic for `yq`, `tomlq`. `cat`/`head`/`tail` allow heredocs and stdin-only forms.
+- **Recursive vs. non-recursive grep** — `grep -r foo .`, `grep foo file.txt` and `rg foo` block; `echo … | grep foo` passes.
+- **Search vs. write find** — `find . -name *.rs` blocks; `find . -delete`/`-exec`/`-ok` passes.
+- **Read vs. write sqlite** — `.tables`/`.schema`/`.dump`/`SELECT` blocks; `INSERT`/`CREATE` passes.
 
-| Blocked | Replace with |
-| --- | --- |
-| `kubectl get` | `sak k8s get` |
-| `kubectl api-resources` | `sak k8s kinds` |
-| `kubectl explain` | `sak k8s schema` |
-| `kubectl config get-contexts` | `sak k8s contexts` |
-| `kubectl events` | `sak k8s events` |
-| `kubectl describe` | `sak k8s describe` |
-| `kubectl logs` | `sak k8s logs` |
+When the rule fires, the hook exits 2 with a stderr message naming the `sak` equivalent (Claude Code surfaces that message back to the model, which then auto-corrects). Otherwise it exits 0 and the command runs.
 
-Other `kubectl` reads (`top`, `auth can-i`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak k8s` commands land. Mutations (`apply`, `delete`, `edit`, `exec`, `port-forward`, ...) also pass through and go through the agent's permission flow.
+If you really need to bypass the hook for one call, prefix your Bash invocation with `SAK_HOOK_BYPASS=1`:
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*kubectl\\s+(get|api-resources|explain|config\\s+get-contexts|events|describe|logs)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak k8s instead (sak k8s get for kubectl get, sak k8s kinds for kubectl api-resources, sak k8s schema for kubectl explain, sak k8s contexts for kubectl config get-contexts, sak k8s events for kubectl events, sak k8s describe for kubectl describe, sak k8s logs for kubectl logs)\"}}' || true",
-            "statusMessage": "Checking for raw kubectl commands..."
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+SAK_HOOK_BYPASS=1 git status   # bypass for this one call
 ```
 
-If you already have a `PreToolUse.Bash.hooks` array, append the new entries rather than replacing the array.
+To debug the rule set from the shell (no stdin payload needed):
 
-### Redirect raw `docker` reads to `sak docker`
-
-Same pattern for the Docker CLI. The hook only blocks the read commands that have a direct `sak docker` equivalent today:
-
-| Blocked | Replace with |
-| --- | --- |
-| `docker ps` | `sak docker list` |
-| `docker inspect` | `sak docker info` (or `sak docker config` for the configuration subset) |
-| `docker images` | `sak docker images` |
-
-Other `docker` reads (`logs`, `stats`, `events`, `top`, `port`, `version`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak docker` commands land. Mutations (`run`, `exec`, `rm`, `rmi`, `build`, `pull`, `push`, ...) also pass through and go through the agent's permission flow.
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*docker\\s+(ps|inspect|images)\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak docker instead (sak docker list for docker ps, sak docker info or sak docker config for docker inspect, sak docker images for docker images)\"}}' || true",
-            "statusMessage": "Checking for raw docker commands..."
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+sak hook claude-code --check 'git status'   # prints suggestion, exits 2
+sak hook claude-code --check 'git commit'   # silent, exits 0
 ```
 
-### Redirect raw `lxc` reads to `sak lxc`
-
-Same pattern for the LXD/Incus CLI. The hook only blocks the read commands that have a direct `sak lxc` equivalent today:
-
-| Blocked | Replace with |
-| --- | --- |
-| `lxc list` | `sak lxc list` |
-| `lxc info` | `sak lxc info` |
-| `lxc config` (show) | `sak lxc config` |
-| `lxc image list` / `lxc image ls` | `sak lxc images` |
-
-Other `lxc` reads (`storage`, `network`, `profile`, `cluster`, `monitor`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak lxc` commands land. Mutations (`launch`, `start`, `stop`, `delete`, `exec`, `file push`, ...) also pass through and go through the agent's permission flow.
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*lxc\\s+(list|info|config|image\\s+(list|ls))\\b' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak lxc instead (sak lxc list for lxc list, sak lxc info for lxc info, sak lxc config for lxc config show, sak lxc images for lxc image list)\"}}' || true",
-            "statusMessage": "Checking for raw lxc commands..."
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### Redirect raw `talosctl` reads to `sak talos`
-
-Same pattern for the Talos CLI. The hook only blocks the read commands that have a direct `sak talos` equivalent today:
-
-| Blocked | Replace with |
-| --- | --- |
-| `talosctl read` | `sak talos read` |
-| `talosctl get` | `sak talos get` |
-
-Other `talosctl` reads (`version`, `health`, `etcd members`, `containers`, `dmesg`, `logs`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak talos` commands land. Mutations (`reboot`, `reset`, `apply-config`, `upgrade`, `etcd snapshot restore`, `service`, ...) also pass through and go through the agent's permission flow.
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*talosctl(\\s+\\S+)*?\\s+(read|get)(\\s|$)' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak talos instead (sak talos read for talosctl read, sak talos get for talosctl get; both fan out across every node in the active talosconfig context)\"}}' || true",
-            "statusMessage": "Checking for raw talosctl commands..."
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-The lazy `(\\s+\\S+)*?` chunk between `talosctl` and the verb lets any number of intervening tokens (global flags + their values, e.g. `-n 1.2.3.4` or `--talosconfig /tmp/c`) appear before `read`/`get`. Without that, `talosctl -n 1.2.3.4 read /etc/foo` would slip through the hook because `talosctl` accepts global flags both before and after the verb.
+The rule set lives in `src/hook/claude_code.rs` with an inline test suite that pins every block/allow decision. When a new sak command shadows a kubectl/git/docker/lxc/talosctl read that the hook doesn't yet redirect, add a case to `check_*` and a test next to the existing ones — no harness-side config changes needed.
 
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
-The hooks above only catch `git`, `kubectl`, `docker`, `lxc`, and `talosctl` — they say nothing about `ls`, `find`, `cat`, `head`, `tail`, `grep`, `cut`, `awk`, or `openssl x509`, and they don't redirect Prometheus / Alertmanager queries either (no canonical CLI to redirect from). For those, the most reliable lever is a project instruction file that the agent reads at the start of every session. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
+The hook above catches most CLI-shaped mistakes, but it can't redirect things that have no canonical CLI — Prometheus and Alertmanager are the big ones (`sak prom alerts|query|query-range|histogram|targets|rules|am alerts|am silences` vs. ad-hoc `curl + jq` against the HTTP API). It also won't *teach* the agent the underlying habit — when the agent reaches for `sed -n '10,20p'`, the hook stays silent, and the agent thinks it solved the problem. A project instruction file fills both gaps. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
 
 ```markdown
 ## Use sak as your tool
@@ -345,7 +237,7 @@ fine, but when you do reach for a CLI, reach for sak. Missing command
 = add it, don't fall back to shell.
 ```
 
-Belt and braces: hooks block the easy mistakes (`git log`, `kubectl get`), CLAUDE.md teaches the rule each session, and persistent memory keeps it sticky across sessions and context compactions.
+Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `kubectl get`, `cat /etc/passwd`, `jq .name pkg.json`, …), CLAUDE.md teaches the rule each session, and persistent memory keeps it sticky across sessions and context compactions.
 
 ## Output Conventions
 

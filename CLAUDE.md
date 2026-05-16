@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API). Run `sak fs glob 'src/*/'` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses). Run `sak fs glob 'src/*/'` to see current domains and commands.
 
 ## Use sak as your tool
 
@@ -49,7 +49,16 @@ The `k8s`, `lxc`, `docker`, `sqlite`, and `prom` cargo features are **all on by 
 - `cargo clippy` must pass with no warnings
 - `cargo fmt` must pass with no formatting changes
 - Bump the version in `Cargo.toml` before committing new capabilities: minor for a new domain (0.1.0 -> 0.2.0), patch for a new command within an existing domain (0.1.0 -> 0.1.1)
-- When a new command shadows a `kubectl` or `git` read operation that the example agent hooks in [README.md](README.md)'s "Using SAK from an LLM agent" section don't yet redirect, extend the regex's alternation list in that section to add the new verb. Examples: a `sak k8s describe` command means the kubectl hook regex should add `describe`; a `sak git stash` command means the git hook regex should add `stash`. Call out the hook update in the commit message — users running Claude Code (or any other agent that copies the hook) need to update their own settings.json manually, and the change will be silently lost otherwise.
+
+## Adding a new command
+
+A new sak command typically follows this checklist:
+
+1. Implement the command in `src/<domain>/<command>.rs`, wire it through the domain's `mod.rs`, and add an inline `#[cfg(test)] mod tests` block next to it.
+2. Update `--help` examples (the per-command `after_help`, the domain quick-start in `src/main.rs`, and the discovery list in `README.md`).
+3. **Update the agent hook.** If the new command shadows a read operation in a CLI the hook already covers (`git`, `kubectl`, `docker`, `lxc`/`incus`, `talosctl`, `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `openssl x509`, `sqlite3`), extend the corresponding `check_*` function in [src/hook/claude_code.rs](src/hook/claude_code.rs) and add a block/allow test next to the existing ones. If the new domain redirects from a CLI that's *not* yet on that list (e.g. a future `helm` domain would want to redirect `helm get/list/status`), add a new `check_<tool>` function, route to it from the match in `check()`, and add tests. The agent-side `settings.json` only points at `sak hook claude-code` — the rule set rides in the binary, so users pick up new redirects automatically by upgrading sak. Call out hook changes in the commit message anyway so people running older sak versions know to upgrade.
+4. Bump the version in `Cargo.toml` per the rule above.
+5. `cargo fmt && cargo clippy --all-features --all-targets && cargo test && cargo test --no-default-features` must all be clean before committing.
 
 ## Commit Style
 

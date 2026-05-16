@@ -4,6 +4,7 @@ mod config;
 mod docker;
 mod fs;
 mod git;
+mod hook;
 mod json;
 #[cfg(feature = "k8s")]
 mod k8s;
@@ -63,7 +64,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
   sak talos certs                             Cert inventory across all Talos nodes
   sak talos read /etc/os-release              Fan-out file read across nodes
-  sak talos get members --node 192.168.1.10   COSI resource from one node",
+  sak talos get members --node 192.168.1.10   COSI resource from one node
+  sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]
     s.push_str(
@@ -177,6 +179,9 @@ enum Command {
     #[cfg(feature = "prom")]
     #[command(subcommand)]
     Prom(prom::PromCommand),
+    /// LLM-agent harness integration hooks (read-only command classification)
+    #[command(subcommand)]
+    Hook(hook::HookCommand),
 }
 
 fn main() -> ExitCode {
@@ -199,6 +204,7 @@ fn main() -> ExitCode {
         Command::Sqlite(cmd) => sqlite::run(cmd),
         #[cfg(feature = "prom")]
         Command::Prom(cmd) => prom::run(cmd),
+        Command::Hook(cmd) => hook::run(cmd),
     };
 
     match result {
