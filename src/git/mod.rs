@@ -128,13 +128,12 @@ mod tests {
 
     #[test]
     fn test_open_repo_discovers_current() {
-        // Skip if not running inside a git repo (e.g., Nix sandbox)
-        let repo = open_repo(&None);
-        if std::env::var("NIX_BUILD_TOP").is_ok() {
-            assert!(repo.is_err());
-        } else {
-            assert!(repo.is_ok());
-        }
+        // open_repo(None) must default to cwd. Asserting the None and
+        // Some(cwd) results agree captures that contract without depending
+        // on whether cwd is inside a git repo — works in interactive shells
+        // (real repo), `nix build` sandboxes (no .git), and tempdir tests.
+        let cwd = std::env::current_dir().expect("cwd");
+        assert_eq!(open_repo(&None).is_ok(), open_repo(&Some(cwd)).is_ok());
     }
 
     #[test]
