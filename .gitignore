@@ -1,5 +1,6 @@
 /target
 /result
+/.direnv
 # Beads recovery snapshots (the live db itself is already ignored by
 # .beads/.gitignore; this catches the timestamped *.bak snapshots that
 # .beads/.br_recovery/ accumulates and which the nested file misses).
