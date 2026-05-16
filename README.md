@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), and `prom` (read-only Prometheus / Alertmanager HTTP API), with more planned (e.g., `csv`).
 
 ## Design Decisions
 
@@ -95,6 +95,7 @@ sak git --help
 sak json --help
 sak config --help
 sak cert --help
+sak talos --help
 sak k8s --help            # default-on; --no-default-features removes it
 sak lxc --help            # default-on; --no-default-features removes it
 sak docker --help         # default-on; --no-default-features removes it
@@ -113,10 +114,10 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 
 ## Using SAK from an LLM agent
 
-SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
+SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **A set of pre-tool hooks that redirect raw read-only `git`, `kubectl`, `docker`, and `lxc` commands** to their `sak` equivalents, with a clear error message the agent can act on. (No `prom` hook — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **A set of pre-tool hooks that redirect raw read-only `git`, `kubectl`, `docker`, `lxc`, and `talosctl` commands** to their `sak` equivalents, with a clear error message the agent can act on. (No `prom` hook — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
 
 The examples below are for Claude Code's `~/.claude/settings.json`. The same patterns adapt to any agent harness that supports per-tool permissions and pre-tool hooks.
 
@@ -257,9 +258,41 @@ Other `lxc` reads (`storage`, `network`, `profile`, `cluster`, `monitor`, ...) p
 }
 ```
 
+### Redirect raw `talosctl` reads to `sak talos`
+
+Same pattern for the Talos CLI. The hook only blocks the read commands that have a direct `sak talos` equivalent today:
+
+| Blocked | Replace with |
+| --- | --- |
+| `talosctl read` | `sak talos read` |
+| `talosctl get` | `sak talos get` |
+
+Other `talosctl` reads (`version`, `health`, `etcd members`, `containers`, `dmesg`, `logs`, ...) pass through because sak doesn't implement them yet — extend the regex's alternation list as new `sak talos` commands land. Mutations (`reboot`, `reset`, `apply-config`, `upgrade`, `etcd snapshot restore`, `service`, ...) also pass through and go through the agent's permission flow.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '^\\s*talosctl(\\s+\\S+)*?\\s+(read|get)(\\s|$)' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Use sak talos instead (sak talos read for talosctl read, sak talos get for talosctl get; both fan out across every node in the active talosconfig context)\"}}' || true",
+            "statusMessage": "Checking for raw talosctl commands..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The lazy `(\\s+\\S+)*?` chunk between `talosctl` and the verb lets any number of intervening tokens (global flags + their values, e.g. `-n 1.2.3.4` or `--talosconfig /tmp/c`) appear before `read`/`get`. Without that, `talosctl -n 1.2.3.4 read /etc/foo` would slip through the hook because `talosctl` accepts global flags both before and after the verb.
+
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
-The hooks above only catch `git`, `kubectl`, `docker`, and `lxc` — they say nothing about `ls`, `find`, `cat`, `head`, `tail`, `grep`, `cut`, or `awk`, and they don't redirect Prometheus / Alertmanager queries either (no canonical CLI to redirect from). For those, the most reliable lever is a project instruction file that the agent reads at the start of every session. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
+The hooks above only catch `git`, `kubectl`, `docker`, `lxc`, and `talosctl` — they say nothing about `ls`, `find`, `cat`, `head`, `tail`, `grep`, `cut`, `awk`, or `openssl x509`, and they don't redirect Prometheus / Alertmanager queries either (no canonical CLI to redirect from). For those, the most reliable lever is a project instruction file that the agent reads at the start of every session. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
 
 ```markdown
 ## Use sak as your tool

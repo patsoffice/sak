@@ -14,6 +14,7 @@ mod output;
 mod prom;
 #[cfg(feature = "sqlite")]
 mod sqlite;
+mod talos;
 mod value;
 
 use std::process::ExitCode;
@@ -59,7 +60,10 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config validate config.toml             Check syntax validity
   sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
   sak cert expiring --days 30 *.pem           Certs expiring within a window
-  sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs",
+  sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
+  sak talos certs                             Cert inventory across all Talos nodes
+  sak talos read /etc/os-release              Fan-out file read across nodes
+  sak talos get members --node 192.168.1.10   COSI resource from one node",
     );
     #[cfg(feature = "k8s")]
     s.push_str(
@@ -150,6 +154,9 @@ enum Command {
     /// X.509 certificate inspection (read-only)
     #[command(subcommand)]
     Cert(cert::CertCommand),
+    /// Talos Linux cluster operations (read-only, shells out to talosctl)
+    #[command(subcommand)]
+    Talos(talos::TalosCommand),
     /// Kubernetes operations against a live cluster (read-only)
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
@@ -181,6 +188,7 @@ fn main() -> ExitCode {
         Command::Json(cmd) => json::run(cmd),
         Command::Config(cmd) => config::run(cmd),
         Command::Cert(cmd) => cert::run(cmd),
+        Command::Talos(cmd) => talos::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
