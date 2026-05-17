@@ -11,7 +11,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg`
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
-- `sak json query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff` for `*.json`
+- `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak cert inspect|expiring|from-kubeconfig|from-yaml` instead of `openssl x509 | grep | awk` pipelines on PEM/DER
