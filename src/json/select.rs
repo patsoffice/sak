@@ -136,7 +136,10 @@ fn default_alias(path: &str) -> Result<String> {
         );
     }
     let trimmed = path.trim_start_matches('.');
-    let last = trimmed.rsplit('.').find(|seg| !seg.is_empty()).unwrap_or("");
+    let last = trimmed
+        .rsplit('.')
+        .find(|seg| !seg.is_empty())
+        .unwrap_or("");
     if last.is_empty() {
         bail!(
             "cannot derive output key from '{}' — use '<alias>=<path>'",

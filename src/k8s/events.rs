@@ -108,7 +108,7 @@ pub(super) fn extract_event_row(ev: &Value) -> EventRow {
     } else {
         format!("{}/{}", kind, name)
     };
-    let message = collapse_newlines(ev.get("message").and_then(Value::as_str).unwrap_or(""));
+    let message = collapse_newlines(ev.get("message").and_then(Value::as_str).unwrap_or("-"));
 
     EventRow {
         last,
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(row.event_type, "-");
         assert_eq!(row.reason, "-");
         assert_eq!(row.kind_name, "-");
-        assert_eq!(row.message, "");
+        assert_eq!(row.message, "-");
     }
 
     #[test]

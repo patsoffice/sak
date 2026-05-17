@@ -204,7 +204,8 @@ fn write_status_section(writer: &mut BoundedWriter<'_>, value: &Value) -> io::Re
             let ctype = c.get("type").and_then(Value::as_str).unwrap_or("-");
             let cstatus = c.get("status").and_then(Value::as_str).unwrap_or("-");
             let reason = c.get("reason").and_then(Value::as_str).unwrap_or("-");
-            let message = collapse_newlines(c.get("message").and_then(Value::as_str).unwrap_or(""));
+            let message =
+                collapse_newlines(c.get("message").and_then(Value::as_str).unwrap_or("-"));
             if !writer.write_line(&format!("{ctype}\t{cstatus}\t{reason}\t{message}"))? {
                 return Ok(());
             }
