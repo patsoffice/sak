@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
-use crate::json::read_json_inputs;
+use crate::json::read_json_inputs_maybe_lines;
 use crate::output::BoundedWriter;
 use crate::value::{collect_keys, resolve_expression};
 
@@ -16,14 +16,17 @@ use crate::value::{collect_keys, resolve_expression};
         With no path, lists the top-level keys. With `--depth N`, recursively \
         lists keys up to N levels deep using dot-path notation. With `--types`, \
         each key is annotated with its value type. Reads from stdin if no files \
-        are given.",
+        are given.\n\n\
+        With `--lines`, the input is parsed as NDJSON (one JSON value per line) \
+        and keys are listed for each record in turn.",
     after_help = "\
 Examples:
   echo '{\"a\":1,\"b\":2}' | sak json keys
   sak json keys data.json                          Top-level keys
   sak json keys .config data.json                  Keys under .config
   sak json keys --depth 2 data.json                Recurse 2 levels
-  sak json keys --types data.json                  Show value types"
+  sak json keys --types data.json                  Show value types
+  sak json keys --lines events.ndjson              Keys for each NDJSON record"
 )]
 pub struct KeysArgs {
     /// Path within the document (default: root)
@@ -40,13 +43,17 @@ pub struct KeysArgs {
     #[arg(short, long)]
     pub types: bool,
 
+    /// Parse input as NDJSON (one JSON value per line)
+    #[arg(long)]
+    pub lines: bool,
+
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
 }
 
 pub fn run(args: &KeysArgs) -> Result<ExitCode> {
-    let inputs = read_json_inputs(&args.files)?;
+    let inputs = read_json_inputs_maybe_lines(&args.files, args.lines)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -84,5 +91,47 @@ pub fn run(args: &KeysArgs) -> Result<ExitCode> {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_tmp(content: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        (dir, p)
+    }
+
+    #[test]
+    fn keys_lines_iterates_records() {
+        let (_d, p) = write_tmp("{\"a\":1}\n{\"b\":2}\n");
+        let args = KeysArgs {
+            path: None,
+            files: vec![p],
+            depth: None,
+            types: false,
+            lines: true,
+            limit: None,
+        };
+        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn keys_lines_non_object_records_return_1() {
+        let (_d, p) = write_tmp("[1,2]\n3\n");
+        let args = KeysArgs {
+            path: None,
+            files: vec![p],
+            depth: None,
+            types: false,
+            lines: true,
+            limit: None,
+        };
+        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
     }
 }

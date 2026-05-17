@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use anyhow::{Result, bail};
 use clap::Args;
 
-use crate::json::read_json_inputs;
+use crate::json::read_json_inputs_maybe_lines;
 use crate::output::BoundedWriter;
 use crate::value::{ArrayMode, flatten_value};
 
@@ -18,14 +18,17 @@ use crate::value::{ArrayMode, flatten_value};
         Output is sorted by path for deterministic results. The path separator \
         defaults to `.` and may be customized with `--separator`. Arrays are \
         traversed by default; use `--arrays skip` to treat arrays as leaves. \
-        Reads from stdin if no files are given.",
+        Reads from stdin if no files are given.\n\n\
+        With `--lines`, the input is parsed as NDJSON (one JSON value per line) \
+        and each record is flattened in turn.",
     after_help = "\
 Examples:
   echo '{\"a\":{\"b\":1}}' | sak json flatten
   sak json flatten data.json
   sak json flatten --separator / data.json         Use slash as separator
   sak json flatten --max-depth 2 data.json         Stop recursing at depth 2
-  sak json flatten --arrays skip data.json         Treat arrays as leaves"
+  sak json flatten --arrays skip data.json         Treat arrays as leaves
+  sak json flatten --lines events.ndjson           Flatten each NDJSON record"
 )]
 pub struct FlattenArgs {
     /// Input files (reads stdin if omitted)
@@ -43,6 +46,10 @@ pub struct FlattenArgs {
     #[arg(long, value_enum, default_value_t = ArrayMode::Index)]
     pub arrays: ArrayMode,
 
+    /// Parse input as NDJSON (one JSON value per line)
+    #[arg(long)]
+    pub lines: bool,
+
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
@@ -52,7 +59,7 @@ pub fn run(args: &FlattenArgs) -> Result<ExitCode> {
     if args.separator.is_empty() {
         bail!("--separator must not be empty");
     }
-    let inputs = read_json_inputs(&args.files)?;
+    let inputs = read_json_inputs_maybe_lines(&args.files, args.lines)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -85,5 +92,33 @@ pub fn run(args: &FlattenArgs) -> Result<ExitCode> {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_tmp(content: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        (dir, p)
+    }
+
+    #[test]
+    fn flatten_lines_emits_per_record() {
+        let (_d, p) = write_tmp("{\"a\":{\"b\":1}}\n{\"a\":{\"b\":2}}\n");
+        let args = FlattenArgs {
+            files: vec![p],
+            separator: ".".to_string(),
+            max_depth: None,
+            arrays: ArrayMode::Index,
+            lines: true,
+            limit: None,
+        };
+        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
     }
 }
