@@ -4,6 +4,7 @@ mod csv;
 #[cfg(feature = "docker")]
 mod docker;
 mod fs;
+mod gh;
 mod git;
 mod hook;
 mod json;
@@ -175,6 +176,9 @@ enum Command {
     /// Talos Linux cluster operations (read-only, shells out to talosctl)
     #[command(subcommand)]
     Talos(talos::TalosCommand),
+    /// GitHub CLI operations (read-only, shells out to gh)
+    #[command(subcommand)]
+    Gh(gh::GhCommand),
     /// Kubernetes operations against a live cluster (read-only)
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
@@ -211,6 +215,7 @@ fn main() -> ExitCode {
         Command::Csv(cmd) => csv::run(cmd),
         Command::Cert(cmd) => cert::run(cmd),
         Command::Talos(cmd) => talos::run(cmd),
+        Command::Gh(cmd) => gh::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
