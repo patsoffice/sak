@@ -254,6 +254,13 @@ fn gh_issue_list_blocks() {
 }
 
 #[test]
+fn gh_issue_view_blocks() {
+    assert!(blocks("gh issue view 13464"));
+    assert!(blocks("gh issue view 13464 --repo cli/cli"));
+    assert!(blocks("gh issue view https://github.com/cli/cli/issues/1"));
+}
+
+#[test]
 fn gh_run_list_blocks() {
     assert!(blocks("gh run list"));
     assert!(blocks("gh run list --workflow ci.yml --branch main"));
@@ -295,9 +302,8 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh repo clone cli/cli"));
     // `pr` reads other than `list`/`view` have no command yet.
     assert!(allows("gh pr checks 123"));
-    // `issue` / `run` / `release` / `workflow` reads other than `list` have no
-    // command yet.
-    assert!(allows("gh issue view 5"));
+    // `run` / `release` / `workflow` reads other than `list` have no command
+    // yet.
     assert!(allows("gh run view 42"));
     assert!(allows("gh release view v1.0"));
     assert!(allows("gh workflow view ci.yml"));
