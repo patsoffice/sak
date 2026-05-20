@@ -618,6 +618,9 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
         (Some("pr"), Some("list")) => {
             block("Use `sak gh pr-list` instead of `gh pr list` (TSV/JSON, --fields forwarded).")
         }
+        (Some("pr"), Some("view")) => {
+            block("Use `sak gh pr-view <pr>` instead of `gh pr view` (JSON/TSV).")
+        }
         (Some("issue"), Some("list")) => block(
             "Use `sak gh issue-list` instead of `gh issue list` (TSV/JSON, --fields forwarded).",
         ),
