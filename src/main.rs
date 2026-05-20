@@ -77,6 +77,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh issue-list --label bug                List issues as TSV
   sak gh run-list --workflow ci.yml            List CI workflow runs as TSV
   sak gh release-list                          List releases as TSV
+  sak gh workflow-list                         List workflow definitions as TSV
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]

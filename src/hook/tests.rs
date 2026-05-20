@@ -261,6 +261,13 @@ fn gh_release_list_blocks() {
 }
 
 #[test]
+fn gh_workflow_list_blocks() {
+    assert!(blocks("gh workflow list"));
+    assert!(blocks("gh workflow list --all"));
+    assert!(blocks("gh workflow list --repo cli/cli --limit 50"));
+}
+
+#[test]
 fn gh_mutations_and_unshadowed_allow() {
     // Mutating verbs are not redirected.
     assert!(allows("gh pr merge 123"));
@@ -269,13 +276,16 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh run rerun 42"));
     assert!(allows("gh run cancel 42"));
     assert!(allows("gh release create v1.0"));
-    // `pr` / `issue` / `run` / `release` reads other than `list` have no
-    // command yet.
+    assert!(allows("gh workflow run deploy.yml"));
+    assert!(allows("gh workflow disable ci.yml"));
+    // `pr` / `issue` / `run` / `release` / `workflow` reads other than `list`
+    // have no command yet.
     assert!(allows("gh pr view 123"));
     assert!(allows("gh pr checks 123"));
     assert!(allows("gh issue view 5"));
     assert!(allows("gh run view 42"));
     assert!(allows("gh release view v1.0"));
+    assert!(allows("gh workflow view ci.yml"));
 }
 
 // ── filesystem readers ────────────────────────────────────────

@@ -33,6 +33,7 @@ pub mod pr_list;
 pub mod release_list;
 pub mod render;
 pub mod run_list;
+pub mod workflow_list;
 
 use std::process::ExitCode;
 
@@ -46,6 +47,7 @@ pub enum GhCommand {
     IssueList(issue_list::IssueListArgs),
     RunList(run_list::RunListArgs),
     ReleaseList(release_list::ReleaseListArgs),
+    WorkflowList(workflow_list::WorkflowListArgs),
 }
 
 pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
@@ -55,5 +57,6 @@ pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
         GhCommand::IssueList(args) => issue_list::run(args),
         GhCommand::RunList(args) => run_list::run(args),
         GhCommand::ReleaseList(args) => release_list::run(args),
+        GhCommand::WorkflowList(args) => workflow_list::run(args),
     }
 }
