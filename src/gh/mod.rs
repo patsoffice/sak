@@ -28,6 +28,7 @@
 
 pub mod api;
 pub mod client;
+pub mod issue_list;
 pub mod pr_list;
 pub mod render;
 
@@ -40,11 +41,13 @@ use clap::Subcommand;
 pub enum GhCommand {
     Api(api::ApiArgs),
     PrList(pr_list::PrListArgs),
+    IssueList(issue_list::IssueListArgs),
 }
 
 pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
     match cmd {
         GhCommand::Api(args) => api::run(args),
         GhCommand::PrList(args) => pr_list::run(args),
+        GhCommand::IssueList(args) => issue_list::run(args),
     }
 }

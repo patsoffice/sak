@@ -74,6 +74,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak talos get members --node 192.168.1.10   COSI resource from one node
   sak gh api repos/cli/cli                     GET a GitHub REST/GraphQL endpoint
   sak gh pr-list --state open                  List pull requests as TSV
+  sak gh issue-list --label bug                List issues as TSV
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]
