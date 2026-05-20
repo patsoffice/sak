@@ -254,6 +254,13 @@ fn gh_run_list_blocks() {
 }
 
 #[test]
+fn gh_release_list_blocks() {
+    assert!(blocks("gh release list"));
+    assert!(blocks("gh release list --repo cli/cli --limit 50"));
+    assert!(blocks("gh release list --exclude-drafts"));
+}
+
+#[test]
 fn gh_mutations_and_unshadowed_allow() {
     // Mutating verbs are not redirected.
     assert!(allows("gh pr merge 123"));
@@ -261,11 +268,14 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh repo create my/repo"));
     assert!(allows("gh run rerun 42"));
     assert!(allows("gh run cancel 42"));
-    // `pr` / `issue` / `run` reads other than `list` have no command yet.
+    assert!(allows("gh release create v1.0"));
+    // `pr` / `issue` / `run` / `release` reads other than `list` have no
+    // command yet.
     assert!(allows("gh pr view 123"));
     assert!(allows("gh pr checks 123"));
     assert!(allows("gh issue view 5"));
     assert!(allows("gh run view 42"));
+    assert!(allows("gh release view v1.0"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
