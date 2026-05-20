@@ -8,7 +8,7 @@ use crate::gh::render::{self, Format};
 
 /// Default `gh` field set when `--fields` is omitted. Forwarded verbatim to
 /// `gh workflow list --json`; sak does not invent its own field names.
-const DEFAULT_FIELDS: &str = "id,name,path,state,createdAt,updatedAt";
+const DEFAULT_FIELDS: &str = "id,name,path,state";
 
 #[derive(Args)]
 #[command(

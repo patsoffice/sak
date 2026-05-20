@@ -8,7 +8,7 @@ use crate::gh::render::{self, Format};
 
 /// Default `gh` field set when `--fields` is omitted. Forwarded verbatim to
 /// `gh release list --json`; sak does not invent its own field names.
-const DEFAULT_FIELDS: &str = "tagName,name,isDraft,isPrerelease,publishedAt,createdAt,author";
+const DEFAULT_FIELDS: &str = "tagName,name,isDraft,isPrerelease,isLatest,publishedAt,createdAt";
 
 #[derive(Args)]
 #[command(
