@@ -16,6 +16,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak cert inspect|expiring|from-kubeconfig|from-yaml` instead of `openssl x509 | grep | awk` pipelines on PEM/DER
 - `sak talos certs|read|get` instead of `for n in <ips>; do talosctl -n $n …; done` fan-out loops
+- `sak gh api <endpoint>` instead of `gh api` / `curl`ing the GitHub REST or GraphQL API for reads
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops
@@ -59,7 +60,7 @@ A new sak command typically follows this checklist:
 
 1. Implement the command in `src/<domain>/<command>.rs`, wire it through the domain's `mod.rs`, and add an inline `#[cfg(test)] mod tests` block next to it.
 2. Update `--help` examples (the per-command `after_help`, the domain quick-start in `src/main.rs`, and the discovery list in `README.md`).
-3. **Update the agent hook.** If the new command shadows a read operation in a CLI the hook already covers (`git`, `kubectl`, `docker`, `lxc`/`incus`, `talosctl`, `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `openssl x509`, `sqlite3`), extend the corresponding `check_*` function in [src/hook/claude_code.rs](src/hook/claude_code.rs) and add a block/allow test next to the existing ones. If the new domain redirects from a CLI that's *not* yet on that list (e.g. a future `helm` domain would want to redirect `helm get/list/status`), add a new `check_<tool>` function, route to it from the match in `check()`, and add tests. The agent-side `settings.json` only points at `sak hook claude-code` — the rule set rides in the binary, so users pick up new redirects automatically by upgrading sak. Call out hook changes in the commit message anyway so people running older sak versions know to upgrade.
+3. **Update the agent hook.** If the new command shadows a read operation in a CLI the hook already covers (`git`, `kubectl`, `docker`, `lxc`/`incus`, `talosctl`, `gh`, `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `openssl x509`, `sqlite3`), extend the corresponding `check_*` function in [src/hook/claude_code.rs](src/hook/claude_code.rs) and add a block/allow test next to the existing ones. If the new domain redirects from a CLI that's *not* yet on that list (e.g. a future `helm` domain would want to redirect `helm get/list/status`), add a new `check_<tool>` function, route to it from the match in `check()`, and add tests. The agent-side `settings.json` only points at `sak hook claude-code` — the rule set rides in the binary, so users pick up new redirects automatically by upgrading sak. Call out hook changes in the commit message anyway so people running older sak versions know to upgrade.
 4. Bump the version in `Cargo.toml` per the rule above.
 5. `cargo fmt && cargo clippy --all-features --all-targets && cargo test && cargo test --no-default-features` must all be clean before committing.
 

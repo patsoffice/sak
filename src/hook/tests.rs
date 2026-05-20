@@ -208,6 +208,42 @@ fn lxc_writes_allow() {
     assert!(allows("lxc network list"));
 }
 
+// ── gh ────────────────────────────────────────────────────────
+
+#[test]
+fn gh_api_get_blocks() {
+    assert!(blocks("gh api repos/cli/cli"));
+    assert!(blocks("gh api 'repos/cli/cli/issues?state=open'"));
+    // Explicit GET (redundant but legal) still redirects.
+    assert!(blocks("gh api repos/cli/cli -X GET"));
+    assert!(blocks("gh api repos/cli/cli --method get"));
+    assert!(blocks("gh api repos/cli/cli -XGET"));
+    assert!(blocks("gh api repos/cli/cli --method=GET"));
+    // GraphQL queries are conventionally `gh api graphql` with no -X.
+    assert!(blocks("gh api graphql -f query='{ viewer { login } }'"));
+}
+
+#[test]
+fn gh_api_non_get_allows() {
+    // A non-GET method is a write `sak gh` can't do — pass it through.
+    assert!(allows("gh api repos/cli/cli -X POST"));
+    assert!(allows("gh api repos/cli/cli --method DELETE"));
+    assert!(allows("gh api repos/cli/cli -XPATCH"));
+    assert!(allows("gh api repos/cli/cli --method=PUT"));
+}
+
+#[test]
+fn gh_mutations_and_unshadowed_allow() {
+    // Mutating verbs are not redirected.
+    assert!(allows("gh pr merge 123"));
+    assert!(allows("gh issue close 5"));
+    assert!(allows("gh repo create my/repo"));
+    // Read verbs that don't have their own command yet pass through until
+    // their child issues land.
+    assert!(allows("gh pr list"));
+    assert!(allows("gh issue view 5"));
+}
+
 // ── filesystem readers ────────────────────────────────────────
 
 #[test]

@@ -20,13 +20,6 @@
 //! (case-insensitive). Bare `gh api <endpoint>` is GET by `gh`'s own
 //! default; `gh api … -X GET` is accepted as redundant-but-correct.
 
-// The first child command (`gh api`, sak-llm-gt1) consumes `invoke`
-// and the shared helpers. Until then nothing in the binary itself
-// calls them — only the inline tests do — so the `dead_code` lint
-// fires. Remove this allow when the first child lands and wires a real
-// `Subcommand` variant into `mod.rs::GhCommand`.
-#![allow(dead_code)]
-
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};

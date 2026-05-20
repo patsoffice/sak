@@ -363,6 +363,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
+        "gh" => check_gh(args, &pos),
         "sqlite3" => check_sqlite(args),
         _ => None,
     }
@@ -603,6 +604,41 @@ fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
         ),
         _ => None,
     }
+}
+
+fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
+    match pos.first().copied() {
+        // Only redirect GET reads. A non-GET `gh api` means the caller wants a
+        // write that `sak gh` deliberately can't perform, so it passes through
+        // to real `gh`. (Other read verbs — `pr list`, `issue view`, ... — get
+        // their own redirects as those commands land.)
+        Some("api") if gh_api_method_is_get(args) => {
+            block("Use `sak gh api <endpoint>` instead of `gh api` for GET requests.")
+        }
+        _ => None,
+    }
+}
+
+/// Whether a `gh api` invocation is an HTTP GET — true when no `-X` /
+/// `--method` flag is present (gh's default), or its value is `GET`
+/// (case-insensitive). Mirrors the chokepoint's method detection in
+/// `src/gh/client.rs::check_api_method`.
+fn gh_api_method_is_get(args: &[String]) -> bool {
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let method = if a == "-X" || a == "--method" {
+            i += 1;
+            args.get(i).map(String::as_str)
+        } else {
+            a.strip_prefix("-X").or_else(|| a.strip_prefix("--method="))
+        };
+        if let Some(m) = method {
+            return m.eq_ignore_ascii_case("GET");
+        }
+        i += 1;
+    }
+    true
 }
 
 fn check_sqlite(args: &[String]) -> Option<String> {

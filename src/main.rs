@@ -72,6 +72,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak talos certs                             Cert inventory across all Talos nodes
   sak talos read /etc/os-release              Fan-out file read across nodes
   sak talos get members --node 192.168.1.10   COSI resource from one node
+  sak gh api repos/cli/cli                     GET a GitHub REST/GraphQL endpoint
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]

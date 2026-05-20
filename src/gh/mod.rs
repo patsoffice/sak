@@ -26,6 +26,7 @@
 //! environment. sak passes the environment through unchanged; there is
 //! no sak-side credential plumbing.
 
+pub mod api;
 pub mod client;
 
 use std::process::ExitCode;
@@ -33,13 +34,13 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Subcommand;
 
-/// Top-level `sak gh` subcommand enum. Empty until the first child
-/// command issue lands (`sak-llm-gt1` adds `gh api`); kept here so the
-/// dispatch wiring in `src/main.rs` doesn't have to move when the
-/// first command arrives.
 #[derive(Subcommand)]
-pub enum GhCommand {}
+pub enum GhCommand {
+    Api(api::ApiArgs),
+}
 
 pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
-    match *cmd {}
+    match cmd {
+        GhCommand::Api(args) => api::run(args),
+    }
 }

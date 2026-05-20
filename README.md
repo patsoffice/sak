@@ -120,7 +120,7 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
 
 The configuration below is for Claude Code's `~/.claude/settings.json`. The pattern adapts to any agent harness that supports per-tool permissions and pre-tool hooks.
 
@@ -182,7 +182,7 @@ sak hook claude-code --check 'git status'   # prints suggestion, exits 2
 sak hook claude-code --check 'git commit'   # silent, exits 0
 ```
 
-The rule set lives in `src/hook/claude_code.rs` with an inline test suite that pins every block/allow decision. When a new sak command shadows a kubectl/git/docker/lxc/talosctl read that the hook doesn't yet redirect, add a case to `check_*` and a test next to the existing ones — no harness-side config changes needed.
+The rule set lives in `src/hook/claude_code.rs` with an inline test suite that pins every block/allow decision. When a new sak command shadows a kubectl/git/docker/lxc/talosctl/gh read that the hook doesn't yet redirect, add a case to `check_*` and a test next to the existing ones — no harness-side config changes needed.
 
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
@@ -204,6 +204,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
+- `sak gh api <endpoint>` instead of `gh api` / `curl` against the GitHub API
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads
