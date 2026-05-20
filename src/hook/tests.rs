@@ -268,6 +268,15 @@ fn gh_run_list_blocks() {
 }
 
 #[test]
+fn gh_run_view_blocks() {
+    assert!(blocks("gh run view 26189297400"));
+    assert!(blocks("gh run view 26189297400 --log-failed"));
+    assert!(blocks(
+        "gh run view 26189297400 --repo cli/cli --job 999 --log"
+    ));
+}
+
+#[test]
 fn gh_release_list_blocks() {
     assert!(blocks("gh release list"));
     assert!(blocks("gh release list --repo cli/cli --limit 50"));
@@ -302,9 +311,7 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh repo clone cli/cli"));
     // `pr` reads other than `list`/`view` have no command yet.
     assert!(allows("gh pr checks 123"));
-    // `run` / `release` / `workflow` reads other than `list` have no command
-    // yet.
-    assert!(allows("gh run view 42"));
+    // `release` / `workflow` reads other than `list` have no command yet.
     assert!(allows("gh release view v1.0"));
     assert!(allows("gh workflow view ci.yml"));
     // `repo list` has no command yet (only `repo view` is shadowed).

@@ -630,6 +630,9 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
         (Some("run"), Some("list")) => {
             block("Use `sak gh run-list` instead of `gh run list` (TSV/JSON, --fields forwarded).")
         }
+        (Some("run"), Some("view")) => block(
+            "Use `sak gh run-view <run-id>` instead of `gh run view` (JSON/TSV, or --log/--log-failed).",
+        ),
         (Some("release"), Some("list")) => block(
             "Use `sak gh release-list` instead of `gh release list` (TSV/JSON, --fields forwarded).",
         ),
