@@ -284,6 +284,13 @@ fn gh_release_list_blocks() {
 }
 
 #[test]
+fn gh_release_view_blocks() {
+    assert!(blocks("gh release view"));
+    assert!(blocks("gh release view v2.92.0"));
+    assert!(blocks("gh release view v2.92.0 --repo cli/cli"));
+}
+
+#[test]
 fn gh_workflow_list_blocks() {
     assert!(blocks("gh workflow list"));
     assert!(blocks("gh workflow list --all"));
@@ -311,8 +318,7 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh repo clone cli/cli"));
     // `pr` reads other than `list`/`view` have no command yet.
     assert!(allows("gh pr checks 123"));
-    // `release` / `workflow` reads other than `list` have no command yet.
-    assert!(allows("gh release view v1.0"));
+    // `workflow` reads other than `list` have no command yet.
     assert!(allows("gh workflow view ci.yml"));
     // `repo list` has no command yet (only `repo view` is shadowed).
     assert!(allows("gh repo list"));

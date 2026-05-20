@@ -80,6 +80,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh run-list --workflow ci.yml            List CI workflow runs as TSV
   sak gh run-view 123 --log-failed             Show a run's metadata or logs
   sak gh release-list                          List releases as TSV
+  sak gh release-view v1.2.3                    Show one release's metadata (JSON/TSV)
   sak gh workflow-list                         List workflow definitions as TSV
   sak gh repo-view cli/cli                      Show repository metadata (JSON/TSV)
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",

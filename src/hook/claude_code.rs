@@ -636,6 +636,9 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
         (Some("release"), Some("list")) => block(
             "Use `sak gh release-list` instead of `gh release list` (TSV/JSON, --fields forwarded).",
         ),
+        (Some("release"), Some("view")) => {
+            block("Use `sak gh release-view [<tag>]` instead of `gh release view` (JSON/TSV).")
+        }
         (Some("workflow"), Some("list")) => block(
             "Use `sak gh workflow-list` instead of `gh workflow list` (TSV/JSON, --fields forwarded).",
         ),
