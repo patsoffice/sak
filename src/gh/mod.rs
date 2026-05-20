@@ -28,6 +28,8 @@
 
 pub mod api;
 pub mod client;
+pub mod pr_list;
+pub mod render;
 
 use std::process::ExitCode;
 
@@ -37,10 +39,12 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum GhCommand {
     Api(api::ApiArgs),
+    PrList(pr_list::PrListArgs),
 }
 
 pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
     match cmd {
         GhCommand::Api(args) => api::run(args),
+        GhCommand::PrList(args) => pr_list::run(args),
     }
 }

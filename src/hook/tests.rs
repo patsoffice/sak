@@ -233,14 +233,24 @@ fn gh_api_non_get_allows() {
 }
 
 #[test]
+fn gh_pr_list_blocks() {
+    assert!(blocks("gh pr list"));
+    assert!(blocks("gh pr list --state all --limit 50"));
+    assert!(blocks("gh pr list --repo cli/cli --author octocat"));
+}
+
+#[test]
 fn gh_mutations_and_unshadowed_allow() {
     // Mutating verbs are not redirected.
     assert!(allows("gh pr merge 123"));
     assert!(allows("gh issue close 5"));
     assert!(allows("gh repo create my/repo"));
+    // `pr` reads other than `list` have no command yet.
+    assert!(allows("gh pr view 123"));
+    assert!(allows("gh pr checks 123"));
     // Read verbs that don't have their own command yet pass through until
     // their child issues land.
-    assert!(allows("gh pr list"));
+    assert!(allows("gh issue list"));
     assert!(allows("gh issue view 5"));
 }
 

@@ -607,13 +607,16 @@ fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
 }
 
 fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
-    match pos.first().copied() {
+    match (pos.first().copied(), pos.get(1).copied()) {
         // Only redirect GET reads. A non-GET `gh api` means the caller wants a
         // write that `sak gh` deliberately can't perform, so it passes through
-        // to real `gh`. (Other read verbs — `pr list`, `issue view`, ... — get
-        // their own redirects as those commands land.)
-        Some("api") if gh_api_method_is_get(args) => {
+        // to real `gh`. (Other read verbs get their own redirects as those
+        // commands land.)
+        (Some("api"), _) if gh_api_method_is_get(args) => {
             block("Use `sak gh api <endpoint>` instead of `gh api` for GET requests.")
+        }
+        (Some("pr"), Some("list")) => {
+            block("Use `sak gh pr-list` instead of `gh pr list` (TSV/JSON, --fields forwarded).")
         }
         _ => None,
     }

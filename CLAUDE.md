@@ -16,7 +16,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak cert inspect|expiring|from-kubeconfig|from-yaml` instead of `openssl x509 | grep | awk` pipelines on PEM/DER
 - `sak talos certs|read|get` instead of `for n in <ips>; do talosctl -n $n …; done` fan-out loops
-- `sak gh api <endpoint>` instead of `gh api` / `curl`ing the GitHub REST or GraphQL API for reads
+- `sak gh pr-list` / `sak gh api <endpoint>` instead of `gh pr list` / `gh api` / `curl`ing the GitHub REST or GraphQL API for reads
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops
