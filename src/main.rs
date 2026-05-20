@@ -75,6 +75,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh api repos/cli/cli                     GET a GitHub REST/GraphQL endpoint
   sak gh pr-list --state open                  List pull requests as TSV
   sak gh issue-list --label bug                List issues as TSV
+  sak gh run-list --workflow ci.yml            List CI workflow runs as TSV
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]

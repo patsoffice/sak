@@ -31,6 +31,7 @@ pub mod client;
 pub mod issue_list;
 pub mod pr_list;
 pub mod render;
+pub mod run_list;
 
 use std::process::ExitCode;
 
@@ -42,6 +43,7 @@ pub enum GhCommand {
     Api(api::ApiArgs),
     PrList(pr_list::PrListArgs),
     IssueList(issue_list::IssueListArgs),
+    RunList(run_list::RunListArgs),
 }
 
 pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
@@ -49,5 +51,6 @@ pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
         GhCommand::Api(args) => api::run(args),
         GhCommand::PrList(args) => pr_list::run(args),
         GhCommand::IssueList(args) => issue_list::run(args),
+        GhCommand::RunList(args) => run_list::run(args),
     }
 }

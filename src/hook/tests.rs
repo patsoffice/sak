@@ -247,15 +247,25 @@ fn gh_issue_list_blocks() {
 }
 
 #[test]
+fn gh_run_list_blocks() {
+    assert!(blocks("gh run list"));
+    assert!(blocks("gh run list --workflow ci.yml --branch main"));
+    assert!(blocks("gh run list --status completed --limit 50"));
+}
+
+#[test]
 fn gh_mutations_and_unshadowed_allow() {
     // Mutating verbs are not redirected.
     assert!(allows("gh pr merge 123"));
     assert!(allows("gh issue close 5"));
     assert!(allows("gh repo create my/repo"));
-    // `pr` / `issue` reads other than `list` have no command yet.
+    assert!(allows("gh run rerun 42"));
+    assert!(allows("gh run cancel 42"));
+    // `pr` / `issue` / `run` reads other than `list` have no command yet.
     assert!(allows("gh pr view 123"));
     assert!(allows("gh pr checks 123"));
     assert!(allows("gh issue view 5"));
+    assert!(allows("gh run view 42"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
