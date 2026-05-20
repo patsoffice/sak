@@ -630,6 +630,9 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
         (Some("workflow"), Some("list")) => block(
             "Use `sak gh workflow-list` instead of `gh workflow list` (TSV/JSON, --fields forwarded).",
         ),
+        (Some("repo"), Some("view")) => {
+            block("Use `sak gh repo-view [<owner/name>]` instead of `gh repo view` (JSON/TSV).")
+        }
         _ => None,
     }
 }

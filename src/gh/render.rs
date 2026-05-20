@@ -116,19 +116,7 @@ pub fn emit(
     let text = String::from_utf8_lossy(stdout);
 
     match format {
-        Format::Json => {
-            let trimmed = text.trim();
-            if trimmed.is_empty() || trimmed == "[]" {
-                return Ok(false);
-            }
-            for line in text.split_inclusive('\n') {
-                let line = line.strip_suffix('\n').unwrap_or(line);
-                if !writer.write_line(line)? {
-                    break;
-                }
-            }
-            Ok(true)
-        }
+        Format::Json => write_json_verbatim(writer, &text, "[]"),
         Format::Tsv => {
             let records: Vec<Value> =
                 serde_json::from_str(text.trim()).context("parsing `gh ... --json` output")?;
@@ -147,6 +135,66 @@ pub fn emit(
     }
 }
 
+/// Emit a single `gh ... view --json` object as either verbatim JSON or, for
+/// `Tsv`, one `field<TAB>value` line per requested field (the single-record
+/// shape isn't a table, so there's no header row and each field is its own
+/// line). Used by the `gh *-view` commands.
+///
+/// Returns `true` when a non-empty object was emitted, `false` for an empty
+/// document (`{}` / empty string) so callers can map to sak's exit code 1.
+pub fn emit_single(
+    writer: &mut BoundedWriter<'_>,
+    stdout: &[u8],
+    fields: &[String],
+    format: Format,
+) -> Result<bool> {
+    let text = String::from_utf8_lossy(stdout);
+
+    match format {
+        Format::Json => write_json_verbatim(writer, &text, "{}"),
+        Format::Tsv => {
+            let record: Value =
+                serde_json::from_str(text.trim()).context("parsing `gh ... --json` output")?;
+            let is_empty = match &record {
+                Value::Object(map) => map.is_empty(),
+                Value::Null => true,
+                _ => false,
+            };
+            if is_empty {
+                return Ok(false);
+            }
+            for field in fields {
+                let line = format!("{}\t{}", field, render_cell(&record, field));
+                if !writer.write_line(&line)? {
+                    break;
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
+/// Stream a JSON body to the writer unchanged, line by line. `empty_marker`
+/// is the trimmed body that counts as "no results" (`[]` for arrays, `{}` for
+/// single objects). Shared by [`emit`] and [`emit_single`].
+fn write_json_verbatim(
+    writer: &mut BoundedWriter<'_>,
+    text: &str,
+    empty_marker: &str,
+) -> Result<bool> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed == empty_marker {
+        return Ok(false);
+    }
+    for line in text.split_inclusive('\n') {
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        if !writer.write_line(line)? {
+            break;
+        }
+    }
+    Ok(true)
+}
+
 /// Convenience for commands: lock stdout, build a bounded writer, emit, and
 /// flush, mapping the present/empty result to sak's 0/1 exit codes.
 pub fn emit_to_stdout(
@@ -155,10 +203,32 @@ pub fn emit_to_stdout(
     format: Format,
     limit: Option<usize>,
 ) -> Result<std::process::ExitCode> {
+    finish(emit, stdout, fields, format, limit)
+}
+
+/// Single-record counterpart of [`emit_to_stdout`] for the `gh *-view`
+/// commands.
+pub fn emit_single_to_stdout(
+    stdout: &[u8],
+    fields: &[String],
+    format: Format,
+    limit: Option<usize>,
+) -> Result<std::process::ExitCode> {
+    finish(emit_single, stdout, fields, format, limit)
+}
+
+/// Shared stdout-locking / flush / exit-code wrapper for the two emit fns.
+fn finish(
+    emit_fn: impl FnOnce(&mut BoundedWriter<'_>, &[u8], &[String], Format) -> Result<bool>,
+    stdout: &[u8],
+    fields: &[String],
+    format: Format,
+    limit: Option<usize>,
+) -> Result<std::process::ExitCode> {
     let out = std::io::stdout();
     let handle = out.lock();
     let mut writer = BoundedWriter::new(handle, limit);
-    let any = emit(&mut writer, stdout, fields, format)?;
+    let any = emit_fn(&mut writer, stdout, fields, format)?;
     writer.flush()?;
     Ok(if any {
         std::process::ExitCode::SUCCESS

@@ -204,7 +204,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
-- `sak gh pr-list` / `sak gh issue-list` / `sak gh run-list` / `sak gh release-list` / `sak gh workflow-list` / `sak gh api <endpoint>` instead of `gh pr list` / `gh issue list` / `gh run list` / `gh release list` / `gh workflow list` / `gh api` / `curl` against the GitHub API
+- `sak gh pr-list` / `sak gh issue-list` / `sak gh run-list` / `sak gh release-list` / `sak gh workflow-list` / `sak gh repo-view` / `sak gh api <endpoint>` instead of `gh pr list` / `gh issue list` / `gh run list` / `gh release list` / `gh workflow list` / `gh repo view` / `gh api` / `curl` against the GitHub API
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads

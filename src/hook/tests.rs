@@ -268,6 +268,13 @@ fn gh_workflow_list_blocks() {
 }
 
 #[test]
+fn gh_repo_view_blocks() {
+    assert!(blocks("gh repo view"));
+    assert!(blocks("gh repo view cli/cli"));
+    assert!(blocks("gh repo view --json nameWithOwner"));
+}
+
+#[test]
 fn gh_mutations_and_unshadowed_allow() {
     // Mutating verbs are not redirected.
     assert!(allows("gh pr merge 123"));
@@ -278,6 +285,7 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh release create v1.0"));
     assert!(allows("gh workflow run deploy.yml"));
     assert!(allows("gh workflow disable ci.yml"));
+    assert!(allows("gh repo clone cli/cli"));
     // `pr` / `issue` / `run` / `release` / `workflow` reads other than `list`
     // have no command yet.
     assert!(allows("gh pr view 123"));
@@ -286,6 +294,8 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh run view 42"));
     assert!(allows("gh release view v1.0"));
     assert!(allows("gh workflow view ci.yml"));
+    // `repo list` has no command yet (only `repo view` is shadowed).
+    assert!(allows("gh repo list"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
