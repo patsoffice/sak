@@ -45,14 +45,11 @@ pub enum DockerCommand {
 
 /// Dispatch a `sak docker` subcommand.
 ///
-/// Builds a current-thread tokio runtime locally and `block_on`s the async
-/// command body. The runtime is dropped before this function returns, so the
-/// rest of sak stays sync.
+/// Delegates to [`crate::output::run_async`], which builds a current-thread
+/// tokio runtime locally and `block_on`s the async command body. The runtime
+/// is dropped before this function returns, so the rest of sak stays sync.
 pub fn run(cmd: &DockerCommand) -> Result<ExitCode> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(async { dispatch(cmd).await })
+    crate::output::run_async(dispatch(cmd))
 }
 
 async fn dispatch(cmd: &DockerCommand) -> Result<ExitCode> {

@@ -90,6 +90,24 @@ pub fn is_binary(path: &std::path::Path) -> io::Result<bool> {
     Ok(buf[..n].contains(&0))
 }
 
+/// Build a current-thread tokio runtime and block on `fut`, returning its
+/// result. Shared by the async domains (`k8s`, `lxc`, `docker`) so each
+/// domain's `run()` doesn't repeat the runtime-bootstrap boilerplate. The
+/// runtime is dropped before this returns, so the rest of sak stays sync.
+///
+/// Gated to the features that actually pull in tokio, so lean builds
+/// (`--no-default-features`) never see it.
+#[cfg(any(feature = "k8s", feature = "lxc", feature = "docker"))]
+pub fn run_async<F, T>(fut: F) -> anyhow::Result<T>
+where
+    F: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(fut)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
