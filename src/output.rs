@@ -90,6 +90,42 @@ pub fn is_binary(path: &std::path::Path) -> io::Result<bool> {
     Ok(buf[..n].contains(&0))
 }
 
+/// Collapse `\n` and `\r` in `s` to single spaces so a multi-line free-text
+/// field stays on one output row. Used by the row-oriented emitters in `k8s`
+/// (event/describe messages) and `prom` (alert summaries, target `lastError`,
+/// rule queries, ...). Tabs are left intact — those domains don't emit
+/// tab-delimited rows whose contract a stray `\t` would break.
+///
+/// Implemented via `chars().map()` rather than `str::replace` because the
+/// k8s chokepoint grep test forbids `.replace(` outside `client.rs` (it would
+/// also catch `kube::Api::replace`, the mutation method being guarded).
+///
+/// Gated to the domains that use it so lean builds don't trip the dead-code
+/// lint. See [`collapse_ws`] for the variant that also collapses tabs.
+#[cfg(any(feature = "k8s", feature = "prom"))]
+pub fn collapse_newlines(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect()
+}
+
+/// Collapse `\n`, `\r`, and `\t` in `s` to single spaces so a value can't
+/// break a one-record-per-line, tab-delimited (TSV) contract. Used by the
+/// `gh` domain, whose `--fields` output is genuinely tab-separated. See
+/// [`collapse_newlines`] for the newline-only variant. Implemented via
+/// `chars().map()` to match the repo's chokepoint conventions.
+pub fn collapse_ws(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if matches!(c, '\n' | '\r' | '\t') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 /// Pretty-print `data` as JSON through a [`BoundedWriter`], honoring `--limit`.
 /// This is the `--json` / metadata-dump branch shared by `sak prom` (every
 /// command), `sak k8s schema`, `sak docker info`, and `sak lxc info`. Always
@@ -165,5 +201,29 @@ mod tests {
 
         let other = Path::new("/tmp/file.txt");
         assert_eq!(relative_path(other, base), "/tmp/file.txt");
+    }
+
+    #[cfg(any(feature = "k8s", feature = "prom"))]
+    #[test]
+    fn collapse_newlines_replaces_cr_and_lf_but_keeps_tabs() {
+        assert_eq!(
+            collapse_newlines("line1\nline2\rline3\r\nline4"),
+            "line1 line2 line3  line4"
+        );
+        assert_eq!(collapse_newlines("no newlines here"), "no newlines here");
+        // tabs are deliberately preserved by the newline-only variant
+        assert_eq!(collapse_newlines("a\tb"), "a\tb");
+    }
+
+    #[test]
+    fn collapse_ws_replaces_newlines_and_tabs() {
+        assert_eq!(
+            collapse_ws("line1\nline2\twith tab\rline3"),
+            "line1 line2 with tab line3"
+        );
+        assert_eq!(
+            collapse_ws("no whitespace controls"),
+            "no whitespace controls"
+        );
     }
 }

@@ -29,9 +29,9 @@ use kube::discovery::Scope;
 use serde_json::Value;
 
 use crate::k8s::containers::walk_containers;
-use crate::k8s::events::{collapse_newlines, fetch_events_for, format_event_row};
+use crate::k8s::events::{fetch_events_for, format_event_row};
 use crate::k8s::{client, discovery};
-use crate::output::BoundedWriter;
+use crate::output::{BoundedWriter, collapse_newlines};
 
 /// Maximum number of `ownerReferences` hops to walk before bailing — defends
 /// against pathological loops in malformed cluster state.

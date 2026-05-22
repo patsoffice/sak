@@ -108,7 +108,8 @@ pub(super) fn extract_event_row(ev: &Value) -> EventRow {
     } else {
         format!("{}/{}", kind, name)
     };
-    let message = collapse_newlines(ev.get("message").and_then(Value::as_str).unwrap_or("-"));
+    let message =
+        crate::output::collapse_newlines(ev.get("message").and_then(Value::as_str).unwrap_or("-"));
 
     EventRow {
         last,
@@ -117,17 +118,6 @@ pub(super) fn extract_event_row(ev: &Value) -> EventRow {
         kind_name,
         message,
     }
-}
-
-/// Collapse `\n` and `\r` in `s` to spaces so multi-line strings stay on a
-/// single output row. Implemented via `chars().map().collect()` rather than
-/// `str::replace` because the chokepoint grep test in `client.rs` forbids
-/// `.replace(` outside the chokepoint module (it would also catch
-/// `kube::Api::replace`, the mutation method we're guarding against).
-pub(super) fn collapse_newlines(s: &str) -> String {
-    s.chars()
-        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-        .collect()
 }
 
 /// Format one row as the `last<TAB>type<TAB>reason<TAB>kind/name<TAB>message`

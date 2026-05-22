@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use clap::ValueEnum;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
+use crate::output::{BoundedWriter, collapse_ws};
 
 /// Output format shared by every `gh` list command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -30,22 +30,6 @@ pub fn parse_fields(spec: &str) -> Vec<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
-        .collect()
-}
-
-/// Collapse `\n`, `\r`, and `\t` to single spaces so a value can't break
-/// the one-record-per-line / tab-delimited TSV contract. Done via
-/// `chars().map()` rather than `str::replace` to match the repo's
-/// chokepoint conventions and avoid pulling in extra allocation passes.
-fn collapse_ws(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if matches!(c, '\n' | '\r' | '\t') {
-                ' '
-            } else {
-                c
-            }
-        })
         .collect()
 }
 
