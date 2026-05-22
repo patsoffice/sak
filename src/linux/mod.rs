@@ -112,6 +112,26 @@ pub fn sanitize(value: &str) -> String {
         .collect()
 }
 
+/// Re-type a numeric string as a JSON number — integer where it fits in a
+/// `u64`, then float — falling back to the raw string if it parses as neither.
+///
+/// Shared by the JSON emitters across the `/proc` parsers so a numeric field
+/// round-trips as a JSON number instead of a quoted string, while a non-numeric
+/// value (or a `-` placeholder) stays a string. The `f64` branch is dormant for
+/// integer-only fields like `network`'s `uid`/`inode` (the `u64` parse wins
+/// first), but harmless there and required by `loadavg`/`uptime`, whose values
+/// are genuinely fractional.
+pub fn json_num(s: &str) -> serde_json::Value {
+    use serde_json::json;
+    if let Ok(n) = s.parse::<u64>() {
+        json!(n)
+    } else if let Ok(f) = s.parse::<f64>() {
+        json!(f)
+    } else {
+        json!(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +171,14 @@ mod tests {
     fn sanitize_collapses_control_whitespace() {
         assert_eq!(sanitize("a\tb\nc\rd"), "a b c d");
         assert_eq!(sanitize("no control chars"), "no control chars");
+    }
+
+    #[test]
+    fn json_num_prefers_integer_then_float_then_string() {
+        use serde_json::json;
+        assert_eq!(json_num("12345"), json!(12345u64));
+        assert_eq!(json_num("2.71"), json!(2.71));
+        assert_eq!(json_num("1/284"), json!("1/284"));
+        assert_eq!(json_num("-"), json!("-"));
     }
 }

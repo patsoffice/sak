@@ -13,7 +13,7 @@ use anyhow::Result;
 use clap::Args;
 use serde_json::{Value, json};
 
-use super::read_proc_file;
+use super::{json_num, read_proc_file};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -112,18 +112,6 @@ fn humanize(seconds: f64) -> String {
     let hours = (total % 86_400) / 3_600;
     let mins = (total % 3_600) / 60;
     format!("{days}d {hours}h {mins}m")
-}
-
-/// Re-type a numeric string as a JSON number (integer where possible, then
-/// float), falling back to the raw string if it does not parse.
-fn json_num(s: &str) -> Value {
-    if let Ok(n) = s.parse::<u64>() {
-        json!(n)
-    } else if let Ok(f) = s.parse::<f64>() {
-        json!(f)
-    } else {
-        json!(s)
-    }
 }
 
 fn build_json(up: &Uptime, human: bool) -> Value {

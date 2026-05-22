@@ -245,18 +245,13 @@ fn state_name(code: &str) -> String {
 }
 
 fn build_json(c: &Conn) -> Value {
-    let num = |s: &str| -> Value {
-        s.parse::<u64>()
-            .map(Value::from)
-            .unwrap_or_else(|_| json!(s))
-    };
     json!({
         "proto": c.proto,
         "state": c.state,
         "local": c.local,
         "remote": c.remote,
-        "uid": num(&c.uid),
-        "inode": num(&c.inode),
+        "uid": super::json_num(&c.uid),
+        "inode": super::json_num(&c.inode),
     })
 }
 

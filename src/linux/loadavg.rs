@@ -13,7 +13,7 @@ use anyhow::Result;
 use clap::Args;
 use serde_json::{Value, json};
 
-use super::read_proc_file;
+use super::{json_num, read_proc_file};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -99,18 +99,6 @@ fn parse_loadavg(input: &str) -> Option<LoadAvg> {
         total: total.to_string(),
         last_pid: t[4].to_string(),
     })
-}
-
-/// Re-type a numeric string as a JSON number (integer where possible, then
-/// float), falling back to the raw string if it does not parse.
-fn json_num(s: &str) -> Value {
-    if let Ok(n) = s.parse::<u64>() {
-        json!(n)
-    } else if let Ok(f) = s.parse::<f64>() {
-        json!(f)
-    } else {
-        json!(s)
-    }
 }
 
 fn build_json(la: &LoadAvg) -> Value {
