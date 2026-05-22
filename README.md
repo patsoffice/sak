@@ -198,7 +198,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 
 - `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, `sed -n`
-- `sak fs grep <pattern> <path>` instead of `grep` / `rg`
+- `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin)
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak git status|log|diff|blame|show` instead of read-only `git`
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`

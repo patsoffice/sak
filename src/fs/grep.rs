@@ -15,7 +15,11 @@ use crate::output::{BoundedWriter, is_binary, line_number_width, relative_path};
     about = "Search file contents with regex",
     long_about = "Search file contents using regular expressions.\n\n\
         Recursively searches files for lines matching the given regex pattern. \
-        Supports multiline matching where . matches newlines.",
+        Supports multiline matching where . matches newlines.\n\n\
+        Pass '-' as a path to read from stdin (matches grep/ripgrep), enabling \
+        pipelines like 'sak json query … | sak fs grep -'. Stdin can be mixed \
+        with file/directory paths; matches from stdin are labelled \
+        '(standard input)'.",
     after_help = "\
 Examples:
   sak fs grep 'fn main' src/                       Find 'fn main' in src/
@@ -23,13 +27,14 @@ Examples:
   sak fs grep -U 'struct \\w+\\s*\\{[^}]*\\}' .    Multiline: find struct bodies
   sak fs grep -l 'TODO' --glob '**/*.rs'           List Rust files with TODOs
   sak fs grep -c 'error' logs/                     Count matches per file
-  sak fs grep -C 3 'panic' src/                    Show 3 lines of context"
+  sak fs grep -C 3 'panic' src/                    Show 3 lines of context
+  some-cmd | sak fs grep 'pattern' -                Search piped stdin"
 )]
 pub struct GrepArgs {
     /// Regex pattern to search for
     pub pattern: String,
 
-    /// Files or directories to search
+    /// Files or directories to search ('-' reads stdin)
     #[arg(default_value = ".")]
     pub paths: Vec<PathBuf>,
 
@@ -127,6 +132,10 @@ fn collect_files(args: &GrepArgs) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
     for path in &args.paths {
+        // '-' is the stdin sentinel, handled separately in run().
+        if path.as_os_str() == "-" {
+            continue;
+        }
         if path.is_file() {
             files.push(path.clone());
             continue;
@@ -209,6 +218,9 @@ struct LineMatch {
     is_separator: bool,
 }
 
+/// Display label used for matches read from stdin (matches grep/ripgrep).
+const STDIN_LABEL: &str = "(standard input)";
+
 fn search_file_lines(
     path: &PathBuf,
     re: &Regex,
@@ -223,10 +235,22 @@ fn search_file_lines(
     let file =
         std::fs::File::open(path).with_context(|| format!("cannot open: {}", path.display()))?;
     let reader = BufReader::new(file);
+    search_reader_lines(reader, re, max_count, before_ctx, after_ctx, path.clone())
+        .with_context(|| format!("error reading: {}", path.display()))
+}
+
+fn search_reader_lines<R: BufRead>(
+    reader: R,
+    re: &Regex,
+    max_count: Option<usize>,
+    before_ctx: usize,
+    after_ctx: usize,
+    label: PathBuf,
+) -> Result<Option<MatchResult>> {
     let lines: Vec<String> = reader
         .lines()
         .collect::<Result<Vec<_>, io::Error>>()
-        .with_context(|| format!("error reading: {}", path.display()))?;
+        .context("error reading input")?;
 
     let mut match_line_nums: Vec<usize> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
@@ -284,7 +308,7 @@ fn search_file_lines(
     }
 
     Ok(Some(MatchResult {
-        path: path.clone(),
+        path: label,
         matches: output_lines,
         count,
     }))
@@ -301,11 +325,32 @@ fn search_file_multiline(
 
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("cannot read: {}", path.display()))?;
+    search_content_multiline(&content, re, max_count, path.clone())
+}
 
+fn search_reader_multiline<R: io::Read>(
+    mut reader: R,
+    re: &Regex,
+    max_count: Option<usize>,
+    label: PathBuf,
+) -> Result<Option<MatchResult>> {
+    let mut content = String::new();
+    reader
+        .read_to_string(&mut content)
+        .context("error reading input")?;
+    search_content_multiline(&content, re, max_count, label)
+}
+
+fn search_content_multiline(
+    content: &str,
+    re: &Regex,
+    max_count: Option<usize>,
+    label: PathBuf,
+) -> Result<Option<MatchResult>> {
     let mut matches_found: Vec<LineMatch> = Vec::new();
     let mut count = 0;
 
-    for mat in re.find_iter(&content) {
+    for mat in re.find_iter(content) {
         count += 1;
         // Find line number of match start
         let line_num = content[..mat.start()].matches('\n').count() + 1;
@@ -346,20 +391,98 @@ fn search_file_multiline(
     }
 
     Ok(Some(MatchResult {
-        path: path.clone(),
+        path: label,
         matches: matches_found,
         count,
     }))
 }
 
+/// Emit one file's (or stdin's) matches. Returns `Ok(false)` when the output
+/// limit has been reached and the caller should stop emitting further results.
+fn emit_result(
+    result: &MatchResult,
+    label: &str,
+    args: &GrepArgs,
+    multi_file: bool,
+    first_file: &mut bool,
+    writer: &mut BoundedWriter<'_>,
+) -> Result<bool> {
+    if args.files_only {
+        return Ok(writer.write_line(label)?);
+    }
+
+    if args.count {
+        return if multi_file {
+            Ok(writer.write_line(&format!("{}:{}", label, result.count))?)
+        } else {
+            Ok(writer.write_line(&format!("{}", result.count))?)
+        };
+    }
+
+    // Regular output
+    if args.heading {
+        if !*first_file {
+            writer.write_decoration("")?;
+        }
+        if multi_file {
+            writer.write_decoration(label)?;
+        }
+        let max_ln = result
+            .matches
+            .iter()
+            .filter(|m| !m.is_separator)
+            .map(|m| m.line_num)
+            .max()
+            .unwrap_or(1);
+        let width = line_number_width(max_ln);
+
+        for m in &result.matches {
+            if m.is_separator {
+                writer.write_decoration(&m.content)?;
+            } else {
+                let prefix = if args.line_number {
+                    let sep = if m.is_context { "-" } else { ":" };
+                    format!("{:>width$}{}{}", m.line_num, sep, m.content, width = width)
+                } else {
+                    m.content.clone()
+                };
+                if !writer.write_line(&prefix)? {
+                    return Ok(false);
+                }
+            }
+        }
+    } else {
+        // No heading: file:line:content
+        for m in &result.matches {
+            if m.is_separator {
+                writer.write_decoration("--")?;
+            } else {
+                let line = if args.line_number {
+                    format!("{}:{}:{}", label, m.line_num, m.content)
+                } else {
+                    format!("{}:{}", label, m.content)
+                };
+                if !writer.write_line(&line)? {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    *first_file = false;
+    Ok(true)
+}
+
 pub fn run(args: &GrepArgs) -> Result<ExitCode> {
     let re = build_regex(&args.pattern, args.ignore_case, args.word, args.multiline)?;
     let files = collect_files(args)?;
+    let read_stdin = args.paths.iter().any(|p| p.as_os_str() == "-");
 
     let before_ctx = args.before_context.or(args.context).unwrap_or(0);
     let after_ctx = args.after_context.or(args.context).unwrap_or(0);
 
-    let multi_file = files.len() > 1;
+    // stdin counts as one source when deciding whether to label output by source.
+    let multi_file = files.len() + usize::from(read_stdin) > 1;
     let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let stdout = io::stdout();
@@ -382,78 +505,51 @@ pub fn run(args: &GrepArgs) -> Result<ExitCode> {
 
         any_match = true;
         let rel = relative_path(&result.path, &base);
-
-        if args.files_only {
-            if !writer.write_line(&rel)? {
-                break;
-            }
-            continue;
+        if !emit_result(
+            &result,
+            &rel,
+            args,
+            multi_file,
+            &mut first_file,
+            &mut writer,
+        )? {
+            writer.flush()?;
+            return Ok(ExitCode::SUCCESS);
         }
+    }
 
-        if args.count {
-            if multi_file {
-                if !writer.write_line(&format!("{}:{}", rel, result.count))? {
-                    break;
-                }
-            } else if !writer.write_line(&format!("{}", result.count))? {
-                break;
-            }
-            continue;
-        }
-
-        // Regular output
-        if args.heading {
-            if !first_file {
-                writer.write_decoration("")?;
-            }
-            if multi_file {
-                writer.write_decoration(&rel)?;
-            }
-            let max_ln = result
-                .matches
-                .iter()
-                .filter(|m| !m.is_separator)
-                .map(|m| m.line_num)
-                .max()
-                .unwrap_or(1);
-            let width = line_number_width(max_ln);
-
-            for m in &result.matches {
-                if m.is_separator {
-                    writer.write_decoration(&m.content)?;
-                } else {
-                    let prefix = if args.line_number {
-                        let sep = if m.is_context { "-" } else { ":" };
-                        format!("{:>width$}{}{}", m.line_num, sep, m.content, width = width)
-                    } else {
-                        m.content.clone()
-                    };
-                    if !writer.write_line(&prefix)? {
-                        writer.flush()?;
-                        return Ok(ExitCode::SUCCESS);
-                    }
-                }
-            }
+    // stdin is searched after file/directory paths.
+    if read_stdin {
+        let stdin = io::stdin();
+        let result = if args.multiline {
+            search_reader_multiline(
+                stdin.lock(),
+                &re,
+                args.max_count,
+                PathBuf::from(STDIN_LABEL),
+            )?
         } else {
-            // No heading: file:line:content
-            for m in &result.matches {
-                if m.is_separator {
-                    writer.write_decoration("--")?;
-                } else {
-                    let line = if args.line_number {
-                        format!("{}:{}:{}", rel, m.line_num, m.content)
-                    } else {
-                        format!("{}:{}", rel, m.content)
-                    };
-                    if !writer.write_line(&line)? {
-                        writer.flush()?;
-                        return Ok(ExitCode::SUCCESS);
-                    }
-                }
-            }
-        }
+            search_reader_lines(
+                stdin.lock(),
+                &re,
+                args.max_count,
+                before_ctx,
+                after_ctx,
+                PathBuf::from(STDIN_LABEL),
+            )?
+        };
 
-        first_file = false;
+        if let Some(result) = result {
+            any_match = true;
+            emit_result(
+                &result,
+                STDIN_LABEL,
+                args,
+                multi_file,
+                &mut first_file,
+                &mut writer,
+            )?;
+        }
     }
 
     writer.flush()?;
@@ -568,6 +664,58 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result.count, 1);
+    }
+
+    #[test]
+    fn test_search_reader_lines_stdin() {
+        let input = "line one\nmatch here\nline three\nanother match\n";
+        let re = Regex::new("match").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new(input),
+            &re,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 2);
+        assert_eq!(result.path, PathBuf::from(STDIN_LABEL));
+        let non_sep: Vec<_> = result.matches.iter().filter(|m| !m.is_separator).collect();
+        assert_eq!(non_sep[0].line_num, 2);
+        assert_eq!(non_sep[1].line_num, 4);
+    }
+
+    #[test]
+    fn test_search_reader_lines_no_match() {
+        let re = Regex::new("absent").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new("nothing here\n"),
+            &re,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_search_reader_multiline_stdin() {
+        let input = "struct Foo {\n    x: i32,\n}\n";
+        let re = Regex::new(r"(?s)struct \w+\s*\{[^}]*\}").unwrap();
+        let result = search_reader_multiline(
+            io::Cursor::new(input),
+            &re,
+            None,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 1);
+        assert_eq!(result.path, PathBuf::from(STDIN_LABEL));
     }
 
     #[test]
