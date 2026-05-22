@@ -19,6 +19,7 @@
 //! code 2 rather than reading a `/proc` that does not exist.
 
 pub mod cpuinfo;
+pub mod meminfo;
 
 use std::process::ExitCode;
 
@@ -28,6 +29,7 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum LinuxCommand {
     Cpuinfo(cpuinfo::CpuinfoArgs),
+    Meminfo(meminfo::MeminfoArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -43,6 +45,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
     #[cfg(target_os = "linux")]
     match cmd {
         LinuxCommand::Cpuinfo(args) => cpuinfo::run(args),
+        LinuxCommand::Meminfo(args) => meminfo::run(args),
     }
 }
 

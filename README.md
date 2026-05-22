@@ -211,7 +211,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API
-- `sak linux cpuinfo` instead of `awk`-ing `/proc/cpuinfo` (Linux-only; more `/proc` parsers arrive in follow-ups)
+- `sak linux cpuinfo|meminfo` instead of `awk`-ing `/proc/cpuinfo` or `/proc/meminfo` (Linux-only; more `/proc` parsers arrive in follow-ups)
 
 Discover flags with `sak <domain> <command> --help`. If you want a sak
 command that doesn't exist yet, that's a signal to add it, not to fall

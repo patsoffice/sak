@@ -85,6 +85,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh workflow-list                         List workflow definitions as TSV
   sak gh repo-view cli/cli                      Show repository metadata (JSON/TSV)
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
+  sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]
