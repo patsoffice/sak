@@ -20,6 +20,7 @@
 
 pub mod cpuinfo;
 pub mod meminfo;
+pub mod mounts;
 
 use std::process::ExitCode;
 
@@ -30,6 +31,7 @@ use clap::Subcommand;
 pub enum LinuxCommand {
     Cpuinfo(cpuinfo::CpuinfoArgs),
     Meminfo(meminfo::MeminfoArgs),
+    Mounts(mounts::MountsArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -46,6 +48,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
     match cmd {
         LinuxCommand::Cpuinfo(args) => cpuinfo::run(args),
         LinuxCommand::Meminfo(args) => meminfo::run(args),
+        LinuxCommand::Mounts(args) => mounts::run(args),
     }
 }
 
