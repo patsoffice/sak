@@ -19,6 +19,7 @@
 //! code 2 rather than reading a `/proc` that does not exist.
 
 pub mod cpuinfo;
+pub mod loadavg;
 pub mod meminfo;
 pub mod mounts;
 
@@ -32,6 +33,7 @@ pub enum LinuxCommand {
     Cpuinfo(cpuinfo::CpuinfoArgs),
     Meminfo(meminfo::MeminfoArgs),
     Mounts(mounts::MountsArgs),
+    Loadavg(loadavg::LoadavgArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -49,6 +51,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
         LinuxCommand::Cpuinfo(args) => cpuinfo::run(args),
         LinuxCommand::Meminfo(args) => meminfo::run(args),
         LinuxCommand::Mounts(args) => mounts::run(args),
+        LinuxCommand::Loadavg(args) => loadavg::run(args),
     }
 }
 
