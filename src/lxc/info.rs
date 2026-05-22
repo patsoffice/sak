@@ -9,14 +9,12 @@
 //! A 404 from the daemon (instance not found) maps to exit code 1; any other
 //! error is exit code 2 with a message on stderr.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
 
 use crate::lxc::client::LxcClient;
-use crate::output::BoundedWriter;
 
 #[derive(Args)]
 #[command(
@@ -61,17 +59,5 @@ pub async fn run(args: &InfoArgs) -> Result<ExitCode> {
         None => return Ok(ExitCode::from(1)),
     };
 
-    let pretty = serde_json::to_string_pretty(&metadata)?;
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
-    for line in pretty.lines() {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-
-    Ok(ExitCode::SUCCESS)
+    crate::output::emit_json(&metadata, args.limit)
 }

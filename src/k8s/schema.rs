@@ -24,7 +24,6 @@
 //! Modern apiservers (1.19+) expose v3. We deliberately don't fall back to v2
 //! — it keeps the implementation small and the failure mode honest.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -32,7 +31,6 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::k8s::{client, discovery};
-use crate::output::BoundedWriter;
 
 #[derive(Args)]
 #[command(
@@ -142,18 +140,7 @@ pub async fn run(args: &SchemaArgs) -> Result<ExitCode> {
             )
         })?;
 
-    let pretty = serde_json::to_string_pretty(schema)?;
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
-    for line in pretty.split('\n') {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    crate::output::emit_json(schema, args.limit)
 }
 
 /// Resolve the user's CLI input into a concrete `(group, version, kind)`

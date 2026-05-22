@@ -90,6 +90,32 @@ pub fn is_binary(path: &std::path::Path) -> io::Result<bool> {
     Ok(buf[..n].contains(&0))
 }
 
+/// Pretty-print `data` as JSON through a [`BoundedWriter`], honoring `--limit`.
+/// This is the `--json` / metadata-dump branch shared by `sak prom` (every
+/// command), `sak k8s schema`, `sak docker info`, and `sak lxc info`. Always
+/// returns [`ExitCode::SUCCESS`](std::process::ExitCode) — a JSON dump of an
+/// empty result is still a successful response, just an empty one.
+///
+/// Gated to the domains that use it so lean builds don't carry it (and don't
+/// trip the dead-code lint).
+#[cfg(any(feature = "k8s", feature = "lxc", feature = "docker", feature = "prom"))]
+pub fn emit_json(
+    data: &serde_json::Value,
+    limit: Option<usize>,
+) -> anyhow::Result<std::process::ExitCode> {
+    let stdout = io::stdout();
+    let handle = stdout.lock();
+    let mut writer = BoundedWriter::new(handle, limit);
+    let pretty = serde_json::to_string_pretty(data)?;
+    for line in pretty.lines() {
+        if !writer.write_line(line)? {
+            break;
+        }
+    }
+    writer.flush()?;
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
 /// Build a current-thread tokio runtime and block on `fut`, returning its
 /// result. Shared by the async domains (`k8s`, `lxc`, `docker`) so each
 /// domain's `run()` doesn't repeat the runtime-bootstrap boilerplate. The

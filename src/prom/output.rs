@@ -2,35 +2,16 @@
 //!
 //! Every `sak prom` command supports `--json` (a raw pretty-printed
 //! passthrough of the upstream response) and most render free-text fields
-//! that may contain newlines. Rather than duplicate the `BoundedWriter`
-//! dance and the newline-collapsing logic across every command file, they
-//! live here once.
+//! that may contain newlines. The `--json` `BoundedWriter` dance now lives in
+//! [`crate::output::emit_json`] (shared with `k8s`/`lxc`/`docker`) and is
+//! re-exported below; the newline-collapsing logic, which is prom-specific,
+//! lives here.
 
-use std::io;
-use std::process::ExitCode;
-
-use anyhow::Result;
-use serde_json::Value;
-
-use crate::output::BoundedWriter;
-
-/// Pretty-print `data` as JSON through a [`BoundedWriter`], honoring
-/// `--limit`. This is the `--json` branch shared by every `sak prom`
-/// command. Always returns [`ExitCode::SUCCESS`] — a `--json` dump of an
-/// empty result is still a successful response, just an empty one.
-pub(super) fn emit_json(data: &Value, limit: Option<usize>) -> Result<ExitCode> {
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, limit);
-    let pretty = serde_json::to_string_pretty(data)?;
-    for line in pretty.lines() {
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    writer.flush()?;
-    Ok(ExitCode::SUCCESS)
-}
+// The JSON `--json` dump shared by every `sak prom` command now lives in
+// `crate::output` alongside `BoundedWriter`, where `sak k8s schema`,
+// `sak docker info`, and `sak lxc info` share it too. Re-exported here so the
+// prom command files keep importing it from their own domain's output module.
+pub(super) use crate::output::emit_json;
 
 /// Collapse `\n` and `\r` in `s` to spaces so a multi-line free-text field
 /// (alert summary, target `lastError`, rule `query`, ...) stays on one
