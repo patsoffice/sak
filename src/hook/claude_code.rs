@@ -365,6 +365,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "gh" => check_gh(args, &pos),
         "sqlite3" => check_sqlite(args),
+        "sysctl" => check_sysctl(args),
         _ => None,
     }
 }
@@ -688,4 +689,22 @@ fn check_sqlite(args: &[String]) -> Option<String> {
         );
     }
     None
+}
+
+fn check_sysctl(args: &[String]) -> Option<String> {
+    // Mutations are out of scope for sak — allow them through. Setting a knob is
+    // `key=value` (with or without `-w`); loading config files is `-p`/`--load`
+    // or `--system`. Everything else (`sysctl`, `-a`, `<key>`) is a read.
+    let is_write = args.iter().any(|a| {
+        a.contains('=')
+            || a == "-w"
+            || a == "--write"
+            || a == "-p"
+            || a == "--load"
+            || a == "--system"
+    });
+    if is_write {
+        return None;
+    }
+    block("Use `sak linux sysctl [pattern]` instead of `sysctl` for reads.")
 }

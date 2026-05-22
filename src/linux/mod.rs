@@ -22,6 +22,7 @@ pub mod cpuinfo;
 pub mod loadavg;
 pub mod meminfo;
 pub mod mounts;
+pub mod sysctl;
 pub mod uptime;
 
 use std::process::ExitCode;
@@ -36,6 +37,7 @@ pub enum LinuxCommand {
     Mounts(mounts::MountsArgs),
     Loadavg(loadavg::LoadavgArgs),
     Uptime(uptime::UptimeArgs),
+    Sysctl(sysctl::SysctlArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -55,6 +57,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
         LinuxCommand::Mounts(args) => mounts::run(args),
         LinuxCommand::Loadavg(args) => loadavg::run(args),
         LinuxCommand::Uptime(args) => uptime::run(args),
+        LinuxCommand::Sysctl(args) => sysctl::run(args),
     }
 }
 

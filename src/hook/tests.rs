@@ -451,6 +451,26 @@ fn sqlite_writes_allow() {
     assert!(allows("sqlite3 db.sqlite \"CREATE TABLE x (a INT)\""));
 }
 
+// ── sysctl ────────────────────────────────────────────────────
+
+#[test]
+fn sysctl_reads_block() {
+    assert!(blocks("sysctl"));
+    assert!(blocks("sysctl -a"));
+    assert!(blocks("sysctl --all"));
+    assert!(blocks("sysctl net.ipv4.tcp_syncookies"));
+    assert!(blocks("sysctl -n kernel.hostname"));
+}
+
+#[test]
+fn sysctl_writes_allow() {
+    assert!(allows("sysctl -w net.ipv4.ip_forward=1"));
+    assert!(allows("sysctl net.ipv4.ip_forward=1"));
+    assert!(allows("sysctl -p"));
+    assert!(allows("sysctl -p /etc/sysctl.conf"));
+    assert!(allows("sysctl --system"));
+}
+
 // ── pipeline / chaining / env prefixes ────────────────────────
 
 #[test]

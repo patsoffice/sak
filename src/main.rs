@@ -89,6 +89,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo
   sak linux loadavg                           Typed /proc/loadavg fields
   sak linux uptime --human                    Uptime + idle from /proc/uptime
+  sak linux sysctl '^net\\.ipv4\\.'           sysctl knobs from /proc/sys (regex filter)
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]
