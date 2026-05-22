@@ -91,6 +91,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak linux uptime --human                    Uptime + idle from /proc/uptime
   sak linux sysctl '^net\\.ipv4\\.'           sysctl knobs from /proc/sys (regex filter)
   sak linux process --all                     Process table from /proc/<pid>
+  sak linux network --state LISTEN            Decoded sockets from /proc/net/*
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]

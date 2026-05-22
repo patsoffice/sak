@@ -22,6 +22,7 @@ pub mod cpuinfo;
 pub mod loadavg;
 pub mod meminfo;
 pub mod mounts;
+pub mod network;
 pub mod process;
 pub mod sysctl;
 pub mod uptime;
@@ -40,6 +41,7 @@ pub enum LinuxCommand {
     Uptime(uptime::UptimeArgs),
     Sysctl(sysctl::SysctlArgs),
     Process(process::ProcessArgs),
+    Network(network::NetworkArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -61,6 +63,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
         LinuxCommand::Uptime(args) => uptime::run(args),
         LinuxCommand::Sysctl(args) => sysctl::run(args),
         LinuxCommand::Process(args) => process::run(args),
+        LinuxCommand::Network(args) => network::run(args),
     }
 }
 
