@@ -10,6 +10,7 @@ mod hook;
 mod json;
 #[cfg(feature = "k8s")]
 mod k8s;
+mod linux;
 #[cfg(feature = "lxc")]
 mod lxc;
 mod output;
@@ -83,6 +84,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh release-view v1.2.3                    Show one release's metadata (JSON/TSV)
   sak gh workflow-list                         List workflow definitions as TSV
   sak gh repo-view cli/cli                      Show repository metadata (JSON/TSV)
+  sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
     );
     #[cfg(feature = "k8s")]
@@ -210,6 +212,9 @@ enum Command {
     #[cfg(feature = "prom")]
     #[command(subcommand)]
     Prom(prom::PromCommand),
+    /// Linux /proc system-state inspection (read-only, Linux-only)
+    #[command(subcommand)]
+    Linux(linux::LinuxCommand),
     /// LLM-agent harness integration hooks (read-only command classification)
     #[command(subcommand)]
     Hook(hook::HookCommand),
@@ -237,6 +242,7 @@ fn main() -> ExitCode {
         Command::Sqlite(cmd) => sqlite::run(cmd),
         #[cfg(feature = "prom")]
         Command::Prom(cmd) => prom::run(cmd),
+        Command::Linux(cmd) => linux::run(cmd),
         Command::Hook(cmd) => hook::run(cmd),
     };
 

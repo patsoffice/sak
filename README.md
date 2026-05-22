@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), `linux` (parsed `/proc` system state, Linux-only — more commands arrive in follow-ups), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
 
 ## Design Decisions
 
@@ -211,6 +211,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API
+- `sak linux cpuinfo` instead of `awk`-ing `/proc/cpuinfo` (Linux-only; more `/proc` parsers arrive in follow-ups)
 
 Discover flags with `sak <domain> <command> --help`. If you want a sak
 command that doesn't exist yet, that's a signal to add it, not to fall
