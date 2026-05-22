@@ -22,6 +22,7 @@ pub mod cpuinfo;
 pub mod loadavg;
 pub mod meminfo;
 pub mod mounts;
+pub mod process;
 pub mod sysctl;
 pub mod uptime;
 
@@ -38,6 +39,7 @@ pub enum LinuxCommand {
     Loadavg(loadavg::LoadavgArgs),
     Uptime(uptime::UptimeArgs),
     Sysctl(sysctl::SysctlArgs),
+    Process(process::ProcessArgs),
 }
 
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
@@ -58,6 +60,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
         LinuxCommand::Loadavg(args) => loadavg::run(args),
         LinuxCommand::Uptime(args) => uptime::run(args),
         LinuxCommand::Sysctl(args) => sysctl::run(args),
+        LinuxCommand::Process(args) => process::run(args),
     }
 }
 
