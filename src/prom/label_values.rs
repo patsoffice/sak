@@ -12,6 +12,7 @@ use clap::Args;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::labels::extract_strings;
 use crate::prom::output::emit_json;
 use crate::prom::query::urlencode;
@@ -33,25 +34,16 @@ Examples:
   sak prom label-values job --json              Raw JSON for piping"
 )]
 pub struct LabelValuesArgs {
+    #[command(flatten)]
+    pub common: CommonPromArgs,
+
     /// The label name whose values to list (e.g. `job`, `namespace`)
     #[arg(value_name = "NAME")]
     pub name: String,
-
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/label/<name>/values
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 pub fn run(args: &LabelValuesArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let path = format!("/api/v1/label/{}/values", urlencode(&args.name));
     let data = match client.get_prom(&path)? {
@@ -59,8 +51,8 @@ pub fn run(args: &LabelValuesArgs) -> Result<ExitCode> {
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let mut values = extract_strings(&data, &path)?;
@@ -68,7 +60,7 @@ pub fn run(args: &LabelValuesArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for v in &values {

@@ -23,6 +23,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
 use crate::prom::output::emit_json;
 use crate::prom::query::urlencode;
@@ -46,6 +47,9 @@ Examples:
   sak prom series 'up' --start 1d --end 1h                Discovered 1d-1h ago"
 )]
 pub struct SeriesArgs {
+    #[command(flatten)]
+    pub common: CommonPromArgs,
+
     /// PromQL label selector (e.g. `up`, `{job="node"}`)
     #[arg(value_name = "SELECTOR")]
     pub selector: String,
@@ -57,18 +61,6 @@ pub struct SeriesArgs {
     /// Window end, as time-since-now (e.g. 0s, 5m). Default: now.
     #[arg(long, value_name = "DURATION")]
     pub end: Option<String>,
-
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/series
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 pub fn run(args: &SeriesArgs) -> Result<ExitCode> {
@@ -89,15 +81,15 @@ pub fn run(args: &SeriesArgs) -> Result<ExitCode> {
 
     let path = build_series_path(&args.selector, start_ts, end_ts);
 
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_prom(&path)? {
         Some(v) => v,
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let mut lines = extract_series_lines(&data)?;
@@ -105,7 +97,7 @@ pub fn run(args: &SeriesArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for line in &lines {

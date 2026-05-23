@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::output::emit_json;
 
 #[derive(Args)]
@@ -30,29 +31,20 @@ Examples:
   sak prom labels --limit 50                     First 50 labels"
 )]
 pub struct LabelsArgs {
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/labels
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
+    #[command(flatten)]
+    pub common: CommonPromArgs,
 }
 
 pub fn run(args: &LabelsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_prom("/api/v1/labels")? {
         Some(v) => v,
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let mut names = extract_strings(&data, "/api/v1/labels")?;
@@ -60,7 +52,7 @@ pub fn run(args: &LabelsArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for name in &names {

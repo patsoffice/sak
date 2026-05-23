@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::output::{collapse_newlines, emit_json};
 use crate::prom::query::urlencode;
 
@@ -39,21 +40,12 @@ Examples:
   sak prom metadata --limit 100                  First 100 lines"
 )]
 pub struct MetadataArgs {
+    #[command(flatten)]
+    pub common: CommonPromArgs,
+
     /// Optional metric name to narrow to (passed as `?metric=<name>`)
     #[arg(value_name = "METRIC")]
     pub metric: Option<String>,
-
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/metadata
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 /// One row extracted from a metadata entry. Pure data so the walking and
@@ -68,7 +60,7 @@ pub(super) struct MetadataRow {
 }
 
 pub fn run(args: &MetadataArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let path = match &args.metric {
         Some(m) => format!("/api/v1/metadata?metric={}", urlencode(m)),
@@ -79,8 +71,8 @@ pub fn run(args: &MetadataArgs) -> Result<ExitCode> {
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let mut rows = extract_metadata_rows(&data)?;
@@ -88,7 +80,7 @@ pub fn run(args: &MetadataArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for row in &rows {

@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::output::{collapse_newlines, emit_json};
 
 #[derive(Args)]
@@ -40,9 +41,8 @@ Examples:
   sak prom targets --down --json                Raw JSON for piping"
 )]
 pub struct TargetsArgs {
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
+    #[command(flatten)]
+    pub common: CommonPromArgs,
 
     /// Show only targets whose health is not `up`
     #[arg(long)]
@@ -51,14 +51,6 @@ pub struct TargetsArgs {
     /// Filter by job label regex
     #[arg(long, value_name = "REGEX")]
     pub job: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/targets
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 /// One row extracted from an active scrape target. Pure data so it can be
@@ -116,15 +108,15 @@ pub(super) fn sort_rows(rows: &mut [TargetRow]) {
 }
 
 pub fn run(args: &TargetsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_prom("/api/v1/targets")? {
         Some(v) => v,
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let active = data
@@ -147,7 +139,7 @@ pub fn run(args: &TargetsArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for row in &rows {

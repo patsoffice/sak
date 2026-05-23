@@ -25,6 +25,7 @@
 pub mod alerts;
 pub mod am;
 pub mod client;
+pub mod common_args;
 pub mod duration;
 pub mod flags;
 pub mod histogram;

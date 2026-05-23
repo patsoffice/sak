@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::output::{collapse_newlines, emit_json};
 
 #[derive(Args)]
@@ -41,9 +42,8 @@ Examples:
   sak prom alerts --url http://prom:9090 --json        Raw JSON for piping"
 )]
 pub struct AlertsArgs {
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
+    #[command(flatten)]
+    pub common: CommonPromArgs,
 
     /// Show only firing alerts
     #[arg(long, conflicts_with_all = ["pending", "all"])]
@@ -60,14 +60,6 @@ pub struct AlertsArgs {
     /// Filter by alertname regex
     #[arg(long, value_name = "REGEX")]
     pub name: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/alerts
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 /// One row extracted from a Prometheus alert object. Pure data so it can be
@@ -187,15 +179,15 @@ pub(super) fn state_filter(args: &AlertsArgs) -> StateFilter {
 }
 
 pub fn run(args: &AlertsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_prom("/api/v1/alerts")? {
         Some(v) => v,
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let alerts = data
@@ -219,7 +211,7 @@ pub fn run(args: &AlertsArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for row in &rows {

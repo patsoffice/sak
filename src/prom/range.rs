@@ -19,6 +19,7 @@ use clap::Args;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
 use crate::prom::output::emit_json;
 use crate::prom::query::{format_result, urlencode};
@@ -40,6 +41,9 @@ Examples:
   sak prom query-range 'up' --since 30m --json       Raw JSON for piping"
 )]
 pub struct RangeArgs {
+    #[command(flatten)]
+    pub common: CommonPromArgs,
+
     /// The PromQL expression to evaluate
     #[arg(value_name = "PROMQL")]
     pub query: String,
@@ -51,18 +55,6 @@ pub struct RangeArgs {
     /// Resolution step between samples (e.g. 15s, 1m, 1h)
     #[arg(long, value_name = "DURATION", default_value = "60s")]
     pub step: String,
-
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON response from /api/v1/query_range
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 pub fn run(args: &RangeArgs) -> Result<ExitCode> {
@@ -76,15 +68,15 @@ pub fn run(args: &RangeArgs) -> Result<ExitCode> {
     let start = now.saturating_sub(since);
     let path = build_range_path(&args.query, start, now, step);
 
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_prom(&path)? {
         Some(v) => v,
         None => return Ok(ExitCode::from(1)),
     };
 
-    if args.json {
-        return emit_json(&data, args.limit);
+    if args.common.json {
+        return emit_json(&data, args.common.limit);
     }
 
     let mut lines = format_result(&data)?;
@@ -92,7 +84,7 @@ pub fn run(args: &RangeArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for line in &lines {

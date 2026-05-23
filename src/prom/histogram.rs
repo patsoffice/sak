@@ -29,6 +29,7 @@ use serde_json::Value;
 
 use crate::output::BoundedWriter;
 use crate::prom::client::{PromClient, resolve_endpoint};
+use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
 use crate::prom::output::emit_json;
 use crate::prom::query::urlencode;
@@ -55,6 +56,9 @@ Examples:
   sak prom histogram some_metric_bucket --rate-window 1m --json"
 )]
 pub struct HistogramArgs {
+    #[command(flatten)]
+    pub common: CommonPromArgs,
+
     /// Histogram metric name, with or without the `_bucket` suffix
     #[arg(value_name = "METRIC")]
     pub metric: String,
@@ -70,18 +74,6 @@ pub struct HistogramArgs {
     /// How to render the `le` label (default: auto-detect from metric name)
     #[arg(long, value_enum, value_name = "UNIT")]
     pub unit: Option<LeUnit>,
-
-    /// Prometheus base URL (overrides PROMETHEUS_URL env)
-    #[arg(long, value_name = "URL")]
-    pub url: Option<String>,
-
-    /// Emit the raw JSON of both underlying queries
-    #[arg(long)]
-    pub json: bool,
-
-    /// Maximum number of output lines
-    #[arg(long)]
-    pub limit: Option<usize>,
 }
 
 /// How to interpret and render the numeric `le` bucket bound.
@@ -123,7 +115,7 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
     let cum_query = format!("sum by (le) ({bucket_metric}{matchers})");
     let rate_query = format!("sum by (le) (rate({bucket_metric}{matchers}[{rate_window}s]))");
 
-    let endpoint = resolve_endpoint(args.url.as_deref(), "PROMETHEUS_URL")?;
+    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
 
     let cum_data =
@@ -137,12 +129,12 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
             None => return Ok(ExitCode::from(1)),
         };
 
-    if args.json {
+    if args.common.json {
         let combined = serde_json::json!({
             "cumulative": cum_data,
             "rate": rate_data,
         });
-        return emit_json(&combined, args.limit);
+        return emit_json(&combined, args.common.limit);
     }
 
     let rows = build_buckets(&cum_data, &rate_data)?;
@@ -152,7 +144,7 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    let mut writer = BoundedWriter::new(handle, args.common.limit);
 
     let mut wrote_any = false;
     for row in &rows {
