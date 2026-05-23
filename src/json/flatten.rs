@@ -8,7 +8,7 @@ use clap::Args;
 
 use crate::json::read_json_inputs_maybe_lines;
 use crate::output::BoundedWriter;
-use crate::value::{ArrayMode, flatten_value};
+use crate::value::{ArrayMode, WalkOpts, flatten_value};
 
 #[derive(Args)]
 #[command(
@@ -65,18 +65,16 @@ pub fn run(args: &FlattenArgs) -> Result<ExitCode> {
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
 
+    let opts = WalkOpts {
+        max_depth: args.max_depth,
+        separator: args.separator.clone(),
+        arrays: args.arrays,
+        ..WalkOpts::default()
+    };
     let mut any = false;
     for (_name, value) in &inputs {
         let mut out = BTreeMap::new();
-        flatten_value(
-            value,
-            "",
-            &args.separator,
-            0,
-            args.max_depth,
-            args.arrays,
-            &mut out,
-        );
+        flatten_value(value, &opts, &mut out);
         for (path, val) in &out {
             any = true;
             let line = format!("{}\t{}", path, val);

@@ -8,7 +8,7 @@ use clap::Args;
 
 use crate::config::{Format, read_config_inputs};
 use crate::output::BoundedWriter;
-use crate::value::{SchemaMap, collect_schema, format_schema_types, type_name};
+use crate::value::{SchemaMap, WalkOpts, collect_schema, format_schema_types, type_name};
 
 #[derive(Args)]
 #[command(
@@ -62,7 +62,7 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
         root_types.insert(type_name(value));
         schema.insert(String::new(), root_types);
 
-        collect_schema(value, "", 0, args.depth, &mut schema);
+        collect_schema(value, &WalkOpts::with_max_depth(args.depth), &mut schema);
 
         for (path, types) in &schema {
             any = true;
@@ -155,7 +155,7 @@ mod tests {
         let mut roots = BTreeSet::new();
         roots.insert(type_name(&value));
         s.insert(String::new(), roots);
-        collect_schema(&value, "", 0, None, &mut s);
+        collect_schema(&value, &WalkOpts::with_max_depth(None), &mut s);
         let elems: Vec<&str> = s.get(".items[]").unwrap().iter().copied().collect();
         assert_eq!(elems, vec!["boolean", "number", "string"]);
     }

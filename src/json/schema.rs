@@ -8,7 +8,7 @@ use clap::Args;
 
 use crate::json::read_json_inputs;
 use crate::output::BoundedWriter;
-use crate::value::{SchemaMap, collect_schema, format_schema_types, type_name};
+use crate::value::{SchemaMap, WalkOpts, collect_schema, format_schema_types, type_name};
 
 #[derive(Args)]
 #[command(
@@ -55,7 +55,7 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
         root_types.insert(type_name(value));
         schema.insert(String::new(), root_types);
 
-        collect_schema(value, "", 0, args.depth, &mut schema);
+        collect_schema(value, &WalkOpts::with_max_depth(args.depth), &mut schema);
 
         for (path, types) in &schema {
             any = true;
@@ -90,7 +90,7 @@ mod tests {
         let mut roots = BTreeSet::new();
         roots.insert(type_name(v));
         s.insert(String::new(), roots);
-        collect_schema(v, "", 0, None, &mut s);
+        collect_schema(v, &WalkOpts::with_max_depth(None), &mut s);
         s.into_iter()
             .map(|(p, t)| {
                 let label = if p.is_empty() {
@@ -183,7 +183,7 @@ mod tests {
         let mut roots = BTreeSet::new();
         roots.insert(type_name(&v));
         s.insert(String::new(), roots);
-        collect_schema(&v, "", 0, Some(2), &mut s);
+        collect_schema(&v, &WalkOpts::with_max_depth(Some(2)), &mut s);
         // depth 2: see .a (depth 1) and .a.b (depth 2), but not .a.b.c
         assert!(s.contains_key(".a"));
         assert!(s.contains_key(".a.b"));

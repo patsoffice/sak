@@ -8,7 +8,7 @@ use clap::Args;
 
 use crate::config::{Format, read_config_inputs};
 use crate::output::BoundedWriter;
-use crate::value::{ArrayMode, flatten_value};
+use crate::value::{ArrayMode, WalkOpts, flatten_value};
 
 #[derive(Args)]
 #[command(
@@ -67,18 +67,16 @@ pub fn run(args: &PathsArgs) -> Result<ExitCode> {
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
 
+    let opts = WalkOpts {
+        max_depth: args.max_depth,
+        separator: args.separator.clone(),
+        arrays: args.arrays,
+        ..WalkOpts::default()
+    };
     let mut any = false;
     for (_name, value) in &inputs {
         let mut out = BTreeMap::new();
-        flatten_value(
-            value,
-            "",
-            &args.separator,
-            0,
-            args.max_depth,
-            args.arrays,
-            &mut out,
-        );
+        flatten_value(value, &opts, &mut out);
         for path in out.keys() {
             any = true;
             if !writer.write_line(path)? {

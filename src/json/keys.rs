@@ -7,7 +7,7 @@ use clap::Args;
 
 use crate::json::read_json_inputs_maybe_lines;
 use crate::output::BoundedWriter;
-use crate::value::{collect_keys, resolve_expression};
+use crate::value::{WalkOpts, collect_keys, resolve_expression};
 
 #[derive(Args)]
 #[command(
@@ -59,7 +59,11 @@ pub fn run(args: &KeysArgs) -> Result<ExitCode> {
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
 
-    let max_depth = args.depth.unwrap_or(1);
+    let opts = WalkOpts {
+        max_depth: Some(args.depth.unwrap_or(1)),
+        show_types: args.types,
+        ..WalkOpts::default()
+    };
     let mut found_any_object = false;
 
     for (_name, value) in &inputs {
@@ -77,7 +81,7 @@ pub fn run(args: &KeysArgs) -> Result<ExitCode> {
         found_any_object = true;
 
         let mut keys = Vec::new();
-        collect_keys(target, "", 0, max_depth, args.types, &mut keys);
+        collect_keys(target, &opts, &mut keys);
         for k in keys {
             if !writer.write_line(&k)? {
                 writer.flush()?;
