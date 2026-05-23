@@ -197,13 +197,10 @@ fn check_api_method(args: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::path::PathBuf;
 
     /// Tokens that must not appear in any `src/gh/*.rs` file other than
-    /// `client.rs`. Comments are exempt — the skip logic below ignores
-    /// any line whose first non-whitespace characters are `//`.
+    /// `client.rs`. The directory walk and comment-skip mechanics live in
+    /// [`crate::test_support::assert_no_forbidden_tokens`].
     ///
     /// Two strings cover the surface: the literal binary name as a
     /// quoted string (`"gh"`) and the `Command::new(` constructor.
@@ -224,43 +221,10 @@ mod tests {
 
     #[test]
     fn no_gh_invocations_outside_client_module() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/gh");
-        let entries = fs::read_dir(&dir).expect("read src/gh");
-
-        let mut violations = Vec::new();
-        for entry in entries {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-            if path.extension() != Some(OsStr::new("rs")) {
-                continue;
-            }
-            if path.file_name() == Some(OsStr::new("client.rs")) {
-                continue;
-            }
-
-            let content = fs::read_to_string(&path).expect("read source file");
-            for (idx, line) in content.lines().enumerate() {
-                let trimmed = line.trim_start();
-                if trimmed.starts_with("//") {
-                    continue;
-                }
-                for token in FORBIDDEN_TOKENS {
-                    if line.contains(token) {
-                        violations.push(format!(
-                            "{}:{}: forbidden token `{}` outside client.rs",
-                            path.display(),
-                            idx + 1,
-                            token
-                        ));
-                    }
-                }
-            }
-        }
-
-        assert!(
-            violations.is_empty(),
-            "gh invocations / Command::new must be confined to src/gh/client.rs:\n{}",
-            violations.join("\n")
+        crate::test_support::assert_no_forbidden_tokens(
+            "gh",
+            FORBIDDEN_TOKENS,
+            "gh invocations / Command::new must be confined to src/gh/client.rs",
         );
     }
 

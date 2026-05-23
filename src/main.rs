@@ -19,6 +19,8 @@ mod prom;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 mod talos;
+#[cfg(test)]
+mod test_support;
 mod value;
 
 use std::process::ExitCode;

@@ -179,15 +179,11 @@ fn resolve_endpoint_inner(
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::path::PathBuf;
-
     use serde_json::json;
 
     /// Tokens that must not appear in any `src/prom/*.rs` file other than
-    /// `client.rs`. Comments are exempt — the skip logic below ignores any
-    /// line whose first non-whitespace characters are `//`.
+    /// `client.rs`. The directory walk and comment-skip mechanics live in
+    /// [`crate::test_support::assert_no_forbidden_tokens`].
     const FORBIDDEN_TOKENS: &[&str] = &[
         "ureq::Agent",
         "ureq::agent",
@@ -203,45 +199,10 @@ mod tests {
 
     #[test]
     fn no_mutation_methods_outside_client_module() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/prom");
-        let entries = fs::read_dir(&dir).expect("read src/prom");
-
-        let mut violations = Vec::new();
-        for entry in entries {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-            if path.extension() != Some(OsStr::new("rs")) {
-                continue;
-            }
-            if path.file_name() == Some(OsStr::new("client.rs")) {
-                continue;
-            }
-
-            let content = fs::read_to_string(&path).expect("read source file");
-            for (idx, line) in content.lines().enumerate() {
-                let trimmed = line.trim_start();
-                // Skip line comments and doc comments — they're allowed to
-                // mention forbidden tokens for documentation purposes.
-                if trimmed.starts_with("//") {
-                    continue;
-                }
-                for token in FORBIDDEN_TOKENS {
-                    if line.contains(token) {
-                        violations.push(format!(
-                            "{}:{}: forbidden token `{}` outside client.rs",
-                            path.display(),
-                            idx + 1,
-                            token
-                        ));
-                    }
-                }
-            }
-        }
-
-        assert!(
-            violations.is_empty(),
-            "ureq agent / mutation methods must be confined to src/prom/client.rs:\n{}",
-            violations.join("\n")
+        crate::test_support::assert_no_forbidden_tokens(
+            "prom",
+            FORBIDDEN_TOKENS,
+            "ureq agent / mutation methods must be confined to src/prom/client.rs",
         );
     }
 
