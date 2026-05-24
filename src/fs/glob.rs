@@ -140,9 +140,17 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
 
         let rel = relative_path(entry.path(), &base);
         if matcher.is_match(&rel) {
-            let metadata = entry
-                .metadata()
-                .unwrap_or_else(|_| std::fs::metadata(entry.path()).expect("cannot read metadata"));
+            // `entry.metadata()` uses walkdir's cached stat; if that fails
+            // (e.g. a symlink walkdir didn't follow), fall back to a direct
+            // stat. A walkdir entry can still fail to stat on a TOCTOU race
+            // or permission change between dir-read and stat, so surface that
+            // as a normal sak error (exit 2) rather than panicking.
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => std::fs::metadata(entry.path()).with_context(|| {
+                    format!("cannot read metadata for {}", entry.path().display())
+                })?,
+            };
             results.push((entry.path().to_path_buf(), metadata));
         }
     }
