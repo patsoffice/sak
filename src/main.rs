@@ -6,6 +6,7 @@ mod docker;
 mod fs;
 mod gh;
 mod git;
+mod helm;
 mod hook;
 mod json;
 #[cfg(feature = "k8s")]
@@ -202,6 +203,9 @@ enum Command {
     /// GitHub CLI operations (read-only, shells out to gh)
     #[command(subcommand)]
     Gh(gh::GhCommand),
+    /// Helm release / chart / repo inspection (read-only, shells out to helm)
+    #[command(subcommand)]
+    Helm(helm::HelmCommand),
     /// Kubernetes operations against a live cluster (read-only)
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
@@ -242,6 +246,7 @@ fn main() -> ExitCode {
         Command::Cert(cmd) => cert::run(cmd),
         Command::Talos(cmd) => talos::run(cmd),
         Command::Gh(cmd) => gh::run(cmd),
+        Command::Helm(cmd) => helm::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
