@@ -77,45 +77,55 @@ pub(super) fn format_result(data: &Value) -> Result<Vec<String>> {
         .ok_or_else(|| anyhow!("Prometheus query response has no `result`"))?;
 
     match result_type {
-        "scalar" | "string" => {
-            let (_ts, val) = parse_sample_pair(result)?;
-            Ok(vec![val])
-        }
-        "vector" => {
-            let series = result
-                .as_array()
-                .ok_or_else(|| anyhow!("vector `result` is not an array"))?;
-            let mut out = Vec::with_capacity(series.len());
-            for s in series {
-                let labels = format_labels(s.get("metric"));
-                let pair = s
-                    .get("value")
-                    .ok_or_else(|| anyhow!("vector series has no `value`"))?;
-                let (_ts, val) = parse_sample_pair(pair)?;
-                out.push(format!("{labels}\t{val}"));
-            }
-            Ok(out)
-        }
-        "matrix" => {
-            let series = result
-                .as_array()
-                .ok_or_else(|| anyhow!("matrix `result` is not an array"))?;
-            let mut out = Vec::new();
-            for s in series {
-                let labels = format_labels(s.get("metric"));
-                let values = s
-                    .get("values")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| anyhow!("matrix series has no `values` array"))?;
-                for sample in values {
-                    let (ts, val) = parse_sample_pair(sample)?;
-                    out.push(format!("{labels}\t{ts}\t{val}"));
-                }
-            }
-            Ok(out)
-        }
+        "scalar" | "string" => format_scalar(result),
+        "vector" => format_vector(result),
+        "matrix" => format_matrix(result),
         other => bail!("unknown Prometheus resultType {other:?}"),
     }
+}
+
+/// Format a `scalar`/`string` result (a single sample pair) as one value line.
+fn format_scalar(result: &Value) -> Result<Vec<String>> {
+    let (_ts, val) = parse_sample_pair(result)?;
+    Ok(vec![val])
+}
+
+/// Format a `vector` result (one sample per series) as `labels<TAB>value` lines.
+fn format_vector(result: &Value) -> Result<Vec<String>> {
+    let series = result
+        .as_array()
+        .ok_or_else(|| anyhow!("vector `result` is not an array"))?;
+    let mut out = Vec::with_capacity(series.len());
+    for s in series {
+        let labels = format_labels(s.get("metric"));
+        let pair = s
+            .get("value")
+            .ok_or_else(|| anyhow!("vector series has no `value`"))?;
+        let (_ts, val) = parse_sample_pair(pair)?;
+        out.push(format!("{labels}\t{val}"));
+    }
+    Ok(out)
+}
+
+/// Format a `matrix` result (a time series per series) as
+/// `labels<TAB>timestamp<TAB>value` lines, one per sample.
+fn format_matrix(result: &Value) -> Result<Vec<String>> {
+    let series = result
+        .as_array()
+        .ok_or_else(|| anyhow!("matrix `result` is not an array"))?;
+    let mut out = Vec::new();
+    for s in series {
+        let labels = format_labels(s.get("metric"));
+        let values = s
+            .get("values")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("matrix series has no `values` array"))?;
+        for sample in values {
+            let (ts, val) = parse_sample_pair(sample)?;
+            out.push(format!("{labels}\t{ts}\t{val}"));
+        }
+    }
+    Ok(out)
 }
 
 /// Parse a Prometheus sample pair `[<ts>, "<value>"]`. The timestamp is

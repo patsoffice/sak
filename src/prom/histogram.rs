@@ -112,8 +112,8 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
 
     let labels = parse_labels(args.labels.as_deref())?;
     let matchers = build_matcher(&labels);
-    let cum_query = format!("sum by (le) ({bucket_metric}{matchers})");
-    let rate_query = format!("sum by (le) (rate({bucket_metric}{matchers}[{rate_window}s]))");
+    let cum_query = build_cumulative_query(&bucket_metric, &matchers);
+    let rate_query = build_rate_query(&bucket_metric, &matchers, rate_window);
 
     let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
     let client = PromClient::new(endpoint);
@@ -232,6 +232,19 @@ fn build_matcher(labels: &[(String, String)]) -> String {
     }
     out.push('}');
     out
+}
+
+/// PromQL for the cumulative bucket counts: `sum by (le) (<bucket>{<matchers>})`.
+/// Pure so the query string is unit-testable without a server.
+fn build_cumulative_query(bucket_metric: &str, matchers: &str) -> String {
+    format!("sum by (le) ({bucket_metric}{matchers})")
+}
+
+/// PromQL for the per-second bucket rate over a `rate_window`-second window:
+/// `sum by (le) (rate(<bucket>{<matchers>}[<n>s]))`. Pure so the query string
+/// is unit-testable without a server.
+fn build_rate_query(bucket_metric: &str, matchers: &str, rate_window: u64) -> String {
+    format!("sum by (le) (rate({bucket_metric}{matchers}[{rate_window}s]))")
 }
 
 /// Merge the cumulative-count and rate vector responses into `le`-sorted
@@ -474,6 +487,30 @@ mod tests {
         assert_eq!(
             build_matcher(&[("path".to_string(), "a\"b\\c".to_string())]),
             r#"{path="a\"b\\c"}"#
+        );
+    }
+
+    #[test]
+    fn build_cumulative_query_wraps_in_sum_by_le() {
+        assert_eq!(
+            build_cumulative_query("http_request_duration_seconds_bucket", ""),
+            "sum by (le) (http_request_duration_seconds_bucket)"
+        );
+        assert_eq!(
+            build_cumulative_query("http_request_duration_seconds_bucket", r#"{job="api"}"#),
+            r#"sum by (le) (http_request_duration_seconds_bucket{job="api"})"#
+        );
+    }
+
+    #[test]
+    fn build_rate_query_wraps_in_rate_with_window() {
+        assert_eq!(
+            build_rate_query("http_request_duration_seconds_bucket", "", 300),
+            "sum by (le) (rate(http_request_duration_seconds_bucket[300s]))"
+        );
+        assert_eq!(
+            build_rate_query("http_request_duration_seconds_bucket", r#"{job="api"}"#, 60),
+            r#"sum by (le) (rate(http_request_duration_seconds_bucket{job="api"}[60s]))"#
         );
     }
 
