@@ -90,6 +90,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak helm list -A                            List Helm releases across namespaces
   sak helm status cilium -n kube-system       Show one release's status
   sak helm get cilium --what manifest         Dump a release's rendered manifest
+  sak helm history cilium -n kube-system      Revision history of a release
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo

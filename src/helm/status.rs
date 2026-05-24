@@ -5,8 +5,8 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::helm::client::{self, Conn};
-use crate::helm::{Format, emit_to_stdout};
-use crate::output::{BoundedWriter, collapse_ws};
+use crate::helm::{Format, emit_to_stdout, render_cell};
+use crate::output::BoundedWriter;
 
 /// Fixed TSV column set, in emission order. `helm status -o json` returns the
 /// release object with `revision` under `version` and the rest under `info`,
@@ -113,11 +113,11 @@ fn build_argv(args: &StatusArgs) -> Vec<String> {
 pub fn project(value: &Value) -> [String; 6] {
     let info = value.get("info");
     [
-        scalar(value.get("name")),
-        scalar(value.get("namespace")),
-        scalar(value.get("version")), // helm calls the revision `version`
-        scalar(info.and_then(|i| i.get("status"))),
-        scalar(info.and_then(|i| i.get("last_deployed"))),
+        render_cell(value.get("name")),
+        render_cell(value.get("namespace")),
+        render_cell(value.get("version")), // helm calls the revision `version`
+        render_cell(info.and_then(|i| i.get("status"))),
+        render_cell(info.and_then(|i| i.get("last_deployed"))),
         notes_present(info).to_string(),
     ]
 }
@@ -127,18 +127,6 @@ fn notes_present(info: Option<&Value>) -> bool {
     info.and_then(|i| i.get("notes"))
         .and_then(Value::as_str)
         .is_some_and(|s| !s.trim().is_empty())
-}
-
-/// Render one scalar-ish field: missing/null → `-`, scalars verbatim
-/// (whitespace collapsed), anything structured → compact JSON.
-fn scalar(v: Option<&Value>) -> String {
-    match v {
-        None | Some(Value::Null) => "-".to_string(),
-        Some(Value::String(s)) => collapse_ws(s),
-        Some(Value::Number(n)) => n.to_string(),
-        Some(Value::Bool(b)) => b.to_string(),
-        Some(other) => collapse_ws(&serde_json::to_string(other).unwrap_or_default()),
-    }
 }
 
 /// Parse the release object and emit a header + one TSV row. An empty/`{}`

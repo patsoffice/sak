@@ -5,8 +5,8 @@ use clap::{Args, ValueEnum};
 use serde_json::Value;
 
 use crate::helm::client::{self, Conn};
-use crate::helm::{Format, emit_to_stdout};
-use crate::output::{BoundedWriter, collapse_ws};
+use crate::helm::{Format, emit_to_stdout, render_cell};
+use crate::output::BoundedWriter;
 
 /// Fixed TSV column set, in emission order. Matches the snake_case keys
 /// `helm list -o json` produces, so each column is a direct key lookup.
@@ -155,21 +155,9 @@ pub fn walk(value: &Value) -> Vec<Row> {
     arr.iter()
         .filter(|rec| rec.is_object())
         .map(|rec| Row {
-            cells: COLUMNS.map(|col| cell(rec, col)),
+            cells: COLUMNS.map(|col| render_cell(rec.get(col))),
         })
         .collect()
-}
-
-/// Render one release field to a cell: missing/null → `-`, scalars verbatim
-/// (whitespace collapsed), anything structured → compact JSON.
-fn cell(rec: &Value, key: &str) -> String {
-    match rec.get(key) {
-        None | Some(Value::Null) => "-".to_string(),
-        Some(Value::String(s)) => collapse_ws(s),
-        Some(Value::Number(n)) => n.to_string(),
-        Some(Value::Bool(b)) => b.to_string(),
-        Some(other) => collapse_ws(&serde_json::to_string(other).unwrap_or_default()),
-    }
 }
 
 /// Parse `helm`'s JSON array, project rows, and emit a header + TSV rows. The
@@ -308,8 +296,8 @@ mod tests {
     }
 
     #[test]
-    fn cell_collapses_whitespace() {
-        let rec = json!({"chart": "foo\tbar\nbaz"});
-        assert_eq!(cell(&rec, "chart"), "foo bar baz");
+    fn walk_collapses_whitespace_in_cells() {
+        let v = json!([{"name": "x", "chart": "foo\tbar\nbaz"}]);
+        assert_eq!(walk(&v)[0].cells[5], "foo bar baz");
     }
 }

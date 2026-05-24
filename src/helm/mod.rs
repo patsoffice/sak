@@ -23,6 +23,7 @@
 
 pub mod client;
 pub mod get;
+pub mod history;
 pub mod list;
 pub mod status;
 
@@ -30,14 +31,16 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
+use serde_json::Value;
 
-use crate::output::BoundedWriter;
+use crate::output::{BoundedWriter, collapse_ws};
 
 #[derive(Subcommand)]
 pub enum HelmCommand {
     List(list::ListArgs),
     Status(status::StatusArgs),
     Get(get::GetArgs),
+    History(history::HistoryArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
@@ -45,6 +48,21 @@ pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
         HelmCommand::List(args) => list::run(args),
         HelmCommand::Status(args) => status::run(args),
         HelmCommand::Get(args) => get::run(args),
+        HelmCommand::History(args) => history::run(args),
+    }
+}
+
+/// Render one `helm -o json` field to a TSV cell, shared by every helm command
+/// that projects JSON into a fixed-column table. Missing / null → `-`; scalars
+/// render verbatim with whitespace collapsed (so a value can never inject a tab
+/// or newline into the row); anything structured falls back to compact JSON.
+pub fn render_cell(v: Option<&Value>) -> String {
+    match v {
+        None | Some(Value::Null) => "-".to_string(),
+        Some(Value::String(s)) => collapse_ws(s),
+        Some(Value::Number(n)) => n.to_string(),
+        Some(Value::Bool(b)) => b.to_string(),
+        Some(other) => collapse_ws(&serde_json::to_string(other).unwrap_or_default()),
     }
 }
 
