@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Args;
 use serde_json::Value;
 
@@ -82,22 +82,12 @@ pub fn run(args: &StatusArgs) -> Result<ExitCode> {
         namespace: args.namespace.as_deref(),
         ..Default::default()
     };
-    let out = client::invoke("status", None, &argv_refs, conn)?;
-    if !out.status.success() {
-        // A missing release is "no results" (exit 1), not a tool failure.
-        // `helm` reports it on stderr as `Error: release: not found`.
-        let stderr = out.stderr.trim();
-        if stderr.contains("not found") {
-            return Ok(ExitCode::from(1));
-        }
-        let suffix = if stderr.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", stderr)
-        };
-        bail!("helm status {} failed{}", args.release, suffix);
-    }
-    emit_to_stdout(&out.stdout, args.format, args.limit, "{}", emit_tsv)
+    // A missing release is "no results" (exit 1), not a tool failure; the
+    // chokepoint maps helm's not-found stderr to Ok(None).
+    let Some(stdout) = client::invoke_found("status", None, &argv_refs, conn)? else {
+        return Ok(ExitCode::from(1));
+    };
+    emit_to_stdout(&stdout, args.format, args.limit, "{}", emit_tsv)
 }
 
 /// Assemble the `helm status` argv (everything but the connection flags, which

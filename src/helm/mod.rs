@@ -22,6 +22,7 @@
 //! issues and wire themselves into [`HelmCommand`] as they arrive.
 
 pub mod client;
+pub mod get;
 pub mod list;
 pub mod status;
 
@@ -36,12 +37,14 @@ use crate::output::BoundedWriter;
 pub enum HelmCommand {
     List(list::ListArgs),
     Status(status::StatusArgs),
+    Get(get::GetArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
     match cmd {
         HelmCommand::List(args) => list::run(args),
         HelmCommand::Status(args) => status::run(args),
+        HelmCommand::Get(args) => get::run(args),
     }
 }
 
@@ -72,6 +75,23 @@ pub fn emit_to_stdout(
         Format::Json => stream_verbatim(&mut writer, stdout, json_empty_marker)?,
         Format::Tsv => tsv(&mut writer, stdout)?,
     };
+    writer.flush()?;
+    Ok(if any {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+/// Stream a raw text payload (e.g. `helm get manifest`'s YAML) to stdout
+/// unchanged, mapping empty output to sak's exit code 1. Used by commands whose
+/// output is helm's native text rather than a JSON projection — there is no
+/// TSV/JSON choice, so this is a thin wrapper over [`stream_verbatim`] with an
+/// empty marker of `""` (only truly empty output is "no results").
+pub fn emit_text_to_stdout(stdout: &[u8], limit: Option<usize>) -> Result<ExitCode> {
+    let out = std::io::stdout();
+    let mut writer = BoundedWriter::new(out.lock(), limit);
+    let any = stream_verbatim(&mut writer, stdout, "")?;
     writer.flush()?;
     Ok(if any {
         ExitCode::SUCCESS

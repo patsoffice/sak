@@ -344,6 +344,15 @@ fn helm_status_blocks() {
 }
 
 #[test]
+fn helm_get_blocks() {
+    assert!(blocks("helm get all cilium"));
+    assert!(blocks("helm get manifest cilium -n kube-system"));
+    assert!(blocks("helm get values cilium --revision 16"));
+    assert!(blocks("helm get notes cilium"));
+    assert!(blocks("helm get hooks cilium"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));
@@ -353,7 +362,6 @@ fn helm_writes_and_unshadowed_allow() {
     assert!(allows("helm repo add stable https://example.com"));
     assert!(allows("helm repo update"));
     // Reads with no sak command yet.
-    assert!(allows("helm get values foo"));
     assert!(allows("helm history foo"));
     assert!(allows("helm repo list"));
 }

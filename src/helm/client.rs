@@ -133,6 +133,36 @@ pub fn invoke_ok(verb: &str, subverb: Option<&str>, args: &[&str], conn: Conn) -
     Ok(out.stdout)
 }
 
+/// Like [`invoke_ok`] but maps helm's "not found" failure (a named release /
+/// revision that doesn't exist) to `Ok(None)`, so single-release commands can
+/// produce sak's exit code 1 for "no such release" without losing the ability
+/// to surface other failures as exit code 2. Mirrors `k8s::client::get_dyn`.
+///
+/// helm reports a missing release on stderr as `Error: release: not found`
+/// (and a missing revision similarly), so the discriminator is the substring
+/// `not found`. Any other non-zero exit is surfaced as an error.
+pub fn invoke_found(
+    verb: &str,
+    subverb: Option<&str>,
+    args: &[&str],
+    conn: Conn,
+) -> Result<Option<Vec<u8>>> {
+    let out = invoke(verb, subverb, args, conn)?;
+    if out.status.success() {
+        return Ok(Some(out.stdout));
+    }
+    let trimmed = out.stderr.trim();
+    if trimmed.contains("not found") {
+        return Ok(None);
+    }
+    let suffix = if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", trimmed)
+    };
+    bail!("helm {} failed{}", display_verb(verb, subverb), suffix);
+}
+
 /// Whether `(verb, subverb)` is covered by the allowlist. A `None` entry for
 /// `verb` admits any subverb (the subverb is treated as a read-only argument);
 /// otherwise the provided subverb must equal a `Some(_)` entry exactly.
@@ -221,5 +251,14 @@ mod tests {
         assert!(!verb_allowed("dependency", Some("build")));
         // Unknown verbs are rejected outright.
         assert!(!verb_allowed("install", None));
+    }
+
+    #[test]
+    fn invoke_found_enforces_allowlist_before_spawn() {
+        // invoke_found routes through invoke, so a mutating verb is rejected
+        // by the allowlist without spawning helm (the not-found -> Ok(None)
+        // mapping needs a live helm and is covered by command-level tests).
+        let err = invoke_found("uninstall", None, &[], Conn::default()).unwrap_err();
+        assert!(err.to_string().contains("not in the read-only allowlist"));
     }
 }
