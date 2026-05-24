@@ -19,7 +19,10 @@ use super::headers::parse_delimiter;
         index; with --no-header, only indices are valid. Multiple --filter \
         and --filter-regex flags compose with AND semantics. Reads stdin \
         when no files are given; with multiple files, the header is written \
-        once from the first file and subsequent files' headers are skipped.",
+        once from the first file and subsequent files' headers are skipped.\n\n\
+        Exit code follows the standard convention: 0 if any row matched, 1 if \
+        none did (the output header alone does not count as a match), 2 on \
+        error.",
     after_help = "\
 Examples:
   sak csv query -c name,age data.csv               Project two named columns
@@ -222,6 +225,7 @@ fn process_source<R: Read>(
     args: &QueryArgs,
     writer: &mut BoundedWriter<'_>,
     header_written: &mut bool,
+    found_any: &mut bool,
 ) -> Result<bool> {
     let mut rdr = ::csv::ReaderBuilder::new()
         .delimiter(delimiter)
@@ -251,6 +255,10 @@ fn process_source<R: Read>(
         if !filter_matches(&plan.filters, &rec) {
             continue;
         }
+        // A matched data row is a "result" (the output header is decoration);
+        // count it before the write so a `--limit`-truncated match still
+        // yields exit 0, matching `sak json query` / `config query`.
+        *found_any = true;
         let projected: Vec<&str> = match &plan.select {
             Some(idxs) => idxs.iter().map(|&i| rec.get(i).unwrap_or("")).collect(),
             None => rec.iter().collect(),
@@ -269,6 +277,7 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
     let mut header_written = false;
+    let mut found_any = false;
 
     if args.files.is_empty() {
         let stdin = io::stdin();
@@ -280,6 +289,7 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
             args,
             &mut writer,
             &mut header_written,
+            &mut found_any,
         )?;
     } else {
         for path in &args.files {
@@ -292,6 +302,7 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
                 args,
                 &mut writer,
                 &mut header_written,
+                &mut found_any,
             )?;
             if !cont {
                 break;
@@ -300,7 +311,14 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
     }
 
     writer.flush().context("flushing stdout")?;
-    Ok(ExitCode::SUCCESS)
+    // Exit 1 when no row matched, aligning with `sak json query` /
+    // `config query` (0 = results, 1 = no results). The output header is
+    // decoration and does not count as a result.
+    if found_any {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(1))
+    }
 }
 
 #[cfg(test)]
@@ -411,5 +429,18 @@ mod tests {
         let mut args = args_for(p, Some("1,3"));
         args.no_header = true;
         assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn no_matching_rows_exits_one() {
+        // A filter that matches no data row yields exit 1 (0 = results,
+        // 1 = no results), matching `sak json query` / `config query`. The
+        // output header is still emitted but does not count as a result.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.csv");
+        std::fs::write(&p, "name,role\nalice,admin\nbob,user\n").unwrap();
+        let mut args = args_for(p, Some("name"));
+        args.filter = vec!["role=nobody".to_string()];
+        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
     }
 }
