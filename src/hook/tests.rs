@@ -324,6 +324,35 @@ fn gh_mutations_and_unshadowed_allow() {
     assert!(allows("gh repo list"));
 }
 
+// ── helm ──────────────────────────────────────────────────────
+
+#[test]
+fn helm_list_blocks() {
+    assert!(blocks("helm list"));
+    assert!(blocks("helm ls"));
+    assert!(blocks("helm list -A"));
+    assert!(blocks(
+        "helm list --namespace kube-system --filter '^ingress-'"
+    ));
+    assert!(blocks("helm list --all-namespaces --failed"));
+}
+
+#[test]
+fn helm_writes_and_unshadowed_allow() {
+    // Mutations are never redirected — sak helm can't perform them.
+    assert!(allows("helm install foo ./chart"));
+    assert!(allows("helm upgrade foo ./chart"));
+    assert!(allows("helm uninstall foo"));
+    assert!(allows("helm rollback foo 1"));
+    assert!(allows("helm repo add stable https://example.com"));
+    assert!(allows("helm repo update"));
+    // Reads other than `list` have no sak command yet.
+    assert!(allows("helm get values foo"));
+    assert!(allows("helm status foo"));
+    assert!(allows("helm history foo"));
+    assert!(allows("helm repo list"));
+}
+
 // ── filesystem readers ────────────────────────────────────────
 
 #[test]

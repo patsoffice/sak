@@ -364,6 +364,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "docker" => check_docker(&pos),
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "gh" => check_gh(args, &pos),
+        "helm" => check_helm(&pos),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -646,6 +647,19 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
         (Some("repo"), Some("view")) => {
             block("Use `sak gh repo-view [<owner/name>]` instead of `gh repo view` (JSON/TSV).")
         }
+        _ => None,
+    }
+}
+
+fn check_helm(pos: &[&str]) -> Option<String> {
+    // `helm ls` is an alias for `helm list`. Only the list read is shadowed so
+    // far; other reads (`get`, `status`, `history`, ...) get their redirects as
+    // those commands land. Mutating verbs (`install`, `upgrade`, `uninstall`,
+    // `repo add`, ...) are not redirected — `sak helm` can't perform them.
+    match pos.first().copied() {
+        Some("list") | Some("ls") => block(
+            "Use `sak helm list` instead of `helm list`/`helm ls` (TSV/JSON, --status/--filter/-A).",
+        ),
         _ => None,
     }
 }

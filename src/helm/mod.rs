@@ -17,18 +17,12 @@
 //! `repo add`, ...), and a grep test forbids `Command::new` / `"helm"`
 //! outside `client.rs`.
 //!
-//! This module is the dispatch scaffold; individual commands (`list`, `get`,
-//! `status`, `history`, `show`, `template`, `search`, `lint`, `repo-list`,
-//! `dependency-list`) land as their own child issues and wire themselves into
-//! [`HelmCommand`] as they arrive.
+//! Individual commands (`get`, `status`, `history`, `show`, `template`,
+//! `search`, `lint`, `repo-list`, `dependency-list`) land as their own child
+//! issues and wire themselves into [`HelmCommand`] as they arrive.
 
-// The chokepoint's read-only enforcement is fully exercised by its own tests,
-// but its spawn helpers (`invoke_ok`, the `Output` accessors) have no caller
-// until the first command lands (sak-llm-fd6 and siblings wire into
-// `HelmCommand`). Suppress dead-code warnings for the foundation; remove this
-// once a command consumes `client::invoke_ok` / `Conn`.
-#[allow(dead_code)]
 pub mod client;
+pub mod list;
 
 use std::process::ExitCode;
 
@@ -36,8 +30,12 @@ use anyhow::Result;
 use clap::Subcommand;
 
 #[derive(Subcommand)]
-pub enum HelmCommand {}
+pub enum HelmCommand {
+    List(list::ListArgs),
+}
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
-    match *cmd {}
+    match cmd {
+        HelmCommand::List(args) => list::run(args),
+    }
 }
