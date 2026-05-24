@@ -358,19 +358,30 @@ fn format_le(le_str: &str, le_val: f64, unit: LeUnit) -> String {
     }
 }
 
+/// Seconds in a day / hour / minute, and milliseconds in a second — the
+/// divisors `format_seconds` steps through to pick the largest unit >= 1.
+const SECS_PER_DAY: f64 = 86_400.0;
+const SECS_PER_HOUR: f64 = 3_600.0;
+const SECS_PER_MINUTE: f64 = 60.0;
+const MILLIS_PER_SEC: f64 = 1_000.0;
+
+/// Step between binary (IEC) byte units — 1 KiB = 1024 B — used by
+/// `format_bytes` to advance through `B`/`KiB`/`MiB`/...
+const BYTES_PER_UNIT: f64 = 1_024.0;
+
 /// Format a seconds value as the largest unit that keeps the number >= 1
 /// (`86_400.0` -> `1.00d`, `0.5` -> `500.00ms`).
 fn format_seconds(secs: f64) -> String {
-    let (val, unit) = if secs >= 86_400.0 {
-        (secs / 86_400.0, "d")
-    } else if secs >= 3_600.0 {
-        (secs / 3_600.0, "h")
-    } else if secs >= 60.0 {
-        (secs / 60.0, "m")
+    let (val, unit) = if secs >= SECS_PER_DAY {
+        (secs / SECS_PER_DAY, "d")
+    } else if secs >= SECS_PER_HOUR {
+        (secs / SECS_PER_HOUR, "h")
+    } else if secs >= SECS_PER_MINUTE {
+        (secs / SECS_PER_MINUTE, "m")
     } else if secs >= 1.0 {
         (secs, "s")
     } else if secs > 0.0 {
-        (secs * 1_000.0, "ms")
+        (secs * MILLIS_PER_SEC, "ms")
     } else {
         (0.0, "s")
     };
@@ -383,8 +394,8 @@ fn format_bytes(bytes: f64) -> String {
     const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let mut val = bytes;
     let mut idx = 0;
-    while val >= 1_024.0 && idx < UNITS.len() - 1 {
-        val /= 1_024.0;
+    while val >= BYTES_PER_UNIT && idx < UNITS.len() - 1 {
+        val /= BYTES_PER_UNIT;
         idx += 1;
     }
     format!("{val:.2}{}", UNITS[idx])

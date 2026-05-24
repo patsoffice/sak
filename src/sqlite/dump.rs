@@ -10,6 +10,10 @@ use super::count::quote_ident;
 use super::query::{OutputFormat, row_to_json_line, row_to_tsv_line};
 use crate::output::BoundedWriter;
 
+/// Default row cap when `--limit` is omitted — small so an accidental
+/// `dump` on a huge table stays cheap; raise it explicitly with `--limit`.
+const DEFAULT_LIMIT: usize = 10;
+
 #[derive(Args)]
 #[command(
     about = "Dump rows from a SQLite table",
@@ -38,7 +42,7 @@ pub struct DumpArgs {
     pub table: String,
 
     /// Maximum number of rows to emit (default 10)
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = DEFAULT_LIMIT)]
     pub limit: usize,
 
     /// Column to ORDER BY (quoted automatically)

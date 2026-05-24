@@ -142,6 +142,11 @@ pub(super) fn sort_rows(rows: &mut [AlertRow]) {
     });
 }
 
+/// Prometheus alert `state` values this command filters on. Quiet alerts
+/// (`inactive`) are never emitted, so only these two are matched.
+const STATE_FIRING: &str = "firing";
+const STATE_PENDING: &str = "pending";
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum StateFilter {
     All,
@@ -154,9 +159,9 @@ impl StateFilter {
     pub(super) fn allows(&self, state: &str) -> bool {
         match self {
             StateFilter::All => true,
-            StateFilter::Firing => state == "firing",
-            StateFilter::Pending => state == "pending",
-            StateFilter::FiringPending => state == "firing" || state == "pending",
+            StateFilter::Firing => state == STATE_FIRING,
+            StateFilter::Pending => state == STATE_PENDING,
+            StateFilter::FiringPending => state == STATE_FIRING || state == STATE_PENDING,
         }
     }
 }

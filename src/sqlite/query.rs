@@ -95,6 +95,15 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
     }
 }
 
+/// Statement-leading keywords that denote a read-only query form, matched
+/// case-insensitively against the comment/whitespace-stripped SQL.
+const READ_STATEMENT_KEYWORDS: &[&str] = &["select", "with", "explain", "pragma"];
+
+/// Bytes that may legally follow a read keyword — whitespace or `(` — so
+/// `select ...` / `with(...)` are accepted but an identifier like
+/// `selected_at` is not.
+const KEYWORD_SEPARATORS: &[u8] = &[b' ', b'\t', b'\n', b'\r', b'('];
+
 /// Reject anything that isn't a read-only statement form. The connection is
 /// already opened read-only and `PRAGMA query_only=ON`, but rejecting writes
 /// here lets the caller produce a clean sak-style error instead of an opaque
@@ -105,13 +114,13 @@ pub(crate) fn is_read_statement(sql: &str) -> bool {
         return false;
     }
     let lower = stripped.to_ascii_lowercase();
-    for kw in ["select", "with", "explain", "pragma"] {
+    for &kw in READ_STATEMENT_KEYWORDS {
         if let Some(rest) = lower.strip_prefix(kw) {
-            // Next char must be whitespace or `(` (or end of string) so that
+            // Next char must be a separator (or end of string) so that
             // identifiers like `selected_at` aren't accepted.
             match rest.as_bytes().first() {
                 None => return true,
-                Some(b' ' | b'\t' | b'\n' | b'\r' | b'(') => return true,
+                Some(c) if KEYWORD_SEPARATORS.contains(c) => return true,
                 _ => {}
             }
         }
