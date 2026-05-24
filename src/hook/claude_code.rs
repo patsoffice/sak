@@ -652,13 +652,16 @@ fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
 }
 
 fn check_helm(pos: &[&str]) -> Option<String> {
-    // `helm ls` is an alias for `helm list`. Only the list read is shadowed so
-    // far; other reads (`get`, `status`, `history`, ...) get their redirects as
-    // those commands land. Mutating verbs (`install`, `upgrade`, `uninstall`,
-    // `repo add`, ...) are not redirected — `sak helm` can't perform them.
+    // `helm ls` is an alias for `helm list`. Reads gain redirects as their sak
+    // commands land; the rest (`get`, `history`, ...) still pass through.
+    // Mutating verbs (`install`, `upgrade`, `uninstall`, `repo add`, ...) are
+    // never redirected — `sak helm` can't perform them.
     match pos.first().copied() {
         Some("list") | Some("ls") => block(
             "Use `sak helm list` instead of `helm list`/`helm ls` (TSV/JSON, --status/--filter/-A).",
+        ),
+        Some("status") => block(
+            "Use `sak helm status <release>` instead of `helm status` (TSV/JSON, --revision).",
         ),
         _ => None,
     }

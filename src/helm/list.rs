@@ -5,6 +5,7 @@ use clap::{Args, ValueEnum};
 use serde_json::Value;
 
 use crate::helm::client::{self, Conn};
+use crate::helm::{Format, emit_to_stdout};
 use crate::output::{BoundedWriter, collapse_ws};
 
 /// Fixed TSV column set, in emission order. Matches the snake_case keys
@@ -18,16 +19,6 @@ const COLUMNS: [&str; 7] = [
     "chart",
     "app_version",
 ];
-
-/// Output format. `helm` itself only emits structured JSON via `-o json`;
-/// sak projects that into a TSV table by default or forwards it verbatim.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum Format {
-    /// Tab-separated, one row per release, fixed columns (see `COLUMNS`).
-    Tsv,
-    /// The JSON array `helm list -o json` returned, verbatim.
-    Json,
-}
 
 /// `helm list` status filters. `helm` exposes these as individual boolean
 /// flags rather than a `--status <value>` option, so sak maps a single
@@ -134,7 +125,7 @@ pub fn run(args: &ListArgs) -> Result<ExitCode> {
         ..Default::default()
     };
     let stdout = client::invoke_ok("list", None, &argv_refs, conn)?;
-    emit_to_stdout(&stdout, args.format, args.limit)
+    emit_to_stdout(&stdout, args.format, args.limit, "[]", emit_tsv)
 }
 
 /// Assemble the `helm list` argv (everything but the connection flags, which
@@ -179,39 +170,6 @@ fn cell(rec: &Value, key: &str) -> String {
         Some(Value::Bool(b)) => b.to_string(),
         Some(other) => collapse_ws(&serde_json::to_string(other).unwrap_or_default()),
     }
-}
-
-/// Lock stdout, emit per `format`, and map present/empty to sak's 0/1 codes.
-fn emit_to_stdout(stdout: &[u8], format: Format, limit: Option<usize>) -> Result<ExitCode> {
-    let out = std::io::stdout();
-    let mut writer = BoundedWriter::new(out.lock(), limit);
-    let any = match format {
-        Format::Json => emit_json(&mut writer, stdout)?,
-        Format::Tsv => emit_tsv(&mut writer, stdout)?,
-    };
-    writer.flush()?;
-    Ok(if any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
-    })
-}
-
-/// Stream `helm`'s JSON array verbatim, line by line. An empty array (`[]`) or
-/// empty body counts as "no results".
-fn emit_json(writer: &mut BoundedWriter<'_>, stdout: &[u8]) -> Result<bool> {
-    let text = String::from_utf8_lossy(stdout);
-    let trimmed = text.trim();
-    if trimmed.is_empty() || trimmed == "[]" {
-        return Ok(false);
-    }
-    for line in text.split_inclusive('\n') {
-        let line = line.strip_suffix('\n').unwrap_or(line);
-        if !writer.write_line(line)? {
-            break;
-        }
-    }
-    Ok(true)
 }
 
 /// Parse `helm`'s JSON array, project rows, and emit a header + TSV rows. The
