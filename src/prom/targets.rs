@@ -10,7 +10,6 @@
 //! `--job <regex>` filters by the `job` label. Multi-line `lastError`
 //! strings collapse to one row.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
@@ -18,10 +17,9 @@ use clap::Args;
 use regex::Regex;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::{collapse_newlines, emit_json};
+use crate::prom::output::collapse_newlines;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -108,51 +106,27 @@ pub(super) fn sort_rows(rows: &mut [TargetRow]) {
 }
 
 pub fn run(args: &TargetsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom("/api/v1/targets")? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
+    run_prom(&args.common, "/api/v1/targets", |data| {
+        let active = data
+            .get("activeTargets")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                anyhow!("Prometheus /api/v1/targets data has no `activeTargets` array")
+            })?;
 
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
+        let job_re = match &args.job {
+            Some(s) => Some(Regex::new(s).map_err(|e| anyhow!("invalid --job regex: {e}"))?),
+            None => None,
+        };
 
-    let active = data
-        .get("activeTargets")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("Prometheus /api/v1/targets data has no `activeTargets` array"))?;
-
-    let job_re = match &args.job {
-        Some(s) => Some(Regex::new(s).map_err(|e| anyhow!("invalid --job regex: {e}"))?),
-        None => None,
-    };
-
-    let mut rows: Vec<TargetRow> = active
-        .iter()
-        .map(extract_target_row)
-        .filter(|r| !args.down || r.health != "up")
-        .filter(|r| job_re.as_ref().is_none_or(|re| re.is_match(&r.job)))
-        .collect();
-    sort_rows(&mut rows);
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for row in &rows {
-        if !writer.write_line(&format_target_row(row))? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+        let mut rows: Vec<TargetRow> = active
+            .iter()
+            .map(extract_target_row)
+            .filter(|r| !args.down || r.health != "up")
+            .filter(|r| job_re.as_ref().is_none_or(|re| re.is_match(&r.job)))
+            .collect();
+        sort_rows(&mut rows);
+        Ok(rows.iter().map(format_target_row).collect())
     })
 }
 

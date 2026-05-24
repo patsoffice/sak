@@ -37,6 +37,7 @@ pub mod prom_config;
 pub mod query;
 pub mod range;
 pub mod rules;
+pub mod runner;
 pub mod series;
 pub mod targets;
 pub mod tsdb;

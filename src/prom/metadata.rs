@@ -7,18 +7,16 @@
 //! scrape targets exposing slightly different help text), and every entry
 //! is emitted — collapsing them silently would hide the discrepancy.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::{collapse_newlines, emit_json};
+use crate::prom::output::collapse_newlines;
 use crate::prom::query::urlencode;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -60,40 +58,14 @@ pub(super) struct MetadataRow {
 }
 
 pub fn run(args: &MetadataArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
     let path = match &args.metric {
         Some(m) => format!("/api/v1/metadata?metric={}", urlencode(m)),
         None => "/api/v1/metadata".to_string(),
     };
-    let data = match client.get_prom(&path)? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let mut rows = extract_metadata_rows(&data)?;
-    sort_rows(&mut rows);
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for row in &rows {
-        if !writer.write_line(&format_metadata_row(row))? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+    run_prom(&args.common, &path, |data| {
+        let mut rows = extract_metadata_rows(data)?;
+        sort_rows(&mut rows);
+        Ok(rows.iter().map(format_metadata_row).collect())
     })
 }
 

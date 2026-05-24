@@ -10,19 +10,16 @@
 //! the resolution (default `60s`). `end` is always "now", so re-running the
 //! same command walks the window forward in real time.
 
-use std::io;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
-use crate::prom::output::emit_json;
 use crate::prom::query::{format_result, urlencode};
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -68,36 +65,10 @@ pub fn run(args: &RangeArgs) -> Result<ExitCode> {
     let start = now.saturating_sub(since);
     let path = build_range_path(&args.query, start, now, step);
 
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom(&path)? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let mut lines = format_result(&data)?;
-    lines.sort();
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for line in &lines {
-        if !writer.write_line(line)? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+    run_prom(&args.common, &path, |data| {
+        let mut lines = format_result(data)?;
+        lines.sort();
+        Ok(lines)
     })
 }
 

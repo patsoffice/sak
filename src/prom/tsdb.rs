@@ -18,17 +18,14 @@
 //! OOM-ing?" incident — the response is the same data the built-in
 //! `/tsdb-status` UI page renders.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::emit_json;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -56,35 +53,8 @@ pub struct TsdbStatsArgs {
 }
 
 pub fn run(args: &TsdbStatsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom("/api/v1/status/tsdb")? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let lines = extract_tsdb_lines(&data)?;
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for line in &lines {
-        if !writer.write_line(line)? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+    run_prom(&args.common, "/api/v1/status/tsdb", |data| {
+        extract_tsdb_lines(data)
     })
 }
 

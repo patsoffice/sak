@@ -10,17 +10,15 @@
 //! (which excludes every recording rule, since they have no state).
 //! Multi-line `query` expressions collapse to one row.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::{collapse_newlines, emit_json};
+use crate::prom::output::collapse_newlines;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -128,39 +126,13 @@ pub(super) fn sort_rows(rows: &mut [RuleRow]) {
 }
 
 pub fn run(args: &RulesArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom("/api/v1/rules")? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let mut rows = extract_rule_rows(&data)?;
-    if args.firing {
-        rows.retain(|r| r.state == "firing");
-    }
-    sort_rows(&mut rows);
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for row in &rows {
-        if !writer.write_line(&format_rule_row(row))? {
-            break;
+    run_prom(&args.common, "/api/v1/rules", |data| {
+        let mut rows = extract_rule_rows(data)?;
+        if args.firing {
+            rows.retain(|r| r.state == "firing");
         }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+        sort_rows(&mut rows);
+        Ok(rows.iter().map(format_rule_row).collect())
     })
 }
 

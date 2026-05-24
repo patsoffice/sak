@@ -5,17 +5,15 @@
 //! are stringly typed by the API (Prometheus serializes every flag as a
 //! string, even booleans), so the format passes them through verbatim.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::{collapse_newlines, emit_json};
+use crate::prom::output::collapse_newlines;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -38,37 +36,13 @@ pub struct FlagsArgs {
 }
 
 pub fn run(args: &FlagsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom("/api/v1/status/flags")? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let mut rows = extract_flag_rows(&data)?;
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for (flag, value) in &rows {
-        let line = format!("{flag}\t{}", collapse_newlines(value));
-        if !writer.write_line(&line)? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+    run_prom(&args.common, "/api/v1/status/flags", |data| {
+        let mut rows = extract_flag_rows(data)?;
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(rows
+            .iter()
+            .map(|(flag, value)| format!("{flag}\t{}", collapse_newlines(value)))
+            .collect())
     })
 }
 

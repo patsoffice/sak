@@ -4,17 +4,14 @@
 //! ascending for diff-stable output. This is the "what dimensions can I
 //! group by?" entry point an LLM reaches for first on an unfamiliar Prom.
 
-use std::io;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use serde_json::Value;
 
-use crate::output::BoundedWriter;
-use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
-use crate::prom::output::emit_json;
+use crate::prom::runner::run_prom;
 
 #[derive(Args)]
 #[command(
@@ -36,36 +33,10 @@ pub struct LabelsArgs {
 }
 
 pub fn run(args: &LabelsArgs) -> Result<ExitCode> {
-    let endpoint = resolve_endpoint(args.common.url.as_deref(), "PROMETHEUS_URL")?;
-    let client = PromClient::new(endpoint);
-    let data = match client.get_prom("/api/v1/labels")? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    if args.common.json {
-        return emit_json(&data, args.common.limit);
-    }
-
-    let mut names = extract_strings(&data, "/api/v1/labels")?;
-    names.sort();
-
-    let stdout = io::stdout();
-    let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.common.limit);
-
-    let mut wrote_any = false;
-    for name in &names {
-        if !writer.write_line(name)? {
-            break;
-        }
-        wrote_any = true;
-    }
-    writer.flush()?;
-    Ok(if wrote_any {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
+    run_prom(&args.common, "/api/v1/labels", |data| {
+        let mut names = extract_strings(data, "/api/v1/labels")?;
+        names.sort();
+        Ok(names)
     })
 }
 
