@@ -102,7 +102,7 @@ const READ_STATEMENT_KEYWORDS: &[&str] = &["select", "with", "explain", "pragma"
 /// Bytes that may legally follow a read keyword — whitespace or `(` — so
 /// `select ...` / `with(...)` are accepted but an identifier like
 /// `selected_at` is not.
-const KEYWORD_SEPARATORS: &[u8] = &[b' ', b'\t', b'\n', b'\r', b'('];
+const KEYWORD_SEPARATORS: &[u8] = b" \t\n\r(";
 
 /// Reject anything that isn't a read-only statement form. The connection is
 /// already opened read-only and `PRAGMA query_only=ON`, but rejecting writes
