@@ -31,6 +31,7 @@ pub mod get;
 pub mod images;
 pub mod kinds;
 pub mod logs;
+pub mod not_ready;
 pub mod pending;
 pub mod restarts;
 pub mod schema;
@@ -61,6 +62,8 @@ pub enum K8sCommand {
     Failing(failing::FailingArgs),
     /// List pods stuck in Pending
     Pending(pending::PendingArgs),
+    /// List objects whose target condition is not at the wanted status
+    NotReady(not_ready::NotReadyArgs),
     /// List cluster events, newest first
     Events(events::EventsArgs),
     /// Aggregated description of one resource (object/status/containers/owners/events)
@@ -89,6 +92,7 @@ async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
         K8sCommand::Restarts(args) => restarts::run(args).await,
         K8sCommand::Failing(args) => failing::run(args).await,
         K8sCommand::Pending(args) => pending::run(args).await,
+        K8sCommand::NotReady(args) => not_ready::run(args).await,
         K8sCommand::Events(args) => events::run(args).await,
         K8sCommand::Describe(args) => describe::run(args).await,
         K8sCommand::Logs(args) => logs::run(args).await,
