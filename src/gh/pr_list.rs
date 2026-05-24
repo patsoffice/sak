@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 
@@ -88,61 +89,30 @@ pub fn run(args: &PrListArgs) -> Result<ExitCode> {
     if fields.is_empty() {
         anyhow::bail!("--fields must name at least one gh field");
     }
-    let fields_csv = fields.join(",");
 
-    let mut argv: Vec<String> = vec!["--json".into(), fields_csv, "--state".into()];
-    argv.push(args.state.as_gh().into());
-
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    if let Some(author) = &args.author {
-        argv.push("--author".into());
-        argv.push(author.clone());
-    }
-    for label in &args.labels {
-        argv.push("--label".into());
-        argv.push(label.clone());
-    }
-    if let Some(limit) = args.limit {
-        argv.push("--limit".into());
-        argv.push(limit.to_string());
-    }
-
+    let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let stdout = client::invoke_ok("pr", Some("list"), &argv_refs)?;
 
     render::emit_to_stdout(&stdout, &fields, args.format, args.limit)
 }
 
+/// Assemble the `gh pr list` argv from the parsed args.
+fn build_argv(args: &PrListArgs) -> Vec<String> {
+    let fields_csv = render::parse_fields(&args.fields).join(",");
+    let mut b = ArgvBuilder::new();
+    b.push("--json", &fields_csv)
+        .push("--state", args.state.as_gh())
+        .push_opt("--repo", args.repo.as_deref())
+        .push_opt("--author", args.author.as_deref())
+        .push_each("--label", &args.labels)
+        .push_opt("--limit", args.limit.map(|n| n.to_string()).as_deref());
+    b.into_argv()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn build_argv(args: &PrListArgs) -> Vec<String> {
-        let fields = render::parse_fields(&args.fields);
-        let fields_csv = fields.join(",");
-        let mut argv: Vec<String> = vec!["--json".into(), fields_csv, "--state".into()];
-        argv.push(args.state.as_gh().into());
-        if let Some(repo) = &args.repo {
-            argv.push("--repo".into());
-            argv.push(repo.clone());
-        }
-        if let Some(author) = &args.author {
-            argv.push("--author".into());
-            argv.push(author.clone());
-        }
-        for label in &args.labels {
-            argv.push("--label".into());
-            argv.push(label.clone());
-        }
-        if let Some(limit) = args.limit {
-            argv.push("--limit".into());
-            argv.push(limit.to_string());
-        }
-        argv
-    }
 
     fn bare() -> PrListArgs {
         PrListArgs {

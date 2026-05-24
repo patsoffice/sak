@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 use crate::output::BoundedWriter;
@@ -107,27 +108,17 @@ pub fn run(args: &RunViewArgs) -> Result<ExitCode> {
 /// `--json` (metadata) and `--log`/`--log-failed` (logs) are mutually
 /// exclusive in `gh`, so only one is emitted. Split out for unit testing.
 fn build_argv(args: &RunViewArgs, fields_csv: &str) -> Vec<String> {
-    let mut argv: Vec<String> = vec![args.run_id.clone()];
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    if let Some(job) = &args.job {
-        argv.push("--job".into());
-        argv.push(job.clone());
-    }
+    let mut b = ArgvBuilder::new();
+    b.push_value(args.run_id.as_str())
+        .push_opt("--repo", args.repo.as_deref())
+        .push_opt("--job", args.job.as_deref());
     if args.log_mode() {
-        if args.log {
-            argv.push("--log".into());
-        }
-        if args.log_failed {
-            argv.push("--log-failed".into());
-        }
+        b.push_flag_if(args.log, "--log")
+            .push_flag_if(args.log_failed, "--log-failed");
     } else {
-        argv.push("--json".into());
-        argv.push(fields_csv.to_string());
+        b.push("--json", fields_csv);
     }
-    argv
+    b.into_argv()
 }
 
 /// Stream raw log text through the bounded writer, one line at a time, so

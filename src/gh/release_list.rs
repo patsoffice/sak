@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 
@@ -74,22 +75,13 @@ pub fn run(args: &ReleaseListArgs) -> Result<ExitCode> {
 /// Assemble the `gh release list` arg vector. Split out so it can be
 /// unit-tested without spawning `gh`.
 fn build_argv(args: &ReleaseListArgs, fields_csv: &str) -> Vec<String> {
-    let mut argv: Vec<String> = vec!["--json".into(), fields_csv.to_string()];
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    if args.exclude_drafts {
-        argv.push("--exclude-drafts".into());
-    }
-    if args.exclude_pre_releases {
-        argv.push("--exclude-pre-releases".into());
-    }
-    if let Some(limit) = args.limit {
-        argv.push("--limit".into());
-        argv.push(limit.to_string());
-    }
-    argv
+    let mut b = ArgvBuilder::new();
+    b.push("--json", fields_csv)
+        .push_opt("--repo", args.repo.as_deref())
+        .push_flag_if(args.exclude_drafts, "--exclude-drafts")
+        .push_flag_if(args.exclude_pre_releases, "--exclude-pre-releases")
+        .push_opt("--limit", args.limit.map(|n| n.to_string()).as_deref());
+    b.into_argv()
 }
 
 #[cfg(test)]

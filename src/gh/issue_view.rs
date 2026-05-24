@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 
@@ -78,12 +79,11 @@ pub fn run(args: &IssueViewArgs) -> Result<ExitCode> {
 /// and must precede `--json`. Split out so it can be unit-tested without
 /// spawning `gh`.
 fn build_argv(args: &IssueViewArgs, fields_csv: &str) -> Vec<String> {
-    let mut argv: Vec<String> = vec![args.issue.clone(), "--json".into(), fields_csv.to_string()];
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    argv
+    let mut b = ArgvBuilder::new();
+    b.push_value(args.issue.as_str())
+        .push("--json", fields_csv)
+        .push_opt("--repo", args.repo.as_deref());
+    b.into_argv()
 }
 
 #[cfg(test)]

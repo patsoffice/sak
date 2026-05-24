@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::output::BoundedWriter;
 
@@ -72,40 +73,7 @@ pub struct ApiArgs {
 }
 
 pub fn run(args: &ApiArgs) -> Result<ExitCode> {
-    // Assemble the passthrough arg vector. The endpoint leads; every flag
-    // maps 1:1 to a `gh api` flag. Notably absent: any `-X / --method` flag —
-    // this command is GET-only by construction, and the chokepoint rejects a
-    // non-GET method if one ever reaches it some other way.
-    let mut argv: Vec<String> = vec![args.endpoint.clone()];
-
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    for h in &args.headers {
-        argv.push("-H".into());
-        argv.push(h.clone());
-    }
-    for f in &args.fields {
-        argv.push("-F".into());
-        argv.push(f.clone());
-    }
-    for f in &args.raw_fields {
-        argv.push("-f".into());
-        argv.push(f.clone());
-    }
-    if args.paginate {
-        argv.push("--paginate".into());
-    }
-    if let Some(jq) = &args.jq {
-        argv.push("--jq".into());
-        argv.push(jq.clone());
-    }
-    if let Some(cache) = &args.cache {
-        argv.push("--cache".into());
-        argv.push(cache.clone());
-    }
-
+    let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let bytes = client::invoke_ok("api", None, &argv_refs)?;
 
@@ -130,43 +98,26 @@ pub fn run(args: &ApiArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Assemble the `gh api` passthrough arg vector. The endpoint leads; every flag
+/// maps 1:1 to a `gh api` flag. Notably absent: any `-X / --method` flag — this
+/// command is GET-only by construction, and the chokepoint rejects a non-GET
+/// method if one ever reaches it some other way. Split out for unit testing.
+fn build_argv(args: &ApiArgs) -> Vec<String> {
+    let mut b = ArgvBuilder::new();
+    b.push_value(args.endpoint.as_str())
+        .push_opt("--repo", args.repo.as_deref())
+        .push_each("-H", &args.headers)
+        .push_each("-F", &args.fields)
+        .push_each("-f", &args.raw_fields)
+        .push_flag_if(args.paginate, "--paginate")
+        .push_opt("--jq", args.jq.as_deref())
+        .push_opt("--cache", args.cache.as_deref());
+    b.into_argv()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Build the same argv that `run` assembles, without spawning `gh`, so we
-    /// can assert flag mapping is correct and stable.
-    fn build_argv(args: &ApiArgs) -> Vec<String> {
-        let mut argv: Vec<String> = vec![args.endpoint.clone()];
-        if let Some(repo) = &args.repo {
-            argv.push("--repo".into());
-            argv.push(repo.clone());
-        }
-        for h in &args.headers {
-            argv.push("-H".into());
-            argv.push(h.clone());
-        }
-        for f in &args.fields {
-            argv.push("-F".into());
-            argv.push(f.clone());
-        }
-        for f in &args.raw_fields {
-            argv.push("-f".into());
-            argv.push(f.clone());
-        }
-        if args.paginate {
-            argv.push("--paginate".into());
-        }
-        if let Some(jq) = &args.jq {
-            argv.push("--jq".into());
-            argv.push(jq.clone());
-        }
-        if let Some(cache) = &args.cache {
-            argv.push("--cache".into());
-            argv.push(cache.clone());
-        }
-        argv
-    }
 
     fn bare(endpoint: &str) -> ApiArgs {
         ApiArgs {

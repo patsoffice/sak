@@ -27,6 +27,7 @@
 //! no sak-side credential plumbing.
 
 pub mod api;
+pub mod argv;
 pub mod client;
 pub mod issue_list;
 pub mod issue_view;

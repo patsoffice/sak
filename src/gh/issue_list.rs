@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 
@@ -108,41 +109,17 @@ pub fn run(args: &IssueListArgs) -> Result<ExitCode> {
 /// Assemble the `gh issue list` arg vector. Split out so it can be unit-tested
 /// without spawning `gh`.
 fn build_argv(args: &IssueListArgs, fields_csv: &str) -> Vec<String> {
-    let mut argv: Vec<String> = vec![
-        "--json".into(),
-        fields_csv.to_string(),
-        "--state".into(),
-        args.state.as_gh().into(),
-    ];
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    if let Some(author) = &args.author {
-        argv.push("--author".into());
-        argv.push(author.clone());
-    }
-    if let Some(assignee) = &args.assignee {
-        argv.push("--assignee".into());
-        argv.push(assignee.clone());
-    }
-    if let Some(mention) = &args.mention {
-        argv.push("--mention".into());
-        argv.push(mention.clone());
-    }
-    for label in &args.labels {
-        argv.push("--label".into());
-        argv.push(label.clone());
-    }
-    if let Some(milestone) = &args.milestone {
-        argv.push("--milestone".into());
-        argv.push(milestone.clone());
-    }
-    if let Some(limit) = args.limit {
-        argv.push("--limit".into());
-        argv.push(limit.to_string());
-    }
-    argv
+    let mut b = ArgvBuilder::new();
+    b.push("--json", fields_csv)
+        .push("--state", args.state.as_gh())
+        .push_opt("--repo", args.repo.as_deref())
+        .push_opt("--author", args.author.as_deref())
+        .push_opt("--assignee", args.assignee.as_deref())
+        .push_opt("--mention", args.mention.as_deref())
+        .push_each("--label", &args.labels)
+        .push_opt("--milestone", args.milestone.as_deref())
+        .push_opt("--limit", args.limit.map(|n| n.to_string()).as_deref());
+    b.into_argv()
 }
 
 #[cfg(test)]

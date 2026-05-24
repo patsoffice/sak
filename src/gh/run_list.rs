@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::gh::argv::ArgvBuilder;
 use crate::gh::client;
 use crate::gh::render::{self, Format};
 
@@ -90,34 +91,16 @@ pub fn run(args: &RunListArgs) -> Result<ExitCode> {
 /// Assemble the `gh run list` arg vector. Split out so it can be unit-tested
 /// without spawning `gh`.
 fn build_argv(args: &RunListArgs, fields_csv: &str) -> Vec<String> {
-    let mut argv: Vec<String> = vec!["--json".into(), fields_csv.to_string()];
-    if let Some(repo) = &args.repo {
-        argv.push("--repo".into());
-        argv.push(repo.clone());
-    }
-    if let Some(workflow) = &args.workflow {
-        argv.push("--workflow".into());
-        argv.push(workflow.clone());
-    }
-    if let Some(branch) = &args.branch {
-        argv.push("--branch".into());
-        argv.push(branch.clone());
-    }
-    if let Some(event) = &args.event {
-        argv.push("--event".into());
-        argv.push(event.clone());
-    }
-    if let Some(status) = &args.status {
-        argv.push("--status".into());
-        argv.push(status.clone());
-    }
-    if let Some(user) = &args.user {
-        argv.push("--user".into());
-        argv.push(user.clone());
-    }
-    argv.push("--limit".into());
-    argv.push(args.limit.to_string());
-    argv
+    let mut b = ArgvBuilder::new();
+    b.push("--json", fields_csv)
+        .push_opt("--repo", args.repo.as_deref())
+        .push_opt("--workflow", args.workflow.as_deref())
+        .push_opt("--branch", args.branch.as_deref())
+        .push_opt("--event", args.event.as_deref())
+        .push_opt("--status", args.status.as_deref())
+        .push_opt("--user", args.user.as_deref())
+        .push("--limit", &args.limit.to_string());
+    b.into_argv()
 }
 
 #[cfg(test)]
