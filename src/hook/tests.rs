@@ -483,6 +483,27 @@ fn find_search_blocks() {
 }
 
 #[test]
+fn find_metadata_suggests_fs_find() {
+    // A metadata predicate steers toward `sak fs find`, not just `glob`.
+    assert!(
+        classify("find . -size +1M")
+            .unwrap()
+            .contains("sak fs find")
+    );
+    assert!(
+        classify("find . -mtime -7")
+            .unwrap()
+            .contains("sak fs find")
+    );
+    // A name-only search still leads with `sak fs glob`.
+    assert!(
+        classify("find . -name '*.rs'")
+            .unwrap()
+            .contains("sak fs glob")
+    );
+}
+
+#[test]
 fn find_action_allows() {
     assert!(allows("find . -name foo.tmp -delete"));
     assert!(allows("find . -type f -exec rm {} ;"));

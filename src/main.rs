@@ -50,6 +50,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak fs grep 'fn main' src/                  Search for a pattern ('-' reads stdin)
   sak fs read src/main.rs -n 1-20             Read lines 1-20 of a file
   sak fs cut -d: -f 1 /etc/passwd             Extract first field
+  sak fs largest -n 10 --human                Top 10 largest files by size
+  sak fs duplicates                           Find byte-identical files
+  sak fs find . --size +1M --mtime -7d        Filter by size/mtime/type
   sak git status                              Show working tree status
   sak git log --oneline -n 10                 Recent commits
   sak git diff --staged                       Show staged changes

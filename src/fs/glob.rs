@@ -5,8 +5,8 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use walkdir::WalkDir;
 
+use super::{is_hidden_file, pruned_walk};
 use crate::output::{BoundedWriter, relative_path};
 
 #[derive(Clone, ValueEnum)]
@@ -76,15 +76,6 @@ pub struct GlobArgs {
     pub limit: Option<usize>,
 }
 
-const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".venv"];
-
-fn should_skip(name: &str, hidden: bool) -> bool {
-    if !hidden && name.starts_with('.') {
-        return true;
-    }
-    SKIP_DIRS.contains(&name)
-}
-
 fn matches_type(entry: &walkdir::DirEntry, entry_type: &EntryType) -> bool {
     let ft = entry.file_type();
     match entry_type {
@@ -127,23 +118,9 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
         .canonicalize()
         .with_context(|| format!("cannot access directory: {}", path.display()))?;
 
-    let mut walker = WalkDir::new(&base).follow_links(args.follow_links);
-    if let Some(depth) = args.max_depth {
-        walker = walker.max_depth(depth);
-    }
-
     let mut results: Vec<(PathBuf, std::fs::Metadata)> = Vec::new();
-    let hidden = args.hidden;
 
-    let iter = walker.into_iter().filter_entry(move |e| {
-        if e.depth() > 0
-            && e.file_type().is_dir()
-            && let Some(name) = e.file_name().to_str()
-        {
-            return !should_skip(name, hidden);
-        }
-        true
-    });
+    let iter = pruned_walk(&base, args.hidden, args.follow_links, args.max_depth);
 
     for entry in iter {
         let entry = match entry {
@@ -159,10 +136,7 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
         }
 
         // Skip hidden files (not dirs — those are handled by filter_entry)
-        if !args.hidden
-            && let Some(name) = entry.file_name().to_str()
-            && name.starts_with('.')
-        {
+        if is_hidden_file(&entry, args.hidden) {
             continue;
         }
 
@@ -220,6 +194,7 @@ mod tests {
 
     #[test]
     fn test_should_skip_hidden() {
+        use super::super::should_skip;
         assert!(should_skip(".git", false));
         assert!(should_skip(".hidden", false));
         assert!(!should_skip(".hidden", true));

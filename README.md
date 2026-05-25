@@ -201,6 +201,9 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, `sed -n`
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin)
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak fs largest [path]` to rank the biggest files (size<TAB>path, `--human`, `--min-size`)
+- `sak fs duplicates [path]` to find byte-identical files (size-bucketed, then SHA-256 confirmed)
+- `sak fs find <path>` to filter by metadata (`--size +1M`, `--mtime -7d`, `--type f|d|l`, `--name <glob>`) — `find` with predicates, where `glob` matches by name
 - `sak git status|log|diff|blame|show` instead of read-only `git`
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON

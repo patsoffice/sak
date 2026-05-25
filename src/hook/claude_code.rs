@@ -410,9 +410,23 @@ fn check_find(args: &[String]) -> Option<String> {
     if args.iter().any(|a| write_flags.contains(&a.as_str())) {
         return None;
     }
+    // A `find` with metadata predicates (-size/-mtime/-type) maps to `sak fs
+    // find`; a name-only search maps to `sak fs glob`. Mention both.
+    let by_metadata = args.iter().any(|a| {
+        matches!(
+            a.as_str(),
+            "-size" | "-mtime" | "-mmin" | "-newer" | "-type"
+        )
+    });
+    if by_metadata {
+        return block(
+            "Use `sak fs find <path>` instead of `find` for metadata searches \
+             (--size +1M, --mtime -7d, --type f|d|l, --name <glob>).",
+        );
+    }
     block(
-        "Use `sak fs glob '<pattern>'` instead of `find`. \
-         Example: `sak fs glob '**/*.rs'`.",
+        "Use `sak fs glob '<pattern>'` instead of `find` for name searches \
+         (or `sak fs find <path>` to filter by --size/--mtime/--type).",
     )
 }
 
