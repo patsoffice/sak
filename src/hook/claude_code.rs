@@ -354,6 +354,9 @@ fn check(tokens: &[String]) -> Option<String> {
             "Use `sak fs grep <pattern> <path>` instead of `{cmd_base}`."
         )),
         "find" => check_find(args),
+        "tree" => check_tree(&pos),
+        "stat" => check_stat(&pos),
+        "wc" => check_wc(&pos),
         "jq" => check_jq(&pos),
         "yq" | "tomlq" => check_yq(cmd_base, &pos),
         "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
@@ -380,10 +383,47 @@ fn check_cat(base: &str, args: &[String], pos: &[&str]) -> Option<String> {
     if pos.is_empty() {
         return None;
     }
-    block(&format!(
-        "Use `sak fs read <file>` instead of `{base}` for reading files. \
-         Ranges: `-n 1-50` (lines), `-n -20` (last 20)."
-    ))
+    // `head`/`tail` have dedicated, more ergonomic sak commands; `cat` maps to
+    // `read`. `tail -f` (follow) has no read-only sak equivalent, but it's still
+    // a read, so steer it to `sak fs tail` like the rest.
+    match base {
+        "head" => {
+            block("Use `sak fs head <file> [n]` instead of `head` (--bytes N, --no-line-numbers).")
+        }
+        "tail" => {
+            block("Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers).")
+        }
+        _ => block(
+            "Use `sak fs read <file>` instead of `cat` for reading files. \
+             Ranges: `-n 1-50` (lines), `-n -20` (last 20).",
+        ),
+    }
+}
+
+/// `tree` is always a read — redirect every invocation to `sak fs tree`.
+fn check_tree(_pos: &[&str]) -> Option<String> {
+    block(
+        "Use `sak fs tree [path]` instead of `tree` \
+         (--max-depth N, --dirs-only, --hidden).",
+    )
+}
+
+/// `stat` is always a read — redirect when given a path (bare `stat` is a usage
+/// error, nothing to redirect).
+fn check_stat(pos: &[&str]) -> Option<String> {
+    if pos.is_empty() {
+        return None;
+    }
+    block("Use `sak fs stat <path...>` instead of `stat` (--format json).")
+}
+
+/// `wc` reading files maps to `sak fs wc`; a bare `wc` (or piped stdin) reads
+/// standard input and has nothing to redirect.
+fn check_wc(pos: &[&str]) -> Option<String> {
+    if pos.is_empty() {
+        return None;
+    }
+    block("Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes).")
 }
 
 fn check_grep(_base: &str, args: &[String], pos: &[&str]) -> Option<String> {

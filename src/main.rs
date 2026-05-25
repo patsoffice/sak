@@ -53,6 +53,11 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak fs largest -n 10 --human                Top 10 largest files by size
   sak fs duplicates                           Find byte-identical files
   sak fs find . --size +1M --mtime -7d        Filter by size/mtime/type
+  sak fs tree src --max-depth 2               Directory structure as a tree
+  sak fs stat src/main.rs Cargo.toml          File metadata (size/perms/mtime)
+  sak fs head src/main.rs 20                  First 20 lines of a file
+  sak fs tail logfile.txt 50                  Last 50 lines of a file
+  sak fs wc src/*.rs                          Count lines/words/bytes
   sak git status                              Show working tree status
   sak git log --oneline -n 10                 Recent commits
   sak git diff --staged                       Show staged changes

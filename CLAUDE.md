@@ -7,9 +7,10 @@ Read-only operations tool designed for LLM consumption. Organized by domain — 
 This repo dogfoods its own product. When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist, a live Kubernetes cluster, Helm releases / charts, an LXD/Incus or Docker daemon, a SQLite database, a Prometheus / Alertmanager endpoint, or an X.509 certificate, **prefer `sak <domain> <command>` over shell equivalents**. This applies to both sak's own development and any other read-only inspection you do while working here. Concretely:
 
 - `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
-- `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, or `sed -n`
+- `sak fs read <file> -n <lo>-<hi>` instead of `cat` or `sed -n` (and `sak fs head|tail <file> [n]` instead of `head`/`tail`)
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg`
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak fs tree [path]` instead of `tree` / `ls -R`, `sak fs stat <path...>` instead of `stat`, `sak fs wc [files...]` instead of `wc`
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
@@ -62,7 +63,7 @@ A new sak command typically follows this checklist:
 
 1. Implement the command in `src/<domain>/<command>.rs`, wire it through the domain's `mod.rs`, and add an inline `#[cfg(test)] mod tests` block next to it.
 2. Update `--help` examples (the per-command `after_help`, the domain quick-start in `src/main.rs`, and the discovery list in `README.md`).
-3. **Update the agent hook.** If the new command shadows a read operation in a CLI the hook already covers (`git`, `kubectl`, `docker`, `lxc`/`incus`, `talosctl`, `gh`, `helm`, `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `openssl x509`/`dgst`, `sha256sum`/`sha1sum`/`md5sum`/`shasum`/`b3sum`, `sqlite3`, `sysctl`), extend the corresponding `check_*` function in [src/hook/claude_code.rs](src/hook/claude_code.rs) and add a block/allow test next to the existing ones. If the new domain redirects from a CLI that's *not* yet on that list, add a new `check_<tool>` function, route to it from the match in `check()`, and add tests. The agent-side `settings.json` only points at `sak hook claude-code` — the rule set rides in the binary, so users pick up new redirects automatically by upgrading sak. Call out hook changes in the commit message anyway so people running older sak versions know to upgrade.
+3. **Update the agent hook.** If the new command shadows a read operation in a CLI the hook already covers (`git`, `kubectl`, `docker`, `lxc`/`incus`, `talosctl`, `gh`, `helm`, `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `openssl x509`/`dgst`, `sha256sum`/`sha1sum`/`md5sum`/`shasum`/`b3sum`, `sqlite3`, `sysctl`), extend the corresponding `check_*` function in [src/hook/claude_code.rs](src/hook/claude_code.rs) and add a block/allow test next to the existing ones. If the new domain redirects from a CLI that's *not* yet on that list, add a new `check_<tool>` function, route to it from the match in `check()`, and add tests. The agent-side `settings.json` only points at `sak hook claude-code` — the rule set rides in the binary, so users pick up new redirects automatically by upgrading sak. Call out hook changes in the commit message anyway so people running older sak versions know to upgrade.
 4. Bump the version in `Cargo.toml` per the rule above.
 5. `cargo fmt && cargo clippy --all-features --all-targets && cargo test && cargo test --no-default-features` must all be clean before committing.
 

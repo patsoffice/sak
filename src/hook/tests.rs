@@ -450,6 +450,54 @@ fn head_tail_with_file_block() {
 }
 
 #[test]
+fn head_tail_suggest_dedicated_commands() {
+    // head/tail now have their own sak commands, not just `read`.
+    assert!(
+        classify("head -20 file.txt")
+            .unwrap()
+            .contains("sak fs head")
+    );
+    assert!(classify("tail log.txt").unwrap().contains("sak fs tail"));
+    // cat still maps to read.
+    assert!(classify("cat file.txt").unwrap().contains("sak fs read"));
+}
+
+#[test]
+fn tree_blocks() {
+    assert!(blocks("tree"));
+    assert!(blocks("tree src/"));
+    assert!(blocks("tree -L 2 src"));
+    assert!(classify("tree src").unwrap().contains("sak fs tree"));
+}
+
+#[test]
+fn stat_with_path_blocks() {
+    assert!(blocks("stat src/main.rs"));
+    assert!(blocks("stat -c %s file.txt"));
+    assert!(classify("stat file").unwrap().contains("sak fs stat"));
+}
+
+#[test]
+fn stat_no_path_allows() {
+    // Bare `stat` is a usage error, nothing to redirect.
+    assert!(allows("stat"));
+}
+
+#[test]
+fn wc_with_file_blocks() {
+    assert!(blocks("wc src/main.rs"));
+    assert!(blocks("wc -l README.md"));
+    assert!(classify("wc file").unwrap().contains("sak fs wc"));
+}
+
+#[test]
+fn wc_stdin_allows() {
+    // Piped stdin reads stdin; nothing to redirect.
+    assert!(allows("echo hi | wc -l"));
+    assert!(allows("wc"));
+}
+
+#[test]
 fn grep_recursive_blocks() {
     assert!(blocks("grep -r foo ."));
     assert!(blocks("grep -R foo ."));

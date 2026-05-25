@@ -121,7 +121,7 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
 
 The configuration below is for Claude Code's `~/.claude/settings.json`. The pattern adapts to any agent harness that supports per-tool permissions and pre-tool hooks.
 
@@ -198,12 +198,16 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 `sak <domain> <command>` over shell equivalents**:
 
 - `sak fs glob '<pattern>'...` instead of `ls`, `find`, or `**` shell globs (pass multiple patterns to OR-match, e.g. `sak fs glob flake.nix shell.nix .`)
-- `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, `sed -n`
+- `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `sed -n` (or `sak fs head`/`sak fs tail` for the first/last N lines)
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin)
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak fs largest [path]` to rank the biggest files (size<TAB>path, `--human`, `--min-size`)
 - `sak fs duplicates [path]` to find byte-identical files (size-bucketed, then SHA-256 confirmed)
 - `sak fs find <path>` to filter by metadata (`--size +1M`, `--mtime -7d`, `--type f|d|l`, `--name <glob>`) — `find` with predicates, where `glob` matches by name
+- `sak fs tree [path]` to print a directory structure (`--max-depth`, `--dirs-only`, `--hidden`) instead of `tree`/`ls -R`
+- `sak fs stat <path...>` for size/perms/mtime/type metadata (`--format json`) instead of `stat`
+- `sak fs head <file> [n]` / `sak fs tail <file> [n]` for the first/last N lines (or `--bytes`) instead of `head`/`tail`
+- `sak fs wc [files...]` to count lines/words/bytes (`--lines`/`--words`/`--bytes`) instead of `wc`
 - `sak git status|log|diff|blame|show` instead of read-only `git`
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON

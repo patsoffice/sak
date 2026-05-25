@@ -3,9 +3,14 @@ pub mod duplicates;
 pub mod find;
 pub mod glob;
 pub mod grep;
+pub mod head;
 pub mod largest;
 pub mod read;
 pub mod size;
+pub mod stat;
+pub mod tail;
+pub mod tree;
+pub mod wc;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -23,6 +28,11 @@ pub enum FsCommand {
     Largest(largest::LargestArgs),
     Duplicates(duplicates::DuplicatesArgs),
     Find(find::FindArgs),
+    Tree(tree::TreeArgs),
+    Stat(stat::StatArgs),
+    Head(head::HeadArgs),
+    Tail(tail::TailArgs),
+    Wc(wc::WcArgs),
 }
 
 pub fn run(cmd: &FsCommand) -> Result<ExitCode> {
@@ -34,6 +44,11 @@ pub fn run(cmd: &FsCommand) -> Result<ExitCode> {
         FsCommand::Largest(args) => largest::run(args),
         FsCommand::Duplicates(args) => duplicates::run(args),
         FsCommand::Find(args) => find::run(args),
+        FsCommand::Tree(args) => tree::run(args),
+        FsCommand::Stat(args) => stat::run(args),
+        FsCommand::Head(args) => head::run(args),
+        FsCommand::Tail(args) => tail::run(args),
+        FsCommand::Wc(args) => wc::run(args),
     }
 }
 
