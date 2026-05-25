@@ -678,6 +678,10 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("lint") => {
             block("Use `sak helm lint <chart>` instead of `helm lint` (TSV findings + pass/fail).")
         }
+        // Both `helm search repo` and `helm search hub` are reads.
+        Some("search") => {
+            block("Use `sak helm search <term> --source repo|hub` instead of `helm search`.")
+        }
         Some("history") | Some("hist") => {
             block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
         }

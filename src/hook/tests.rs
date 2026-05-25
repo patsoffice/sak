@@ -402,6 +402,12 @@ fn helm_lint_blocks() {
 }
 
 #[test]
+fn helm_search_blocks() {
+    assert!(blocks("helm search repo nginx"));
+    assert!(blocks("helm search hub nginx --max-col-width 0"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));

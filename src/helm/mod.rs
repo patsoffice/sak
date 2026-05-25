@@ -28,6 +28,7 @@ pub mod history;
 pub mod lint;
 pub mod list;
 pub mod repo_list;
+pub mod search;
 pub mod show;
 pub mod status;
 pub mod template;
@@ -51,6 +52,7 @@ pub enum HelmCommand {
     Show(show::ShowArgs),
     Template(template::TemplateArgs),
     Lint(lint::LintArgs),
+    Search(search::SearchArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
@@ -64,6 +66,7 @@ pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
         HelmCommand::Show(args) => show::run(args),
         HelmCommand::Template(args) => template::run(args),
         HelmCommand::Lint(args) => lint::run(args),
+        HelmCommand::Search(args) => search::run(args),
     }
 }
 
