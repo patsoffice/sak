@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.16.11"
+version = "0.17.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -96,6 +96,14 @@ plist = "1.6"
 x509-parser = "0.16"
 sha2 = "0.10"
 base64 = { version = "0.22", default-features = false, features = ["std"] }
+# hash domain (always on — pure Rust, no native deps, no network). sha2 (above)
+# already covers SHA-256; sha1 + md-5 are the matching RustCrypto 0.10 crates
+# for the legacy algorithms (same `digest::Digest` trait, so the streaming
+# hasher is generic over all three); blake3 brings its own fast hasher. All
+# are tiny relative to the k8s/sqlite tier, so the domain has no feature gate.
+sha1 = "0.10"
+md-5 = "0.10"
+blake3 = "1"
 # k8s domain (opt-in via the `k8s` feature). Minimal feature sets:
 # - kube: client + rustls-tls only; no runtime, derive, ws, oauth, oidc, gzip
 # - k8s-openapi: pinned to a single API version (never `latest`)

@@ -534,6 +534,33 @@ fn openssl_other_allows() {
     assert!(allows("openssl s_client -connect host:443"));
 }
 
+#[test]
+fn openssl_dgst_blocks() {
+    assert!(blocks("openssl dgst -sha256 file.bin"));
+    assert!(blocks("openssl dgst -md5 file.bin"));
+}
+
+// ── *sum / b3sum digest tools ─────────────────────────────────
+
+#[test]
+fn sum_tools_block() {
+    assert!(blocks("sha256sum file.iso"));
+    assert!(blocks("sha1sum file.iso"));
+    assert!(blocks("md5sum file.iso"));
+    assert!(blocks("shasum -a 256 file.iso"));
+    assert!(blocks("b3sum file.iso"));
+    // --check (verify) mode also redirects to `sak hash --verify`.
+    assert!(blocks("sha256sum -c SHA256SUMS"));
+}
+
+#[test]
+fn sum_tools_suggest_matching_algo() {
+    assert!(classify("sha1sum f").unwrap().contains("sak hash sha1"));
+    assert!(classify("md5sum f").unwrap().contains("sak hash md5"));
+    assert!(classify("b3sum f").unwrap().contains("sak hash blake3"));
+    assert!(classify("sha256sum f").unwrap().contains("sak hash sha256"));
+}
+
 // ── sqlite3 ───────────────────────────────────────────────────
 
 #[test]

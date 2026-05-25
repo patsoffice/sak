@@ -6,6 +6,7 @@ mod docker;
 mod fs;
 mod gh;
 mod git;
+mod hash;
 mod helm;
 mod hook;
 mod json;
@@ -73,6 +74,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
   sak cert expiring --days 30 *.pem           Certs expiring within a window
   sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
+  sak hash sha256 file.tar.gz                 SHA-256 of a file (or stdin)
+  sak hash blake3 *.iso                       BLAKE3 of several files
+  sak hash sha256 --verify SHA256SUMS         Verify files against a sumfile
   sak talos certs                             Cert inventory across all Talos nodes
   sak talos read /etc/os-release              Fan-out file read across nodes
   sak talos get members --node 192.168.1.10   COSI resource from one node
@@ -207,6 +211,9 @@ enum Command {
     /// X.509 certificate inspection (read-only)
     #[command(subcommand)]
     Cert(cert::CertCommand),
+    /// Cryptographic hashing of files / stdin (sha256, sha1, md5, blake3)
+    #[command(subcommand)]
+    Hash(hash::HashCommand),
     /// Talos Linux cluster operations (read-only, shells out to talosctl)
     #[command(subcommand)]
     Talos(talos::TalosCommand),
@@ -254,6 +261,7 @@ fn main() -> ExitCode {
         Command::Config(cmd) => config::run(cmd),
         Command::Csv(cmd) => csv::run(cmd),
         Command::Cert(cmd) => cert::run(cmd),
+        Command::Hash(cmd) => hash::run(cmd),
         Command::Talos(cmd) => talos::run(cmd),
         Command::Gh(cmd) => gh::run(cmd),
         Command::Helm(cmd) => helm::run(cmd),

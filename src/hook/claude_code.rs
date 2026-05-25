@@ -358,6 +358,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "yq" | "tomlq" => check_yq(cmd_base, &pos),
         "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
         "openssl" => check_openssl(args),
+        "sha256sum" | "sha1sum" | "md5sum" | "shasum" | "b3sum" => check_sum(cmd_base),
         "git" => check_git(args),
         "kubectl" => check_kubectl(&pos),
         "talosctl" => check_talosctl(&pos),
@@ -437,13 +438,33 @@ fn check_yq(base: &str, pos: &[&str]) -> Option<String> {
 }
 
 fn check_openssl(args: &[String]) -> Option<String> {
-    if args.first().map(|s| s.as_str()) == Some("x509") {
-        return block(
+    match args.first().map(|s| s.as_str()) {
+        Some("x509") => block(
             "Use `sak cert inspect <cert>` instead of `openssl x509`. \
              Also: `sak cert expiring --days 30`, `sak cert from-kubeconfig`.",
-        );
+        ),
+        Some("dgst") => {
+            block("Use `sak hash sha256|sha1|md5|blake3 <file>` instead of `openssl dgst`.")
+        }
+        _ => None,
     }
-    None
+}
+
+/// `*sum` / `b3sum` are read-only digest tools (their `-c`/`--check` mode maps
+/// to `sak hash --verify`), so every invocation redirects to `sak hash`.
+fn check_sum(base: &str) -> Option<String> {
+    let algo = match base {
+        "sha1sum" => "sha1",
+        "md5sum" => "md5",
+        "b3sum" => "blake3",
+        // sha256sum and shasum (shasum defaults to SHA-1 but takes `-a 256`):
+        // suggest sha256 and let the algo list cover the rest.
+        _ => "sha256",
+    };
+    block(&format!(
+        "Use `sak hash {algo} <file>` instead of `{base}` \
+         (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3)."
+    ))
 }
 
 fn check_git(args: &[String]) -> Option<String> {
