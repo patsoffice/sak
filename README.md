@@ -197,7 +197,7 @@ a live Kubernetes cluster, an LXD/Incus or Docker daemon, a SQLite
 database, or a Prometheus / Alertmanager endpoint, **prefer
 `sak <domain> <command>` over shell equivalents**:
 
-- `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
+- `sak fs glob '<pattern>'...` instead of `ls`, `find`, or `**` shell globs (pass multiple patterns to OR-match, e.g. `sak fs glob flake.nix shell.nix .`)
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `head`, `tail`, `sed -n`
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin)
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`

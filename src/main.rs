@@ -46,7 +46,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
     )]
     let mut s = String::from(
         "Quick start:
-  sak fs glob '**/*.rs'                       Find all Rust files
+  sak fs glob '**/*.rs'                       Find all Rust files (multiple patterns OR-match)
   sak fs grep 'fn main' src/                  Search for a pattern ('-' reads stdin)
   sak fs read src/main.rs -n 1-20             Read lines 1-20 of a file
   sak fs cut -d: -f 1 /etc/passwd             Extract first field
