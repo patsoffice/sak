@@ -669,6 +669,11 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("history") | Some("hist") => {
             block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
         }
+        // Only `repo list` is a read; `repo add`/`update`/`remove` are writes
+        // sak can't perform, so they pass through.
+        Some("repo") if pos.get(1).copied() == Some("list") => {
+            block("Use `sak helm repo-list` instead of `helm repo list` (TSV/JSON).")
+        }
         _ => None,
     }
 }

@@ -359,16 +359,22 @@ fn helm_history_blocks() {
 }
 
 #[test]
+fn helm_repo_list_blocks() {
+    assert!(blocks("helm repo list"));
+    assert!(blocks("helm repo list -o json"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));
     assert!(allows("helm upgrade foo ./chart"));
     assert!(allows("helm uninstall foo"));
     assert!(allows("helm rollback foo 1"));
+    // `repo` writes pass through; only `repo list` is shadowed.
     assert!(allows("helm repo add stable https://example.com"));
     assert!(allows("helm repo update"));
-    // Reads with no sak command yet.
-    assert!(allows("helm repo list"));
+    assert!(allows("helm repo remove stable"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
