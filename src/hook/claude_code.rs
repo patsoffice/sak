@@ -666,6 +666,11 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("get") => block(
             "Use `sak helm get <release> --what all|manifest|values|notes|hooks` instead of `helm get`.",
         ),
+        // Every `helm show`/`helm inspect` (deprecated alias) subcommand is a
+        // read — chart/values/readme/crds/all.
+        Some("show") | Some("inspect") => block(
+            "Use `sak helm show <chart> --what all|chart|values|readme|crds` instead of `helm show`.",
+        ),
         Some("history") | Some("hist") => {
             block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
         }

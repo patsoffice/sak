@@ -372,6 +372,19 @@ fn helm_dependency_list_blocks() {
 }
 
 #[test]
+fn helm_show_blocks() {
+    assert!(blocks("helm show all ./mychart"));
+    assert!(blocks(
+        "helm show values bitnami/nginx --repo https://charts.bitnami.com/bitnami"
+    ));
+    assert!(blocks("helm show chart ./mychart --version 1.2.3"));
+    assert!(blocks("helm show readme ./mychart"));
+    assert!(blocks("helm show crds ./mychart"));
+    // `inspect` is the deprecated alias for `show`.
+    assert!(blocks("helm inspect values ./mychart"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));

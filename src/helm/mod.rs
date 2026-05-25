@@ -27,6 +27,7 @@ pub mod get;
 pub mod history;
 pub mod list;
 pub mod repo_list;
+pub mod show;
 pub mod status;
 
 use std::process::ExitCode;
@@ -45,6 +46,7 @@ pub enum HelmCommand {
     History(history::HistoryArgs),
     RepoList(repo_list::RepoListArgs),
     DependencyList(dependency_list::DependencyListArgs),
+    Show(show::ShowArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
@@ -55,6 +57,7 @@ pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
         HelmCommand::History(args) => history::run(args),
         HelmCommand::RepoList(args) => repo_list::run(args),
         HelmCommand::DependencyList(args) => dependency_list::run(args),
+        HelmCommand::Show(args) => show::run(args),
     }
 }
 
