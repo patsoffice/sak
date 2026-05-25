@@ -73,6 +73,17 @@
               clippy
               rustfmt
               rust-analyzer
+              # External CLIs the shell-out domains invoke at runtime (helm,
+              # k8s, talos, gh). sak adds no Rust deps for these — they're
+              # spawned via each domain's client.rs chokepoint — so the dev
+              # shell provides them to make the dogfood / live-test surface
+              # reproducible inside `nix develop`. NB: the Kubernetes package
+              # manager is `kubernetes-helm` in nixpkgs (it installs a `helm`
+              # binary); the bare `helm` attribute is an unrelated tool.
+              kubernetes-helm
+              kubectl
+              talosctl
+              gh
             ];
           };
         });
