@@ -396,6 +396,12 @@ fn helm_template_blocks() {
 }
 
 #[test]
+fn helm_lint_blocks() {
+    assert!(blocks("helm lint ./mychart"));
+    assert!(blocks("helm lint ./mychart --strict --with-subcharts"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));

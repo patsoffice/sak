@@ -675,6 +675,9 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("template") => block(
             "Use `sak helm template <chart>` instead of `helm template` (offline render to YAML).",
         ),
+        Some("lint") => {
+            block("Use `sak helm lint <chart>` instead of `helm lint` (TSV findings + pass/fail).")
+        }
         Some("history") | Some("hist") => {
             block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
         }

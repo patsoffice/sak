@@ -25,6 +25,7 @@ pub mod client;
 pub mod dependency_list;
 pub mod get;
 pub mod history;
+pub mod lint;
 pub mod list;
 pub mod repo_list;
 pub mod show;
@@ -49,6 +50,7 @@ pub enum HelmCommand {
     DependencyList(dependency_list::DependencyListArgs),
     Show(show::ShowArgs),
     Template(template::TemplateArgs),
+    Lint(lint::LintArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
@@ -61,6 +63,7 @@ pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
         HelmCommand::DependencyList(args) => dependency_list::run(args),
         HelmCommand::Show(args) => show::run(args),
         HelmCommand::Template(args) => template::run(args),
+        HelmCommand::Lint(args) => lint::run(args),
     }
 }
 
