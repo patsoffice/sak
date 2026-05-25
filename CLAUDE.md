@@ -159,6 +159,8 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 
 ## Gotchas
 
+- `nix develop -c …` prints `warning: Git tree '…' is dirty` to **stderr** whenever the working tree has uncommitted changes (i.e. almost always mid-task). Strip it with `2>/dev/null` (the warning is on stderr; real output is on stdout). Do **not** pipe through `grep -v dirty` to filter it — the agent hook blocks `grep`, so you'll just bounce off the guardrail. More generally: when you only want a tool's stdout, redirect stderr; don't reach for a shell filter that the hook will reject
+- When you need a fact that lives in a structured store (issues in `br`, JSON/diff data, repo state), query the store directly (`br show <id>`, `sak json`, `sak git`) instead of reverse-engineering it from a raw `git diff` or a piped-and-filtered shell pipeline. The structured path is shorter and doesn't fight the hook
 - `BoundedWriter` is hardcoded to `StdoutLock` — not generic; this is intentional (all output must go to stdout)
 - `--heading` and `--line-number` on grep default to `true` via `default_value = "true"` — they're on unless explicitly disabled
 - Cut's `--max-fields` uses `splitn` semantics — splits into at most N fields, remainder stays in the last field

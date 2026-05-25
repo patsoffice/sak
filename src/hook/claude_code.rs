@@ -437,7 +437,11 @@ fn check_grep(_base: &str, args: &[String], pos: &[&str]) -> Option<String> {
     if recursive || pos.len() >= 2 {
         return block(
             "Use `sak fs grep <pattern> <path>` instead of `grep`. \
-             Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline.",
+             Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline. \
+             If you're spelunking a dump (a diff, JSON, issue text) for a fact, \
+             query the source instead (br show <id>, sak json/git) rather than \
+             grepping raw text; to drop a command's stderr noise use 2>/dev/null, \
+             not a grep filter.",
         );
     }
     None
