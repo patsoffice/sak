@@ -20,7 +20,7 @@ use crate::value::{GrepMode, TypeFilter, format_grep_path, grep};
         or scalar leaf value matches the given regex.\n\n\
         Output is `path<TAB>value` lines sorted by path. The empty path \
         (root scalar matches) is rendered as `(root)`. Reads from stdin if \
-        no files are given.",
+        no files are given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   sak json grep '^aws_' config.json                Keys starting with aws_
@@ -33,7 +33,7 @@ pub struct GrepArgs {
     /// Regex pattern to match against keys (default) or values (`--value`)
     pub pattern: String,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Match against object keys (default)

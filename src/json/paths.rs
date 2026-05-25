@@ -21,7 +21,7 @@ use crate::value::{ArrayMode, WalkOpts, flatten_value};
         Output is sorted by path for deterministic results. The path separator \
         defaults to `.` and may be customized with `--separator`. Arrays are \
         traversed by default; use `--arrays skip` to treat arrays as leaves. \
-        Reads from stdin if no files are given.",
+        Reads from stdin if no files are given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   echo '{\"a\":{\"b\":1}}' | sak json paths
@@ -31,7 +31,7 @@ Examples:
   sak json paths --arrays skip data.json           Treat arrays as leaves"
 )]
 pub struct PathsArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Path separator

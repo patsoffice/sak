@@ -1,11 +1,12 @@
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
 use serde_json::Value;
 
+use crate::json::read_source;
 use crate::output::BoundedWriter;
 use crate::value::{diff, format_diff_entry};
 
@@ -31,9 +32,9 @@ Examples:
   sak json diff old.json new.json && echo identical"
 )]
 pub struct DiffArgs {
-    /// First (left) JSON file
+    /// First (left) JSON file (use "-" to read from stdin)
     pub a: PathBuf,
-    /// Second (right) JSON file
+    /// Second (right) JSON file (use "-" to read from stdin)
     pub b: PathBuf,
 
     /// Maximum number of output lines
@@ -41,10 +42,9 @@ pub struct DiffArgs {
     pub limit: Option<usize>,
 }
 
-fn load(path: &PathBuf) -> Result<Value> {
-    let s = std::fs::read_to_string(path)
-        .with_context(|| format!("cannot read: {}", path.display()))?;
-    serde_json::from_str(&s).with_context(|| format!("invalid JSON: {}", path.display()))
+fn load(path: &Path) -> Result<Value> {
+    let (name, s) = read_source(path)?;
+    serde_json::from_str(&s).with_context(|| format!("invalid JSON: {}", name))
 }
 
 pub fn run(args: &DiffArgs) -> Result<ExitCode> {

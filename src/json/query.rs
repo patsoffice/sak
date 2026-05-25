@@ -16,7 +16,7 @@ use crate::value::{format_value, resolve_expression};
         The expression may use dot notation (e.g. `.users[0].name`) or \
         JSON Pointer syntax (e.g. `/users/0/name`). JSON Pointer is detected \
         automatically when the expression starts with `/`. \
-        Reads from stdin if no files are given.\n\n\
+        Reads from stdin if no files are given, or for a file argument of `-`.\n\n\
         With `--lines`, the input is parsed as NDJSON (one JSON value per line) \
         and the expression is applied to each record. Blank lines are skipped. \
         Each line's result is emitted on its own output line, in input order.",
@@ -27,13 +27,14 @@ Examples:
   sak json query /users/0/name data.json          JSON Pointer
   sak json query .name --raw data.json            Raw string output
   sak json query .config --pretty data.json       Pretty-print
-  sak json query --lines .level events.ndjson     NDJSON: one value per line"
+  sak json query --lines .level events.ndjson     NDJSON: one value per line
+  sak k8s get pods -o json | sak json query .items -   '-' reads stdin in a pipe"
 )]
 pub struct QueryArgs {
     /// Path expression (dot notation or JSON Pointer)
     pub expression: String,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Output raw strings without surrounding quotes

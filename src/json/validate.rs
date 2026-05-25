@@ -12,7 +12,8 @@ use crate::output::BoundedWriter;
 #[command(
     about = "Check whether files contain valid JSON",
     long_about = "Check whether files contain valid JSON and report parse errors.\n\n\
-        Reads from stdin if no files are given. Exits 0 if all inputs are valid, \
+        Reads from stdin if no files are given, or for a file argument of `-`. \
+        Exits 0 if all inputs are valid, \
         exits 1 if any input is invalid. Errors are reported to stderr as \
         `filename:line:column: message`.\n\n\
         With `--lines`, each non-blank line of the input is validated independently \
@@ -28,7 +29,7 @@ Examples:
   sak json validate --lines events.ndjson    Validate each NDJSON record"
 )]
 pub struct ValidateArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Exit code only, no output
@@ -90,6 +91,14 @@ pub fn run(args: &ValidateArgs) -> Result<ExitCode> {
         sources.push(("<stdin>".to_string(), s));
     } else {
         for path in &args.files {
+            if crate::json::is_stdin(path) {
+                let mut s = String::new();
+                io::stdin()
+                    .read_to_string(&mut s)
+                    .context("error reading stdin")?;
+                sources.push(("<stdin>".to_string(), s));
+                continue;
+            }
             let name = path.display().to_string();
             match std::fs::read_to_string(path) {
                 Ok(s) => sources.push((name, s)),

@@ -17,7 +17,7 @@ use crate::value::{resolve_expression, type_name};
         With no path, prints the type of the root value. Cheap discovery without \
         dumping the value itself — handy for branching agent logic on shape before \
         committing to a full extraction. Exits 1 if the path does not resolve. \
-        Reads from stdin if no files are given.",
+        Reads from stdin if no files are given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   echo '{\"name\":\"alice\"}' | sak json type
@@ -29,7 +29,7 @@ pub struct TypeArgs {
     /// Path within the document (default: root)
     pub path: Option<String>,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Maximum number of output lines

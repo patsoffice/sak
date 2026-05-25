@@ -19,7 +19,7 @@ use crate::value::{SchemaMap, WalkOpts, collect_schema, format_schema_types, typ
         Array elements use `[]` in the path; for example, `.users[].name: string`. \
         When an array contains heterogeneous element types, the types are merged \
         into a union and the recursive structure of all element schemas is unioned. \
-        Reads from stdin if no files are given.",
+        Reads from stdin if no files are given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   echo '{\"a\":1,\"b\":\"x\"}' | sak json schema
@@ -27,7 +27,7 @@ Examples:
   sak json schema --depth 2 data.json    Limit recursion depth"
 )]
 pub struct SchemaArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Maximum nesting depth (deeper structures collapse to their type only)

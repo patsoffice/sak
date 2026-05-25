@@ -12,7 +12,7 @@ pub mod type_;
 pub mod validate;
 
 use std::io::{self, BufRead, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
@@ -52,8 +52,32 @@ pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
     }
 }
 
+/// True if a file argument is the conventional "-" stdin sentinel (cat, jq,
+/// grep, ...). Lets pipelines like `… | sak json query .a -` work without the
+/// caller having to know that omitting the arg also reads stdin.
+pub(crate) fn is_stdin(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+/// Resolve one file argument to a `(display_name, contents)` pair, reading from
+/// stdin (named `<stdin>`) when the argument is the "-" sentinel.
+fn read_source(path: &Path) -> Result<(String, String)> {
+    if is_stdin(path) {
+        let mut s = String::new();
+        io::stdin()
+            .read_to_string(&mut s)
+            .context("error reading stdin")?;
+        Ok(("<stdin>".to_string(), s))
+    } else {
+        let s = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read: {}", path.display()))?;
+        Ok((path.display().to_string(), s))
+    }
+}
+
 /// Read JSON inputs from the given files, or from stdin if `files` is empty.
-/// Returns a vector of `(source_name, value)` pairs.
+/// Returns a vector of `(source_name, value)` pairs. A file argument of `-` is
+/// read from stdin.
 pub fn read_json_inputs(files: &[PathBuf]) -> Result<Vec<(String, Value)>> {
     let mut out = Vec::new();
     if files.is_empty() {
@@ -65,11 +89,10 @@ pub fn read_json_inputs(files: &[PathBuf]) -> Result<Vec<(String, Value)>> {
         out.push(("<stdin>".to_string(), value));
     } else {
         for path in files {
-            let s = std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read: {}", path.display()))?;
-            let value: Value = serde_json::from_str(&s)
-                .with_context(|| format!("invalid JSON: {}", path.display()))?;
-            out.push((path.display().to_string(), value));
+            let (name, s) = read_source(path)?;
+            let value: Value =
+                serde_json::from_str(&s).with_context(|| format!("invalid JSON: {}", name))?;
+            out.push((name, value));
         }
     }
     Ok(out)
@@ -87,9 +110,14 @@ pub fn read_json_inputs_lines(files: &[PathBuf]) -> Result<Vec<(String, Value)>>
         read_ndjson_into("<stdin>", stdin.lock(), &mut out)?;
     } else {
         for path in files {
-            let file = std::fs::File::open(path)
-                .with_context(|| format!("cannot read: {}", path.display()))?;
-            read_ndjson_into(&path.display().to_string(), BufReader::new(file), &mut out)?;
+            if is_stdin(path) {
+                let stdin = io::stdin();
+                read_ndjson_into("<stdin>", stdin.lock(), &mut out)?;
+            } else {
+                let file = std::fs::File::open(path)
+                    .with_context(|| format!("cannot read: {}", path.display()))?;
+                read_ndjson_into(&path.display().to_string(), BufReader::new(file), &mut out)?;
+            }
         }
     }
     Ok(out)
@@ -123,4 +151,34 @@ fn read_ndjson_into<R: BufRead>(
         out.push((format!("{}:{}", name, lineno), value));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dash_is_stdin_sentinel() {
+        assert!(is_stdin(Path::new("-")));
+    }
+
+    #[test]
+    fn ordinary_paths_are_not_stdin() {
+        assert!(!is_stdin(Path::new("a.json")));
+        assert!(!is_stdin(Path::new("./-")));
+        assert!(!is_stdin(Path::new("-.json")));
+        assert!(!is_stdin(Path::new("--")));
+    }
+
+    #[test]
+    fn reads_named_file_not_stdin() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.json");
+        let mut f = std::fs::File::create(&p).unwrap();
+        write!(f, r#"{{"a": 1}}"#).unwrap();
+        let (name, contents) = read_source(&p).unwrap();
+        assert_eq!(name, p.display().to_string());
+        assert_eq!(contents, r#"{"a": 1}"#);
+    }
 }

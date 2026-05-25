@@ -44,7 +44,7 @@ pub struct SelectArgs {
     /// Comma-separated list of paths to project (each `path` or `alias=path`)
     pub paths: String,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Include missing paths as JSON null instead of omitting them

@@ -16,7 +16,7 @@ use crate::value::resolve_expression;
         shell pipelines where the value itself isn't needed.\n\n\
         The expression accepts the same dot notation (e.g. `.users[0].name`) \
         and JSON Pointer syntax (e.g. `/users/0/name`) as `sak json query`. \
-        Reads from stdin if no files are given.\n\n\
+        Reads from stdin if no files are given, or for a file argument of `-`.\n\n\
         With multiple files, the default is *all*: exit 0 only if every input \
         contains the path. Pass `--any` to flip the semantics (exit 0 if any \
         input contains the path).",
@@ -32,7 +32,7 @@ pub struct ExistsArgs {
     /// Path expression (dot notation or JSON Pointer)
     pub expression: String,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Exit 0 if the path exists in *any* input (default: requires *all*)

@@ -16,7 +16,7 @@ use crate::value::{WalkOpts, collect_keys, resolve_expression};
         With no path, lists the top-level keys. With `--depth N`, recursively \
         lists keys up to N levels deep using dot-path notation. With `--types`, \
         each key is annotated with its value type. Reads from stdin if no files \
-        are given.\n\n\
+        are given, or for a file argument of `-`.\n\n\
         With `--lines`, the input is parsed as NDJSON (one JSON value per line) \
         and keys are listed for each record in turn.",
     after_help = "\
@@ -32,7 +32,7 @@ pub struct KeysArgs {
     /// Path within the document (default: root)
     pub path: Option<String>,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Recurse N levels deep, showing dot-path prefixes

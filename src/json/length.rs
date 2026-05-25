@@ -18,7 +18,7 @@ use crate::value::{resolve_expression, type_name, value_length};
         length. Exits 1 if the path does not resolve. With no path, the root \
         value is measured. Essential for 'how many X are there' questions \
         without dumping the whole structure. Reads from stdin if no files are \
-        given.",
+        given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   echo '[1,2,3]' | sak json length                 3 (array element count)
@@ -31,7 +31,7 @@ pub struct LengthArgs {
     /// Path within the document (default: root)
     pub path: Option<String>,
 
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Maximum number of output lines

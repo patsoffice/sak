@@ -18,7 +18,7 @@ use crate::value::{ArrayMode, WalkOpts, flatten_value};
         Output is sorted by path for deterministic results. The path separator \
         defaults to `.` and may be customized with `--separator`. Arrays are \
         traversed by default; use `--arrays skip` to treat arrays as leaves. \
-        Reads from stdin if no files are given.\n\n\
+        Reads from stdin if no files are given, or for a file argument of `-`.\n\n\
         With `--lines`, the input is parsed as NDJSON (one JSON value per line) \
         and each record is flattened in turn.",
     after_help = "\
@@ -31,7 +31,7 @@ Examples:
   sak json flatten --lines events.ndjson           Flatten each NDJSON record"
 )]
 pub struct FlattenArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted or given as "-")
     pub files: Vec<PathBuf>,
 
     /// Path separator
