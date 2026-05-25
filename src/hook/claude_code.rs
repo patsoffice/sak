@@ -674,6 +674,15 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("repo") if pos.get(1).copied() == Some("list") => {
             block("Use `sak helm repo-list` instead of `helm repo list` (TSV/JSON).")
         }
+        // `dependency` aliases: `dep`, `dependencies`. Only `list` is a read;
+        // `dependency update`/`build` are writes (they fetch + write Chart.lock).
+        Some("dependency") | Some("dependencies") | Some("dep")
+            if pos.get(1).copied() == Some("list") =>
+        {
+            block(
+                "Use `sak helm dependency-list <chart>` instead of `helm dependency list` (TSV/JSON).",
+            )
+        }
         _ => None,
     }
 }

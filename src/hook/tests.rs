@@ -365,6 +365,13 @@ fn helm_repo_list_blocks() {
 }
 
 #[test]
+fn helm_dependency_list_blocks() {
+    assert!(blocks("helm dependency list ./mychart"));
+    assert!(blocks("helm dep list ./mychart"));
+    assert!(blocks("helm dependencies list /charts/app-1.2.3.tgz"));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));
@@ -375,6 +382,9 @@ fn helm_writes_and_unshadowed_allow() {
     assert!(allows("helm repo add stable https://example.com"));
     assert!(allows("helm repo update"));
     assert!(allows("helm repo remove stable"));
+    // `dependency` writes pass through; only `dependency list` is shadowed.
+    assert!(allows("helm dependency update ./mychart"));
+    assert!(allows("helm dependency build ./mychart"));
 }
 
 // ── filesystem readers ────────────────────────────────────────

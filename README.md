@@ -206,7 +206,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak gh pr-list` / `sak gh pr-view` / `sak gh issue-list` / `sak gh issue-view` / `sak gh run-list` / `sak gh run-view` / `sak gh release-list` / `sak gh release-view` / `sak gh workflow-list` / `sak gh repo-view` / `sak gh api <endpoint>` instead of `gh pr list` / `gh pr view` / `gh issue list` / `gh issue view` / `gh run list` / `gh run view` / `gh release list` / `gh release view` / `gh workflow list` / `gh repo view` / `gh api` / `curl` against the GitHub API
-- `sak helm list` / `sak helm status <release>` / `sak helm get <release> --what …` / `sak helm history <release>` / `sak helm repo-list` instead of `helm list` / `helm ls` / `helm status` / `helm get` / `helm history` / `helm repo list`
+- `sak helm list` / `sak helm status <release>` / `sak helm get <release> --what …` / `sak helm history <release>` / `sak helm repo-list` / `sak helm dependency-list <chart>` instead of `helm list` / `helm ls` / `helm status` / `helm get` / `helm history` / `helm repo list` / `helm dependency list`
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads

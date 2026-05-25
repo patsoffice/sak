@@ -22,6 +22,7 @@
 //! issues and wire themselves into [`HelmCommand`] as they arrive.
 
 pub mod client;
+pub mod dependency_list;
 pub mod get;
 pub mod history;
 pub mod list;
@@ -43,6 +44,7 @@ pub enum HelmCommand {
     Get(get::GetArgs),
     History(history::HistoryArgs),
     RepoList(repo_list::RepoListArgs),
+    DependencyList(dependency_list::DependencyListArgs),
 }
 
 pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
@@ -52,6 +54,7 @@ pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
         HelmCommand::Get(args) => get::run(args),
         HelmCommand::History(args) => history::run(args),
         HelmCommand::RepoList(args) => repo_list::run(args),
+        HelmCommand::DependencyList(args) => dependency_list::run(args),
     }
 }
 
