@@ -49,6 +49,7 @@ Examples:
   sak gh issue-list --repo cli/cli --state all --limit 50
   sak gh issue-list --assignee octocat --label bug --label p1
   sak gh issue-list --milestone v1 --mention octocat
+  sak gh issue-list --repo NixOS/nixpkgs --search \"1password hash mismatch\"
   sak gh issue-list --fields number,title,state,closedAt --format json"
 )]
 pub struct IssueListArgs {
@@ -79,6 +80,11 @@ pub struct IssueListArgs {
     /// Filter by milestone (number or title)
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+
+    /// Free-text search across issue titles and bodies (forwarded to
+    /// `gh issue list --search`; accepts GitHub search qualifiers)
+    #[arg(long, value_name = "QUERY")]
+    pub search: Option<String>,
 
     /// Maximum number of issues to fetch (forwarded to `gh --limit`)
     #[arg(long)]
@@ -118,6 +124,7 @@ fn build_argv(args: &IssueListArgs, fields_csv: &str) -> Vec<String> {
         .push_opt("--mention", args.mention.as_deref())
         .push_each("--label", &args.labels)
         .push_opt("--milestone", args.milestone.as_deref())
+        .push_opt("--search", args.search.as_deref())
         .push_opt("--limit", args.limit.map(|n| n.to_string()).as_deref());
     b.into_argv()
 }
@@ -135,6 +142,7 @@ mod tests {
             mention: None,
             labels: vec![],
             milestone: None,
+            search: None,
             limit: None,
             fields: DEFAULT_FIELDS.into(),
             format: Format::Tsv,
@@ -160,6 +168,7 @@ mod tests {
         args.mention = Some("monalisa".into());
         args.labels = vec!["bug".into(), "p1".into()];
         args.milestone = Some("v1".into());
+        args.search = Some("hash mismatch".into());
         args.limit = Some(50);
         let argv = build_argv(&args, DEFAULT_FIELDS);
         assert_eq!(
@@ -183,6 +192,8 @@ mod tests {
                 "p1",
                 "--milestone",
                 "v1",
+                "--search",
+                "hash mismatch",
                 "--limit",
                 "50",
             ]

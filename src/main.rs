@@ -76,17 +76,17 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak talos certs                             Cert inventory across all Talos nodes
   sak talos read /etc/os-release              Fan-out file read across nodes
   sak talos get members --node 192.168.1.10   COSI resource from one node
-  sak gh api repos/cli/cli                     GET a GitHub REST/GraphQL endpoint
-  sak gh pr-list --state open                  List pull requests as TSV
-  sak gh pr-view 123                            Show one PR's metadata (JSON/TSV)
-  sak gh issue-list --label bug                List issues as TSV
-  sak gh issue-view 123                         Show one issue's metadata (JSON/TSV)
-  sak gh run-list --workflow ci.yml            List CI workflow runs as TSV
-  sak gh run-view 123 --log-failed             Show a run's metadata or logs
-  sak gh release-list                          List releases as TSV
-  sak gh release-view v1.2.3                    Show one release's metadata (JSON/TSV)
-  sak gh workflow-list                         List workflow definitions as TSV
-  sak gh repo-view cli/cli                      Show repository metadata (JSON/TSV)
+  sak gh api repos/cli/cli                    GET a GitHub REST/GraphQL endpoint
+  sak gh pr-list --state open                 List pull requests as TSV
+  sak gh pr-view 123                          Show one PR's metadata (JSON/TSV)
+  sak gh issue-list --search 'crash on boot'  Free-text search issues as TSV
+  sak gh issue-view 123                       Show one issue's metadata (JSON/TSV)
+  sak gh run-list --workflow ci.yml           List CI workflow runs as TSV
+  sak gh run-view 123 --log-failed            Show a run's metadata or logs
+  sak gh release-list                         List releases as TSV
+  sak gh release-view v1.2.3                  Show one release's metadata (JSON/TSV)
+  sak gh workflow-list                        List workflow definitions as TSV
+  sak gh repo-view cli/cli                    Show repository metadata (JSON/TSV)
   sak helm list -A                            List Helm releases across namespaces
   sak helm status cilium -n kube-system       Show one release's status
   sak helm get cilium --what manifest         Dump a release's rendered manifest
