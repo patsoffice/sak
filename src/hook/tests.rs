@@ -385,6 +385,17 @@ fn helm_show_blocks() {
 }
 
 #[test]
+fn helm_template_blocks() {
+    assert!(blocks("helm template ./mychart"));
+    assert!(blocks(
+        "helm template myrel ./mychart --set replicas=5 -n prod"
+    ));
+    assert!(blocks(
+        "helm template ./mychart --show-only templates/deployment.yaml"
+    ));
+}
+
+#[test]
 fn helm_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak helm can't perform them.
     assert!(allows("helm install foo ./chart"));

@@ -671,6 +671,10 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         Some("show") | Some("inspect") => block(
             "Use `sak helm show <chart> --what all|chart|values|readme|crds` instead of `helm show`.",
         ),
+        // `helm template` renders locally and never contacts the cluster.
+        Some("template") => block(
+            "Use `sak helm template <chart>` instead of `helm template` (offline render to YAML).",
+        ),
         Some("history") | Some("hist") => {
             block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
         }

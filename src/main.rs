@@ -94,6 +94,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak helm repo-list                          List configured chart repositories
   sak helm dependency-list ./chart            List a chart's declared dependencies
   sak helm show ./chart --what values         Inspect a chart without installing
+  sak helm template ./chart                   Render chart manifests offline
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo
