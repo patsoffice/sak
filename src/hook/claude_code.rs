@@ -848,6 +848,12 @@ fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
             "Use `sak nix store-info` instead of `nix store info`/`nix store ping` \
              (TSV url/version/trusted/..., --field, --store, --format json).",
         ),
+        // Only `registry list` is a read; `registry add`/`remove`/`pin` mutate
+        // the registry and pass through (sak nix can't perform them).
+        (Some("registry"), Some("list")) => block(
+            "Use `sak nix registry-list` instead of `nix registry list` \
+             (TSV scope/from/to, --scope, --format json).",
+        ),
         _ => None,
     }
 }

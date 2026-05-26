@@ -31,6 +31,7 @@
 pub mod client;
 pub mod eval;
 pub mod flake_show;
+pub mod registry_list;
 pub mod store_info;
 
 use std::process::ExitCode;
@@ -46,6 +47,7 @@ pub enum NixCommand {
     FlakeShow(flake_show::FlakeShowArgs),
     StoreInfo(store_info::StoreInfoArgs),
     Eval(eval::EvalArgs),
+    RegistryList(registry_list::RegistryListArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
@@ -53,6 +55,7 @@ pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
         NixCommand::FlakeShow(args) => flake_show::run(args),
         NixCommand::StoreInfo(args) => store_info::run(args),
         NixCommand::Eval(args) => eval::run(args),
+        NixCommand::RegistryList(args) => registry_list::run(args),
     }
 }
 

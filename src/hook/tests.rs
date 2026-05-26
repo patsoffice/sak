@@ -459,6 +459,11 @@ fn nix_eval_impure_allows() {
 }
 
 #[test]
+fn nix_registry_list_blocks() {
+    assert!(blocks("nix registry list"));
+}
+
+#[test]
 fn nix_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak nix can't perform them.
     assert!(allows("nix build .#default"));
@@ -473,6 +478,10 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix flake check"));
     assert!(allows("nix store gc"));
     assert!(allows("nix store optimise"));
+    // `registry` mutations pass through; only `registry list` is shadowed.
+    assert!(allows("nix registry add foo github:o/r"));
+    assert!(allows("nix registry remove foo"));
+    assert!(allows("nix registry pin nixpkgs"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
