@@ -502,6 +502,24 @@ fn head_tail_with_file_block() {
 }
 
 #[test]
+fn head_tail_stdin_with_value_flag_allows() {
+    // -c/-n/--bytes/--lines take a value; the value must not be read as a file,
+    // so a stdin pipe (no real file arg) is allowed. Regression for sak-llm-nl92.
+    assert!(allows("head -c 200"));
+    assert!(allows("tail -n 5"));
+    assert!(allows("head --bytes 200"));
+    assert!(allows("tail --lines 5"));
+}
+
+#[test]
+fn head_tail_value_flag_with_file_blocks() {
+    // A real file arg after the consumed value is still a file read.
+    assert!(blocks("head -c 200 file.txt"));
+    assert!(blocks("tail -n 5 logfile"));
+    assert!(blocks("head --lines 10 data.log"));
+}
+
+#[test]
 fn head_tail_suggest_dedicated_commands() {
     // head/tail now have their own sak commands, not just `read`.
     assert!(

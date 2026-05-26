@@ -381,7 +381,15 @@ fn check_cat(base: &str, args: &[String], pos: &[&str]) -> Option<String> {
     if args.iter().any(|a| a.contains("<<")) {
         return None;
     }
-    if pos.is_empty() {
+    // `head`/`tail` take a value after `-c`/`-n`/`--bytes`/`--lines`. The shared
+    // `positionals()` helper doesn't know that, so it would mistake the value in
+    // `head -c 200` (a stdin read) for a filename and wrongly redirect it.
+    // Recompute file args for those two bases, skipping the consumed value.
+    let file_args: Vec<&str> = match base {
+        "head" | "tail" => headtail_file_args(args),
+        _ => pos.to_vec(),
+    };
+    if file_args.is_empty() {
         return None;
     }
     // `head`/`tail` have dedicated, more ergonomic sak commands; `cat` maps to
@@ -399,6 +407,32 @@ fn check_cat(base: &str, args: &[String], pos: &[&str]) -> Option<String> {
              Ranges: `-n 1-50` (lines), `-n -20` (last 20).",
         ),
     }
+}
+
+/// File-argument positionals for `head`/`tail`, skipping the value consumed by a
+/// *separated* `-c`/`-n`/`--bytes`/`--lines` flag (the `200` in `head -c 200`).
+/// Combined / inline forms (`-c200`, `-20`, `--bytes=200`) are single
+/// dash-prefixed tokens already dropped by the leading-`-` filter, so only the
+/// separated case needs special handling.
+fn headtail_file_args(args: &[String]) -> Vec<&str> {
+    const VALUE_FLAGS: &[&str] = &["-c", "-n", "--bytes", "--lines"];
+    let mut files = Vec::new();
+    let mut skip_value = false;
+    for a in args {
+        if skip_value {
+            skip_value = false;
+            continue;
+        }
+        if VALUE_FLAGS.contains(&a.as_str()) {
+            skip_value = true;
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        files.push(a.as_str());
+    }
+    files
 }
 
 /// `tree` is always a read — redirect every invocation to `sak fs tree`.
