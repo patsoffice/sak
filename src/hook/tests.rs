@@ -423,6 +423,32 @@ fn helm_writes_and_unshadowed_allow() {
     assert!(allows("helm dependency build ./mychart"));
 }
 
+// ── nix ───────────────────────────────────────────────────────
+
+#[test]
+fn nix_flake_show_blocks() {
+    assert!(blocks("nix flake show"));
+    assert!(blocks("nix flake show ."));
+    assert!(blocks("nix flake show nixpkgs --all-systems"));
+    assert!(blocks("nix flake show github:nixos/nixpkgs --json"));
+}
+
+#[test]
+fn nix_writes_and_unshadowed_allow() {
+    // Mutations are never redirected — sak nix can't perform them.
+    assert!(allows("nix build .#default"));
+    assert!(allows("nix copy --to ssh://host /nix/store/abc"));
+    assert!(allows("nix flake update"));
+    assert!(allows("nix profile install nixpkgs#hello"));
+    assert!(allows("nix store delete /nix/store/abc"));
+    // Reads without a sak equivalent yet pass through until their command lands.
+    assert!(allows("nix flake metadata"));
+    assert!(allows("nix store info"));
+    assert!(allows("nix eval .#x"));
+    // `flake` with a non-show subverb is not the shadowed read.
+    assert!(allows("nix flake check"));
+}
+
 // ── filesystem readers ────────────────────────────────────────
 
 #[test]

@@ -369,6 +369,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "gh" => check_gh(args, &pos),
         "helm" => check_helm(&pos),
+        "nix" => check_nix(&pos),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -778,6 +779,21 @@ fn check_helm(pos: &[&str]) -> Option<String> {
                 "Use `sak helm dependency-list <chart>` instead of `helm dependency list` (TSV/JSON).",
             )
         }
+        _ => None,
+    }
+}
+
+/// `nix` is hierarchical (`nix flake show`, `nix store info`, ...). Reads gain
+/// redirects as their `sak nix` commands land; everything else — and every
+/// mutating verb (`build`, `copy`, `store delete`, `profile install`, `flake
+/// update`, ...) that `sak nix` can't perform — passes through. The first arg
+/// is the verb, the second (when present) the subverb.
+fn check_nix(pos: &[&str]) -> Option<String> {
+    match (pos.first().copied(), pos.get(1).copied()) {
+        (Some("flake"), Some("show")) => block(
+            "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \
+             (TSV output-path/type/description, --all-systems, --format json).",
+        ),
         _ => None,
     }
 }

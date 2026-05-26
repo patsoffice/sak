@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), `linux` (parsed `/proc` system state, Linux-only — more commands arrive in follow-ups), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `nix` (read-only Nix store / flake / profile inspection via the `nix` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), `linux` (parsed `/proc` system state, Linux-only — more commands arrive in follow-ups), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
 
 ## Design Decisions
 
@@ -99,6 +99,7 @@ sak cert --help
 sak talos --help
 sak gh --help
 sak helm --help
+sak nix --help
 sak k8s --help            # default-on; --no-default-features removes it
 sak lxc --help            # default-on; --no-default-features removes it
 sak docker --help         # default-on; --no-default-features removes it
@@ -121,7 +122,7 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, `nix`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
 
 The configuration below is for Claude Code's `~/.claude/settings.json`. The pattern adapts to any agent harness that supports per-tool permissions and pre-tool hooks.
 
@@ -215,6 +216,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak hash sha256|sha1|md5|blake3 <file>` instead of `sha256sum` / `sha1sum` / `md5sum` / `shasum` / `b3sum` / `openssl dgst` (add `--verify <sumfile>` to check)
 - `sak gh pr-list` / `sak gh pr-view` / `sak gh issue-list` / `sak gh issue-view` / `sak gh run-list` / `sak gh run-view` / `sak gh release-list` / `sak gh release-view` / `sak gh workflow-list` / `sak gh repo-view` / `sak gh api <endpoint>` instead of `gh pr list` / `gh pr view` / `gh issue list` / `gh issue view` / `gh run list` / `gh run view` / `gh release list` / `gh release view` / `gh workflow list` / `gh repo view` / `gh api` / `curl` against the GitHub API
 - `sak helm list` / `sak helm status <release>` / `sak helm get <release> --what …` / `sak helm history <release>` / `sak helm repo-list` / `sak helm dependency-list <chart>` / `sak helm show <chart> --what …` / `sak helm template <chart>` / `sak helm lint <chart>` / `sak helm search <term>` instead of `helm list` / `helm ls` / `helm status` / `helm get` / `helm history` / `helm repo list` / `helm dependency list` / `helm show` / `helm template` / `helm lint` / `helm search`
+- `sak nix flake-show` instead of `nix flake show` (more nix read commands arrive in follow-ups)
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images` instead of `docker` reads

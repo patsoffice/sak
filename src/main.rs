@@ -15,6 +15,7 @@ mod k8s;
 mod linux;
 #[cfg(feature = "lxc")]
 mod lxc;
+mod nix;
 mod output;
 #[cfg(feature = "prom")]
 mod prom;
@@ -109,6 +110,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak helm template ./chart                   Render chart manifests offline
   sak helm lint ./chart                       Lint a chart (exit 1 on failure)
   sak helm search nginx --source hub          Search charts (repos or Artifact Hub)
+  sak nix flake-show                          Flake outputs as path/type/description
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo
@@ -231,6 +233,9 @@ enum Command {
     /// Helm release / chart / repo inspection (read-only, shells out to helm)
     #[command(subcommand)]
     Helm(helm::HelmCommand),
+    /// Nix store / flake / profile inspection (read-only, shells out to nix)
+    #[command(subcommand)]
+    Nix(nix::NixCommand),
     /// Kubernetes operations against a live cluster (read-only)
     #[cfg(feature = "k8s")]
     #[command(subcommand)]
@@ -273,6 +278,7 @@ fn main() -> ExitCode {
         Command::Talos(cmd) => talos::run(cmd),
         Command::Gh(cmd) => gh::run(cmd),
         Command::Helm(cmd) => helm::run(cmd),
+        Command::Nix(cmd) => nix::run(cmd),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]

@@ -1,6 +1,6 @@
 # SAK (Swiss Army Knife for LLMs)
 
-Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `hash` (file/stdin cryptographic digests), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses). Run `sak fs glob 'src/*/'` to see current domains and commands.
+Read-only operations tool designed for LLM consumption. Organized by domain — currently `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `hash` (file/stdin cryptographic digests), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `nix` (read-only Nix store / flake / profile inspection via the `nix` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), and `hook` (pre-tool-use classification for LLM agent harnesses). Run `sak fs glob 'src/*/'` to see current domains and commands.
 
 ## Use sak as your tool
 
@@ -20,6 +20,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak talos certs|read|get` instead of `for n in <ips>; do talosctl -n $n …; done` fan-out loops
 - `sak gh pr-list` / `sak gh pr-view` / `sak gh issue-list` / `sak gh issue-view` / `sak gh run-list` / `sak gh run-view` / `sak gh release-list` / `sak gh release-view` / `sak gh workflow-list` / `sak gh repo-view` / `sak gh api <endpoint>` instead of `gh pr list` / `gh pr view` / `gh issue list` / `gh issue view` / `gh run list` / `gh run view` / `gh release list` / `gh release view` / `gh workflow list` / `gh repo view` / `gh api` / `curl`ing the GitHub REST or GraphQL API for reads
 - `sak helm list|status|get|history|repo-list|dependency-list|show|template|lint|search` instead of `helm list`/`ls`, `helm status`, `helm get`, `helm history`, `helm repo list`, `helm dependency list`, `helm show`/`inspect`, `helm template`, `helm lint`, `helm search repo`/`hub` read ops
+- `sak nix flake-show` instead of `nix flake show` (more nix read ops arrive in follow-ups)
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
 - `sak docker list|info|config|images` instead of `docker` read ops
