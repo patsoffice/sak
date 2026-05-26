@@ -30,6 +30,12 @@ use crate::value::{format_value, resolve_expression};
         - List mode: NDJSON, one resource per line, sorted by (namespace, name).\n  \
         - Get mode: pretty-printed JSON for the single resource.\n  \
         - With --path: just the extracted value(s), one per resource.\n\n\
+        --path semantics: list output is NDJSON (one object per line), NOT a \
+        kubectl-style List wrapper, so --path is applied to *each* object \
+        independently. Use a per-object path like `.metadata.name`; a List-style \
+        `.items[0].metadata.name` matches nothing (a hint is printed to stderr \
+        when a path matches zero records). To feed the stream into `sak json`, \
+        consume it per line, not as one document.\n\n\
         Exit codes follow sak convention: 0 = found, 1 = not found, 2 = error.",
     after_help = "\
 Examples:
@@ -120,6 +126,10 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
     let mut writer = BoundedWriter::new(handle, args.limit);
 
     let mut wrote_any = false;
+    // Count records seen and records the --path matched, so a path that
+    // matches nothing across the whole stream can emit a helpful hint.
+    let mut records = 0usize;
+    let mut matched = 0usize;
     match &args.name {
         // ── Single get ────────────────────────────────────────────────────
         Some(name) => {
@@ -131,7 +141,12 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
             let value: Value = serde_json::to_value(&obj)?;
 
             let outcome = if let Some(expr) = &args.path {
-                emit_path(&value, expr, &mut writer)?
+                records += 1;
+                let e = emit_path(&value, expr, &mut writer)?;
+                if e.matched {
+                    matched += 1;
+                }
+                e
             } else {
                 // Single resource: pretty-printed JSON.
                 emit_value(&value, true, &mut writer)?
@@ -157,7 +172,12 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
             for obj in &items {
                 let value: Value = serde_json::to_value(obj)?;
                 let outcome = if let Some(expr) = &args.path {
-                    emit_path(&value, expr, &mut writer)?
+                    records += 1;
+                    let e = emit_path(&value, expr, &mut writer)?;
+                    if e.matched {
+                        matched += 1;
+                    }
+                    e
                 } else {
                     // NDJSON: compact, one resource per line.
                     emit_value(&value, false, &mut writer)?
@@ -171,6 +191,16 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
+
+    // A --path that matched zero of N (N > 0) records is almost always the
+    // `.items[...]` / kubectl-List confusion — `get` output is NDJSON, one
+    // object per line, so paths are relative to each object, not a wrapper.
+    if let Some(expr) = &args.path
+        && let Some(hint) = path_miss_hint(expr, records, matched)
+    {
+        eprintln!("{hint}");
+    }
+
     if wrote_any {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -192,10 +222,14 @@ fn build_list_params(args: &GetArgs) -> ListParams {
 
 /// Outcome of one `emit_*` call. `wrote` records whether at least one line
 /// made it past the `BoundedWriter` limit; `stop` records whether the limit
-/// fired mid-emit and the caller should bail out of its loop.
+/// fired mid-emit and the caller should bail out of its loop; `matched`
+/// records whether a `--path` expression resolved to a value for this record
+/// (distinct from `wrote`, which can be false at the `--limit` boundary even
+/// on a match).
 struct Emit {
     wrote: bool,
     stop: bool,
+    matched: bool,
 }
 
 /// Emit a JSON value through the bounded writer. `pretty=true` writes a
@@ -206,11 +240,19 @@ fn emit_value(value: &Value, pretty: bool, writer: &mut BoundedWriter<'_>) -> Re
     let mut wrote = false;
     for line in formatted.split('\n') {
         if !writer.write_line(line)? {
-            return Ok(Emit { wrote, stop: true });
+            return Ok(Emit {
+                wrote,
+                stop: true,
+                matched: true,
+            });
         }
         wrote = true;
     }
-    Ok(Emit { wrote, stop: false })
+    Ok(Emit {
+        wrote,
+        stop: false,
+        matched: true,
+    })
 }
 
 /// Resolve `expr` against `value` and emit the result, if any. A missing
@@ -221,7 +263,49 @@ fn emit_path(value: &Value, expr: &str, writer: &mut BoundedWriter<'_>) -> Resul
         return Ok(Emit {
             wrote: false,
             stop: false,
+            matched: false,
         });
     };
     emit_value(extracted, false, writer)
+}
+
+/// Build the stderr hint shown when a `--path` expression matched none of the
+/// records it was applied to. Returns `None` when there is nothing to warn
+/// about (no records seen, or at least one match). The hint steers users away
+/// from the common `.items[...]` / kubectl-List mistake — `get` output is
+/// NDJSON, so `--path` is per-object, not against a List wrapper.
+fn path_miss_hint(expr: &str, records: usize, matched: usize) -> Option<String> {
+    if records == 0 || matched > 0 {
+        return None;
+    }
+    Some(format!(
+        "sak: --path {expr:?} matched 0 of {records} record(s)\n\
+         note: `sak k8s get` output is NDJSON (one object per line) — --path is \
+         applied to each object, not a kubectl-style List wrapper. Use a per-object \
+         path like `.metadata.name`, not `.items[0].metadata.name`."
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hint_fires_on_zero_matches() {
+        let h = path_miss_hint(".items[0].metadata.name", 7, 0).expect("hint expected");
+        assert!(h.contains("matched 0 of 7 record(s)"));
+        assert!(h.contains("NDJSON"));
+        assert!(h.contains(".metadata.name"));
+    }
+
+    #[test]
+    fn no_hint_when_some_matched() {
+        assert!(path_miss_hint(".metadata.name", 7, 3).is_none());
+    }
+
+    #[test]
+    fn no_hint_when_no_records() {
+        // An empty list (no records) should not look like a path mistake.
+        assert!(path_miss_hint(".items[0].metadata.name", 0, 0).is_none());
+    }
 }
