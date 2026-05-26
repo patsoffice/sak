@@ -29,6 +29,7 @@
 //! themselves into [`NixCommand`] as they arrive.
 
 pub mod client;
+pub mod eval;
 pub mod flake_show;
 pub mod store_info;
 
@@ -44,12 +45,14 @@ use crate::output::{BoundedWriter, collapse_ws};
 pub enum NixCommand {
     FlakeShow(flake_show::FlakeShowArgs),
     StoreInfo(store_info::StoreInfoArgs),
+    Eval(eval::EvalArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
     match cmd {
         NixCommand::FlakeShow(args) => flake_show::run(args),
         NixCommand::StoreInfo(args) => store_info::run(args),
+        NixCommand::Eval(args) => eval::run(args),
     }
 }
 

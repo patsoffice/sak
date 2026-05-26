@@ -369,7 +369,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "gh" => check_gh(args, &pos),
         "helm" => check_helm(&pos),
-        "nix" => check_nix(&pos),
+        "nix" => check_nix(args, &pos),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -788,7 +788,22 @@ fn check_helm(pos: &[&str]) -> Option<String> {
 /// mutating verb (`build`, `copy`, `store delete`, `profile install`, `flake
 /// update`, ...) that `sak nix` can't perform — passes through. The first arg
 /// is the verb, the second (when present) the subverb.
-fn check_nix(pos: &[&str]) -> Option<String> {
+fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
+    // `nix eval` is read-only-ish, and `sak nix eval` injects `--read-only`.
+    // Redirect only the pure case: leave `--impure` / `--no-pure-eval` evals
+    // alone, since the injected `--read-only` would change their semantics.
+    if pos.first().copied() == Some("eval") {
+        if args
+            .iter()
+            .any(|a| a == "--impure" || a == "--no-pure-eval")
+        {
+            return None;
+        }
+        return block(
+            "Use `sak nix eval [installable] [--expr <e>] [-f <file>]` instead of `nix eval` \
+             (read-only, --json/--raw, --apply).",
+        );
+    }
     match (pos.first().copied(), pos.get(1).copied()) {
         (Some("flake"), Some("show")) => block(
             "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \

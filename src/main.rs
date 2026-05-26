@@ -112,6 +112,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak helm search nginx --source hub          Search charts (repos or Artifact Hub)
   sak nix flake-show                          Flake outputs as path/type/description
   sak nix store-info                          Store / substituter info as TSV
+  sak nix eval --expr '1 + 2'                 Evaluate a Nix expression (read-only)
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo

@@ -443,6 +443,22 @@ fn nix_store_info_blocks() {
 }
 
 #[test]
+fn nix_eval_pure_blocks() {
+    assert!(blocks("nix eval .#packages.x86_64-linux.default.name"));
+    assert!(blocks("nix eval --expr '1 + 2'"));
+    assert!(blocks("nix eval -f ./values.nix"));
+    assert!(blocks("nix eval nixpkgs#hello.version --raw"));
+    assert!(blocks("nix eval --expr '[1 2 3]' --apply builtins.length"));
+}
+
+#[test]
+fn nix_eval_impure_allows() {
+    // Impure evals are left alone — sak's injected --read-only would change them.
+    assert!(allows("nix eval --impure --expr 'builtins.currentTime'"));
+    assert!(allows("nix eval --no-pure-eval .#x"));
+}
+
+#[test]
 fn nix_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak nix can't perform them.
     assert!(allows("nix build .#default"));
@@ -452,7 +468,6 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix store delete /nix/store/abc"));
     // Reads without a sak equivalent yet pass through until their command lands.
     assert!(allows("nix flake metadata"));
-    assert!(allows("nix eval .#x"));
     // `flake` with a non-show subverb is not the shadowed read; `store` with a
     // non-info/ping subverb (e.g. `gc`, `optimise`) passes through too.
     assert!(allows("nix flake check"));
