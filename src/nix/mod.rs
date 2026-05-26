@@ -31,6 +31,7 @@
 pub mod client;
 pub mod eval;
 pub mod flake_show;
+pub mod profile_list;
 pub mod registry_list;
 pub mod store_info;
 
@@ -48,6 +49,7 @@ pub enum NixCommand {
     StoreInfo(store_info::StoreInfoArgs),
     Eval(eval::EvalArgs),
     RegistryList(registry_list::RegistryListArgs),
+    ProfileList(profile_list::ProfileListArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
@@ -56,6 +58,7 @@ pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
         NixCommand::StoreInfo(args) => store_info::run(args),
         NixCommand::Eval(args) => eval::run(args),
         NixCommand::RegistryList(args) => registry_list::run(args),
+        NixCommand::ProfileList(args) => profile_list::run(args),
     }
 }
 

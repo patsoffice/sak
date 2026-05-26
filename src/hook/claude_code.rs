@@ -854,6 +854,12 @@ fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
             "Use `sak nix registry-list` instead of `nix registry list` \
              (TSV scope/from/to, --scope, --format json).",
         ),
+        // Only `profile list` is a read; `profile install`/`remove`/`upgrade`/
+        // `rollback`/`wipe-history` mutate the profile and pass through.
+        (Some("profile"), Some("list")) => block(
+            "Use `sak nix profile-list` instead of `nix profile list` \
+             (TSV index/name/store-path/flake-attr, --profile, --format json).",
+        ),
         _ => None,
     }
 }

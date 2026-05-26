@@ -464,12 +464,19 @@ fn nix_registry_list_blocks() {
 }
 
 #[test]
+fn nix_profile_list_blocks() {
+    assert!(blocks("nix profile list"));
+    assert!(blocks(
+        "nix profile list --profile /nix/var/nix/profiles/system"
+    ));
+}
+
+#[test]
 fn nix_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak nix can't perform them.
     assert!(allows("nix build .#default"));
     assert!(allows("nix copy --to ssh://host /nix/store/abc"));
     assert!(allows("nix flake update"));
-    assert!(allows("nix profile install nixpkgs#hello"));
     assert!(allows("nix store delete /nix/store/abc"));
     // Reads without a sak equivalent yet pass through until their command lands.
     assert!(allows("nix flake metadata"));
@@ -482,6 +489,11 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix registry add foo github:o/r"));
     assert!(allows("nix registry remove foo"));
     assert!(allows("nix registry pin nixpkgs"));
+    // `profile` mutations pass through; only `profile list` is shadowed.
+    assert!(allows("nix profile install nixpkgs#hello"));
+    assert!(allows("nix profile remove hello"));
+    assert!(allows("nix profile upgrade hello"));
+    assert!(allows("nix profile rollback"));
 }
 
 // ── filesystem readers ────────────────────────────────────────
