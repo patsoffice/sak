@@ -30,6 +30,7 @@
 
 pub mod client;
 pub mod flake_show;
+pub mod store_info;
 
 use std::process::ExitCode;
 
@@ -42,11 +43,13 @@ use crate::output::{BoundedWriter, collapse_ws};
 #[derive(Subcommand)]
 pub enum NixCommand {
     FlakeShow(flake_show::FlakeShowArgs),
+    StoreInfo(store_info::StoreInfoArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
     match cmd {
         NixCommand::FlakeShow(args) => flake_show::run(args),
+        NixCommand::StoreInfo(args) => store_info::run(args),
     }
 }
 

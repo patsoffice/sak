@@ -434,6 +434,15 @@ fn nix_flake_show_blocks() {
 }
 
 #[test]
+fn nix_store_info_blocks() {
+    assert!(blocks("nix store info"));
+    assert!(blocks("nix store info --store https://cache.nixos.org"));
+    // `ping` is the deprecated alias for `store info`.
+    assert!(blocks("nix store ping"));
+    assert!(blocks("nix store info --json"));
+}
+
+#[test]
 fn nix_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak nix can't perform them.
     assert!(allows("nix build .#default"));
@@ -443,10 +452,12 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix store delete /nix/store/abc"));
     // Reads without a sak equivalent yet pass through until their command lands.
     assert!(allows("nix flake metadata"));
-    assert!(allows("nix store info"));
     assert!(allows("nix eval .#x"));
-    // `flake` with a non-show subverb is not the shadowed read.
+    // `flake` with a non-show subverb is not the shadowed read; `store` with a
+    // non-info/ping subverb (e.g. `gc`, `optimise`) passes through too.
     assert!(allows("nix flake check"));
+    assert!(allows("nix store gc"));
+    assert!(allows("nix store optimise"));
 }
 
 // ── filesystem readers ────────────────────────────────────────

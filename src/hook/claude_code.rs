@@ -794,6 +794,11 @@ fn check_nix(pos: &[&str]) -> Option<String> {
             "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \
              (TSV output-path/type/description, --all-systems, --format json).",
         ),
+        // `nix store ping` is the (deprecated) alias for `nix store info`.
+        (Some("store"), Some("info")) | (Some("store"), Some("ping")) => block(
+            "Use `sak nix store-info` instead of `nix store info`/`nix store ping` \
+             (TSV url/version/trusted/..., --field, --store, --format json).",
+        ),
         _ => None,
     }
 }
