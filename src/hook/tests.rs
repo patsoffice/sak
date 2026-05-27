@@ -472,6 +472,15 @@ fn nix_profile_list_blocks() {
 }
 
 #[test]
+fn nix_derivation_show_blocks() {
+    assert!(blocks("nix derivation show"));
+    assert!(blocks("nix derivation show .#hello"));
+    assert!(blocks("nix derivation show /nix/store/x --recursive"));
+    // Deprecated top-level alias.
+    assert!(blocks("nix show-derivation .#hello"));
+}
+
+#[test]
 fn nix_store_query_refs_block() {
     assert!(blocks("nix-store --query --references /nix/store/x"));
     assert!(blocks("nix-store --query --referrers /nix/store/x"));
@@ -515,6 +524,8 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix profile remove hello"));
     assert!(allows("nix profile upgrade hello"));
     assert!(allows("nix profile rollback"));
+    // `derivation add` mutates; only `derivation show` is shadowed.
+    assert!(allows("nix derivation add"));
 }
 
 // ── filesystem readers ────────────────────────────────────────

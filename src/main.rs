@@ -116,6 +116,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak nix registry-list                       Flake registry entries as TSV
   sak nix profile-list                        Installed profile packages as TSV
   sak nix references /nix/store/…-foo         Store path refs / referrers / closure
+  sak nix derivation-show .#hello             A derivation's JSON (passthrough)
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo

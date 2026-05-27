@@ -32,6 +32,7 @@
 //! themselves into [`NixCommand`] as they arrive.
 
 pub mod client;
+pub mod derivation_show;
 pub mod eval;
 pub mod flake_show;
 pub mod profile_list;
@@ -55,6 +56,7 @@ pub enum NixCommand {
     RegistryList(registry_list::RegistryListArgs),
     ProfileList(profile_list::ProfileListArgs),
     References(references::ReferencesArgs),
+    DerivationShow(derivation_show::DerivationShowArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
@@ -65,6 +67,7 @@ pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
         NixCommand::RegistryList(args) => registry_list::run(args),
         NixCommand::ProfileList(args) => profile_list::run(args),
         NixCommand::References(args) => references::run(args),
+        NixCommand::DerivationShow(args) => derivation_show::run(args),
     }
 }
 

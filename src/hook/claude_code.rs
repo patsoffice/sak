@@ -880,6 +880,12 @@ fn check_nix_subverbs(pos: &[&str]) -> Option<String> {
             "Use `sak nix profile-list` instead of `nix profile list` \
              (TSV index/name/store-path/flake-attr, --profile, --format json).",
         ),
+        // `nix derivation show` and the deprecated top-level `nix show-derivation`
+        // alias both read; `nix derivation add` mutates and passes through.
+        (Some("derivation"), Some("show")) | (Some("show-derivation"), _) => block(
+            "Use `sak nix derivation-show [installable]` instead of `nix derivation show` \
+             (JSON passthrough, --recursive).",
+        ),
         _ => None,
     }
 }
