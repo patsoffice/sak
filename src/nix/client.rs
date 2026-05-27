@@ -157,6 +157,51 @@ fn allowlist_summary() -> String {
         .join(", ")
 }
 
+/// `nix-store --query` sub-flags this domain is allowed to use.
+///
+/// `nix-store` is a *second*, separate (stable) binary from `nix`, shelled out
+/// to only here. It has plenty of mutating operations (`--delete`, `--gc`,
+/// `--add`, `--realise`, ...), so the chokepoint only ever runs `--query` and
+/// only with one of these read-only sub-flags. Reverse dependencies
+/// (`--referrers`) have no modern `nix` subcommand equivalent, which is why this
+/// domain shells out to `nix-store` at all rather than reusing `nix path-info`.
+pub const NIX_STORE_QUERY_FLAGS: &[&str] = &["--references", "--referrers", "--requisites"];
+
+/// Invoke `nix-store --query <flag> <path>` and return stdout on success.
+///
+/// `flag` must be a member of [`NIX_STORE_QUERY_FLAGS`]; otherwise this returns
+/// an error without spawning a subprocess. `nix-store` is the classic stable
+/// CLI and needs no experimental-features flags. On non-zero exit, surface
+/// stderr (trimmed) as an `anyhow::Error`.
+pub fn nix_store_query(flag: &str, path: &str) -> Result<Vec<u8>> {
+    if !NIX_STORE_QUERY_FLAGS.contains(&flag) {
+        bail!(
+            "nix-store --query `{}` is not in the read-only allowlist ({})",
+            flag,
+            NIX_STORE_QUERY_FLAGS.join(", ")
+        );
+    }
+
+    let output = Command::new("nix-store")
+        .arg("--query")
+        .arg(flag)
+        .arg(path)
+        .output()
+        .with_context(|| "spawning `nix-store` (is it installed and on PATH?)".to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let trimmed = stderr.trim();
+        let suffix = if trimmed.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", trimmed)
+        };
+        bail!("nix-store --query {} failed{}", flag, suffix);
+    }
+    Ok(output.stdout)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,12 +210,12 @@ mod tests {
     /// `client.rs`. The directory walk and comment-skip mechanics live in
     /// [`crate::test_support::assert_no_forbidden_tokens`].
     ///
-    /// Two strings cover the surface: the literal binary name as a quoted
-    /// string ("nix") and the `Command::new(` constructor. Either alone would
-    /// leave loopholes (spawn nix via a `Command` built from a variable, or
-    /// build a non-nix `Command::new` then re-target it). Together, every
-    /// realistic shell-out path trips the test.
-    const FORBIDDEN_TOKENS: &[&str] = &["\"nix\"", "Command::new("];
+    /// Three strings cover the surface: the two binary names as quoted strings
+    /// ("nix", "nix-store") and the `Command::new(` constructor. The names alone
+    /// would leave loopholes (spawn via a `Command` built from a variable), and
+    /// `Command::new(` alone would let a non-nix `Command` be re-targeted.
+    /// Together, every realistic shell-out path for either binary trips the test.
+    const FORBIDDEN_TOKENS: &[&str] = &["\"nix\"", "\"nix-store\"", "Command::new("];
 
     #[test]
     fn no_nix_invocations_outside_client_module() {
@@ -218,5 +263,25 @@ mod tests {
         assert!(!verb_allowed("profile", Some("install")));
         // Unknown verbs are rejected outright.
         assert!(!verb_allowed("build", None));
+    }
+
+    #[test]
+    fn nix_store_rejects_unknown_query_flag() {
+        // Only the three read-only ref queries are allowed; a mutating or
+        // unlisted query flag is rejected before spawning nix-store.
+        for flag in ["--delete", "--gc", "--outputs", "--deriver", "--tree"] {
+            let err = nix_store_query(flag, "/nix/store/x").unwrap_err();
+            assert!(
+                err.to_string().contains("not in the read-only allowlist"),
+                "{flag} should be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn nix_store_admits_ref_query_flags() {
+        for flag in NIX_STORE_QUERY_FLAGS {
+            assert!(["--references", "--referrers", "--requisites"].contains(flag));
+        }
     }
 }

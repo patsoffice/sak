@@ -370,6 +370,7 @@ fn check(tokens: &[String]) -> Option<String> {
         "gh" => check_gh(args, &pos),
         "helm" => check_helm(&pos),
         "nix" => check_nix(args, &pos),
+        "nix-store" => check_nix_store(args),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -838,6 +839,25 @@ fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
              (read-only, --json/--raw, --apply).",
         );
     }
+    check_nix_subverbs(pos)
+}
+
+/// `nix-store` is the second nix binary; only `--query` reads, and sak covers
+/// the three reference queries. Redirect those; leave every other `--query`
+/// sub-flag and all mutating operations (`--delete`, `--gc`, `--realise`, ...)
+/// alone — sak can't perform them and doesn't shadow those reads yet.
+fn check_nix_store(args: &[String]) -> Option<String> {
+    let has = |f: &str| args.iter().any(|a| a == f);
+    if has("--query") && (has("--references") || has("--referrers") || has("--requisites")) {
+        return block(
+            "Use `sak nix references <path>` (--referrers / --closure) instead of \
+             `nix-store --query --references/--referrers/--requisites`.",
+        );
+    }
+    None
+}
+
+fn check_nix_subverbs(pos: &[&str]) -> Option<String> {
     match (pos.first().copied(), pos.get(1).copied()) {
         (Some("flake"), Some("show")) => block(
             "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \

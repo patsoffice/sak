@@ -21,7 +21,10 @@
 //! `sak nix` shells out to the system `nix` binary rather than re-implementing
 //! the store/flake protocols; the cost of that decision is one external
 //! runtime dependency in exchange for not tracking the upstream evaluator. If
-//! `nix` isn't on PATH, the chokepoint returns a clear error.
+//! `nix` isn't on PATH, the chokepoint returns a clear error. One command
+//! (`references`) additionally shells out to the separate `nix-store` binary —
+//! reverse dependencies (`--referrers`) have no modern `nix` subcommand — and
+//! that path is gated by its own read-only sub-flag allowlist in [`client`].
 //!
 //! Individual commands (`flake-show`, `flake-metadata`, `store-info`,
 //! `path-info`, `eval`, `registry-list`, `profile-list`, `derivation`,
@@ -32,6 +35,7 @@ pub mod client;
 pub mod eval;
 pub mod flake_show;
 pub mod profile_list;
+pub mod references;
 pub mod registry_list;
 pub mod store_info;
 
@@ -50,6 +54,7 @@ pub enum NixCommand {
     Eval(eval::EvalArgs),
     RegistryList(registry_list::RegistryListArgs),
     ProfileList(profile_list::ProfileListArgs),
+    References(references::ReferencesArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
@@ -59,6 +64,7 @@ pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
         NixCommand::Eval(args) => eval::run(args),
         NixCommand::RegistryList(args) => registry_list::run(args),
         NixCommand::ProfileList(args) => profile_list::run(args),
+        NixCommand::References(args) => references::run(args),
     }
 }
 

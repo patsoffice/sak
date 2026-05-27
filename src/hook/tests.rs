@@ -472,6 +472,27 @@ fn nix_profile_list_blocks() {
 }
 
 #[test]
+fn nix_store_query_refs_block() {
+    assert!(blocks("nix-store --query --references /nix/store/x"));
+    assert!(blocks("nix-store --query --referrers /nix/store/x"));
+    assert!(blocks("nix-store --query --requisites /nix/store/x"));
+}
+
+#[test]
+fn nix_store_other_queries_and_writes_allow() {
+    // sak only covers the three ref queries; other reads pass through.
+    assert!(allows("nix-store --query --deriver /nix/store/x"));
+    assert!(allows("nix-store --query --outputs /nix/store/x"));
+    assert!(allows("nix-store --query --tree /nix/store/x"));
+    // Mutating operations are never redirected.
+    assert!(allows("nix-store --delete /nix/store/x"));
+    assert!(allows("nix-store --gc"));
+    assert!(allows("nix-store --realise /nix/store/x.drv"));
+    // `--references` without `--query` is not the shadowed form.
+    assert!(allows("nix-store --add foo"));
+}
+
+#[test]
 fn nix_writes_and_unshadowed_allow() {
     // Mutations are never redirected — sak nix can't perform them.
     assert!(allows("nix build .#default"));
