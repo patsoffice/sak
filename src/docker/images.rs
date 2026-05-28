@@ -16,8 +16,8 @@
 //! unix timestamp. `--format json` emits the raw image metadata as
 //! newline-delimited JSON instead.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -62,13 +62,13 @@ pub enum Format {
     Json,
 }
 
-pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
+pub async fn run(args: &ImagesArgs) -> Result<Outcome> {
     let client = DockerClient::connect()?;
 
     let path = "/images/json";
     let body = match client.get_json(path).await? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     let Value::Array(mut items) = body else {
@@ -89,9 +89,9 @@ pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
                     if !writer.write_line(&line)? {
                         writer.flush()?;
                         return Ok(if wrote_any {
-                            ExitCode::SUCCESS
+                            Outcome::Found
                         } else {
-                            ExitCode::from(1)
+                            Outcome::NotFound
                         });
                     }
                     wrote_any = true;
@@ -109,9 +109,9 @@ pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

@@ -44,13 +44,18 @@ impl Outcome {
 /// rendering the value via the supplied closure when present.
 ///
 /// Used by commands that fetch one named resource and emit its representation
-/// (e.g. `sak docker info`, `sak lxc info`, `sak k8s describe`, `sak helm
-/// status`) — `None` from the foundation chokepoint (`get_json` / `get_dyn` /
-/// `invoke_found`) cleanly becomes [`Outcome::NotFound`] without the
+/// (e.g. `sak docker info`, `sak lxc info`) — `None` from the foundation
+/// chokepoint (`get_json`) cleanly becomes [`Outcome::NotFound`] without the
 /// caller writing a `match` ladder around `Ok(Some(_))` / `Ok(None)`.
 ///
-/// The closure runs only for `Some`; it can return any error that flows up
-/// through `?` into the `Result<Outcome>`.
+/// The closure is synchronous, so this fits the sync-render-after-async-fetch
+/// shape (lxc/docker info). Commands whose render body is also async — e.g.
+/// `sak k8s describe`, which interleaves `write_*_section(...).await?` calls
+/// — keep the explicit `let Some(...) = ... else { return ... }` pattern.
+///
+/// Gated to the features that adopt it so lean builds don't carry it (and
+/// don't trip the dead-code lint).
+#[cfg(any(feature = "lxc", feature = "docker"))]
 pub fn rendered_or_not_found<T>(
     value: Option<T>,
     render: impl FnOnce(T) -> anyhow::Result<()>,
@@ -193,16 +198,13 @@ pub fn collapse_ws(s: &str) -> String {
 /// Pretty-print `data` as JSON through a [`BoundedWriter`], honoring `--limit`.
 /// This is the `--json` / metadata-dump branch shared by `sak prom` (every
 /// command), `sak k8s schema`, `sak docker info`, and `sak lxc info`. Always
-/// returns [`ExitCode::SUCCESS`](std::process::ExitCode) — a JSON dump of an
-/// empty result is still a successful response, just an empty one.
+/// returns [`Outcome::Found`] — a JSON dump of an empty result is still a
+/// successful response, just an empty one.
 ///
 /// Gated to the domains that use it so lean builds don't carry it (and don't
 /// trip the dead-code lint).
 #[cfg(any(feature = "k8s", feature = "lxc", feature = "docker", feature = "prom"))]
-pub fn emit_json(
-    data: &serde_json::Value,
-    limit: Option<usize>,
-) -> anyhow::Result<std::process::ExitCode> {
+pub fn emit_json(data: &serde_json::Value, limit: Option<usize>) -> anyhow::Result<Outcome> {
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, limit);
@@ -213,7 +215,7 @@ pub fn emit_json(
         }
     }
     writer.flush()?;
-    Ok(std::process::ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Build a current-thread tokio runtime and block on `fut`, returning its

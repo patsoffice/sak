@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -39,7 +39,7 @@ pub struct TablesArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &TablesArgs) -> Result<ExitCode> {
+pub fn run(args: &TablesArgs) -> Result<Outcome> {
     let conn = client::open_readonly(&args.db)?;
 
     // The SQL is built from compile-time literals — none of it comes from
@@ -60,7 +60,7 @@ pub fn run(args: &TablesArgs) -> Result<ExitCode> {
 
     let rows = client::query_rows(&conn, &sql)?;
     if rows.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -74,7 +74,7 @@ pub fn run(args: &TablesArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -154,7 +154,7 @@ mod tests {
     fn run_returns_success_when_tables_present() {
         let tmp = seeded_db();
         let result = run(&args(tmp.path(), false, false)).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -167,7 +167,7 @@ mod tests {
         client::seed_for_tests(tmp.path(), "PRAGMA user_version = 1;");
         // Default flags exclude sqlite_* — should return exit 1.
         let result = run(&args(tmp.path(), false, false)).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]

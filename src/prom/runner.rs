@@ -13,8 +13,8 @@
 //! - the `am` (Alertmanager) subcommands resolve `ALERTMANAGER_URL`, talk to the
 //!   v2 API, and use envelope-less `get_json` — a different fetch path.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use serde_json::Value;
@@ -32,7 +32,7 @@ use crate::prom::common_args::CommonPromArgs;
 /// - otherwise calls `build_rows`, then streams the returned lines through a
 ///   [`BoundedWriter`], returning exit code 0 if any line was written and 1 if
 ///   the result was empty.
-pub(super) fn run_prom<F>(common: &CommonPromArgs, path: &str, build_rows: F) -> Result<ExitCode>
+pub(super) fn run_prom<F>(common: &CommonPromArgs, path: &str, build_rows: F) -> Result<Outcome>
 where
     F: FnOnce(&Value) -> Result<Vec<String>>,
 {
@@ -40,7 +40,7 @@ where
     let client = PromClient::new(endpoint);
     let data = match client.get_prom(path)? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     if common.json {
@@ -53,7 +53,7 @@ where
 
 /// Stream `lines` through a [`BoundedWriter`], returning exit code 0 if any
 /// line was written and 1 otherwise — the shared tail of every `run_prom`.
-fn emit_lines(lines: &[String], limit: Option<usize>) -> Result<ExitCode> {
+fn emit_lines(lines: &[String], limit: Option<usize>) -> Result<Outcome> {
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, limit);
@@ -67,8 +67,8 @@ fn emit_lines(lines: &[String], limit: Option<usize>) -> Result<ExitCode> {
     }
     writer.flush()?;
     Ok(if wrote_any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }

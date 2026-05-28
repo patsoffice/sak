@@ -10,7 +10,7 @@
 //! `--job <regex>` filters by the `job` label. Multi-line `lastError`
 //! strings collapse to one row.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -105,7 +105,7 @@ pub(super) fn sort_rows(rows: &mut [TargetRow]) {
     rows.sort_by(|a, b| a.job.cmp(&b.job).then_with(|| a.instance.cmp(&b.instance)));
 }
 
-pub fn run(args: &TargetsArgs) -> Result<ExitCode> {
+pub fn run(args: &TargetsArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/targets", |data| {
         let active = data
             .get("activeTargets")

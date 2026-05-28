@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -36,7 +36,7 @@ pub struct SchemaArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
+pub fn run(args: &SchemaArgs) -> Result<Outcome> {
     let conn = client::open_readonly(&args.db)?;
     match &args.table {
         None => run_dump(&conn, args.limit),
@@ -44,7 +44,7 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
     }
 }
 
-fn run_dump(conn: &client::Conn, limit: Option<usize>) -> Result<ExitCode> {
+fn run_dump(conn: &client::Conn, limit: Option<usize>) -> Result<Outcome> {
     let rows = client::query_rows(
         conn,
         "SELECT type, name, sql FROM sqlite_master \
@@ -52,7 +52,7 @@ fn run_dump(conn: &client::Conn, limit: Option<usize>) -> Result<ExitCode> {
          ORDER BY name",
     )?;
     if rows.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -68,10 +68,10 @@ fn run_dump(conn: &client::Conn, limit: Option<usize>) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
-fn run_table(conn: &client::Conn, table: &str, limit: Option<usize>) -> Result<ExitCode> {
+fn run_table(conn: &client::Conn, table: &str, limit: Option<usize>) -> Result<Outcome> {
     // Pre-flight: confirm the table or view actually exists. PRAGMA
     // table_info on a missing table returns an empty result with no error,
     // and we want a clear "not found" exit instead.
@@ -88,7 +88,7 @@ fn run_table(conn: &client::Conn, table: &str, limit: Option<usize>) -> Result<E
     let idxs = client::query_rows(conn, &format!("PRAGMA index_list({quoted})"))?;
 
     if cols.is_empty() && idxs.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -119,7 +119,7 @@ fn run_table(conn: &client::Conn, table: &str, limit: Option<usize>) -> Result<E
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Quote a SQLite identifier for safe interpolation into a PRAGMA call.
@@ -201,7 +201,7 @@ mod tests {
     fn run_dump_returns_success_when_schema_present() {
         let tmp = seeded_db();
         let result = run(&args(tmp.path(), None)).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -209,7 +209,7 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         client::seed_for_tests(tmp.path(), "PRAGMA user_version = 1;");
         let result = run(&args(tmp.path(), None)).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
     fn run_table_returns_success_for_known_table() {
         let tmp = seeded_db();
         let result = run(&args(tmp.path(), Some("users"))).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]

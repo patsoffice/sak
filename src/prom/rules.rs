@@ -10,7 +10,7 @@
 //! (which excludes every recording rule, since they have no state).
 //! Multi-line `query` expressions collapse to one row.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -125,7 +125,7 @@ pub(super) fn sort_rows(rows: &mut [RuleRow]) {
     });
 }
 
-pub fn run(args: &RulesArgs) -> Result<ExitCode> {
+pub fn run(args: &RulesArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/rules", |data| {
         let mut rows = extract_rule_rows(data)?;
         if args.firing {

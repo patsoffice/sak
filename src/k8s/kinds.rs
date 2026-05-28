@@ -6,8 +6,8 @@
 //! cluster" exploration. It is one of the few legitimate uses of full
 //! discovery — the user is explicitly asking for everything.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -37,7 +37,7 @@ pub struct KindsArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &KindsArgs) -> Result<ExitCode> {
+pub async fn run(args: &KindsArgs) -> Result<Outcome> {
     let client = crate::k8s::client::build_client().await?;
     let mut entries = discovery::discover_all(&client).await?;
 
@@ -60,15 +60,15 @@ pub async fn run(args: &KindsArgs) -> Result<ExitCode> {
         let line = format!("{}\t{}\t{}", ar.api_version, ar.kind, scope);
         if !writer.write_line(&line)? {
             writer.flush()?;
-            return Ok(ExitCode::SUCCESS);
+            return Ok(Outcome::Found);
         }
         found_any = true;
     }
 
     writer.flush()?;
     if found_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }

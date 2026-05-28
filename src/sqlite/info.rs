@@ -1,8 +1,8 @@
+use crate::output::Outcome;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
@@ -37,7 +37,7 @@ pub struct InfoArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &InfoArgs) -> Result<ExitCode> {
+pub fn run(args: &InfoArgs) -> Result<Outcome> {
     let conn = client::open_readonly(&args.db)?;
 
     // PRAGMAs that return a single value as the first column of the first row.
@@ -97,7 +97,7 @@ pub fn run(args: &InfoArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Replace newline, carriage return, and tab characters with a single space so
@@ -165,7 +165,7 @@ mod tests {
             limit: None,
         })
         .unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]

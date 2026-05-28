@@ -4,7 +4,7 @@
 //! sorted ascending. The natural follow-up to `sak prom labels`: once you
 //! know a label name exists, this enumerates its observed values.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -39,7 +39,7 @@ pub struct LabelValuesArgs {
     pub name: String,
 }
 
-pub fn run(args: &LabelValuesArgs) -> Result<ExitCode> {
+pub fn run(args: &LabelValuesArgs) -> Result<Outcome> {
     let path = format!("/api/v1/label/{}/values", urlencode(&args.name));
     run_prom(&args.common, &path, |data| {
         let mut values = extract_strings(data, &path)?;

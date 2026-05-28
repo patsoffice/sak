@@ -26,7 +26,7 @@ pub mod images;
 pub mod info;
 pub mod list;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -49,11 +49,11 @@ pub enum DockerCommand {
 /// Delegates to [`crate::output::run_async`], which builds a current-thread
 /// tokio runtime locally and `block_on`s the async command body. The runtime
 /// is dropped before this function returns, so the rest of sak stays sync.
-pub fn run(cmd: &DockerCommand) -> Result<ExitCode> {
+pub fn run(cmd: &DockerCommand) -> Result<Outcome> {
     crate::output::run_async(dispatch(cmd))
 }
 
-async fn dispatch(cmd: &DockerCommand) -> Result<ExitCode> {
+async fn dispatch(cmd: &DockerCommand) -> Result<Outcome> {
     match cmd {
         DockerCommand::List(args) => list::run(args).await,
         DockerCommand::Images(args) => images::run(args).await,

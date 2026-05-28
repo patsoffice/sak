@@ -4,8 +4,8 @@
 //! `lastState.terminated.reason`, sorts by restart count descending, and
 //! emits `namespace/pod<TAB>container<TAB>restarts<TAB>last-reason`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -142,7 +142,7 @@ pub(super) fn container_status_reason(pod: &Value) -> Option<String> {
     None
 }
 
-pub async fn run(args: &RestartsArgs) -> Result<ExitCode> {
+pub async fn run(args: &RestartsArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, _caps) = discovery::resolve(&client, "pod").await?;
 
@@ -203,9 +203,9 @@ pub async fn run(args: &RestartsArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

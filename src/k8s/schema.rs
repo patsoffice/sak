@@ -24,7 +24,7 @@
 //! Modern apiservers (1.19+) expose v3. We deliberately don't fall back to v2
 //! — it keeps the implementation small and the failure mode honest.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
@@ -81,7 +81,7 @@ struct Gvk {
     kind: String,
 }
 
-pub async fn run(args: &SchemaArgs) -> Result<ExitCode> {
+pub async fn run(args: &SchemaArgs) -> Result<Outcome> {
     let gvk = resolve_gvk(args)?;
 
     let client = client::build_client().await?;

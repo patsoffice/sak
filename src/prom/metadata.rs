@@ -7,7 +7,7 @@
 //! scrape targets exposing slightly different help text), and every entry
 //! is emitted — collapsing them silently would hide the discrepancy.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -57,7 +57,7 @@ pub(super) struct MetadataRow {
     pub help: String,
 }
 
-pub fn run(args: &MetadataArgs) -> Result<ExitCode> {
+pub fn run(args: &MetadataArgs) -> Result<Outcome> {
     let path = match &args.metric {
         Some(m) => format!("/api/v1/metadata?metric={}", urlencode(m)),
         None => "/api/v1/metadata".to_string(),

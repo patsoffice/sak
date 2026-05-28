@@ -10,7 +10,7 @@
 //! to keep visual distance from the top-level `src/config/` domain — the
 //! command name `sak prom config` is still unambiguous on the CLI.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -40,7 +40,7 @@ pub struct ConfigArgs {
     pub common: CommonPromArgs,
 }
 
-pub fn run(args: &ConfigArgs) -> Result<ExitCode> {
+pub fn run(args: &ConfigArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/status/config", |data| {
         let yaml = extract_yaml(data)?;
         Ok(yaml.lines().map(str::to_string).collect())

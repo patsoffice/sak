@@ -20,8 +20,8 @@
 //! Section headers are written as [`crate::output::BoundedWriter`] decorations
 //! so they don't get truncated mid-section by `--limit`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -76,7 +76,7 @@ pub struct DescribeArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &DescribeArgs) -> Result<ExitCode> {
+pub async fn run(args: &DescribeArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, caps) = discovery::resolve(&client, &args.kind).await?;
 
@@ -94,7 +94,7 @@ pub async fn run(args: &DescribeArgs) -> Result<ExitCode> {
 
     let obj = client::get_dyn(&client, &ar, effective_ns.as_deref(), &args.name).await?;
     let Some(obj) = obj else {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     };
     let value: Value = serde_json::to_value(&obj)?;
 
@@ -130,7 +130,7 @@ pub async fn run(args: &DescribeArgs) -> Result<ExitCode> {
     // The object was successfully fetched (404 returns earlier with exit 1),
     // so describe always exits SUCCESS once we get here — even if every
     // section happened to be empty, we still found the object itself.
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 fn write_object_section(

@@ -11,8 +11,8 @@
 //! tell sidecar output apart from the main container. All output flows through
 //! [`crate::output::BoundedWriter`].
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
@@ -85,7 +85,7 @@ pub struct LogsArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &LogsArgs) -> Result<ExitCode> {
+pub async fn run(args: &LogsArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
 
     let ns = args
@@ -113,7 +113,7 @@ pub async fn run(args: &LogsArgs) -> Result<ExitCode> {
         let (ar, _caps) = discovery::resolve(&client, "pod").await?;
         let obj = client::get_dyn(&client, &ar, Some(&ns), &args.pod).await?;
         let Some(obj) = obj else {
-            return Ok(ExitCode::from(1));
+            return Ok(Outcome::NotFound);
         };
         let value: Value = serde_json::to_value(&obj)?;
         let names = container_names(&value);
@@ -168,9 +168,9 @@ pub async fn run(args: &LogsArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

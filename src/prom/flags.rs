@@ -5,7 +5,7 @@
 //! are stringly typed by the API (Prometheus serializes every flag as a
 //! string, even booleans), so the format passes them through verbatim.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -35,7 +35,7 @@ pub struct FlagsArgs {
     pub common: CommonPromArgs,
 }
 
-pub fn run(args: &FlagsArgs) -> Result<ExitCode> {
+pub fn run(args: &FlagsArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/status/flags", |data| {
         let mut rows = extract_flag_rows(data)?;
         rows.sort_by(|a, b| a.0.cmp(&b.0));

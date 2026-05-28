@@ -14,8 +14,8 @@
 //! is small and tightly cohesive (the silence matcher formatter is the
 //! only non-trivial shared piece).
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -133,12 +133,12 @@ pub(super) fn sort_alert_rows(rows: &mut [AmAlertRow]) {
     });
 }
 
-pub fn alerts(args: &AmAlertsArgs) -> Result<ExitCode> {
+pub fn alerts(args: &AmAlertsArgs) -> Result<Outcome> {
     let endpoint = resolve_endpoint(args.url.as_deref(), "ALERTMANAGER_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_json("/api/v2/alerts")? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     if args.json {
@@ -301,12 +301,12 @@ fn escape_matcher_value(s: &str) -> String {
     out
 }
 
-pub fn silences(args: &AmSilencesArgs) -> Result<ExitCode> {
+pub fn silences(args: &AmSilencesArgs) -> Result<Outcome> {
     let endpoint = resolve_endpoint(args.url.as_deref(), "ALERTMANAGER_URL")?;
     let client = PromClient::new(endpoint);
     let data = match client.get_json("/api/v2/silences")? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     if args.json {
@@ -333,7 +333,7 @@ pub fn silences(args: &AmSilencesArgs) -> Result<ExitCode> {
 /// closure once per row. Returns sak's standard exit 0 (wrote anything) /
 /// exit 1 (empty) split. Generic so the same body serves both the alert
 /// row and silence row paths.
-fn write_rows<T, F>(rows: &[T], format: F, limit: Option<usize>) -> Result<ExitCode>
+fn write_rows<T, F>(rows: &[T], format: F, limit: Option<usize>) -> Result<Outcome>
 where
     F: Fn(&T) -> String,
 {
@@ -350,9 +350,9 @@ where
     }
     writer.flush()?;
     Ok(if wrote_any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

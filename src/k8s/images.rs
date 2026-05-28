@@ -6,8 +6,8 @@
 //! `(namespace, name, container)`, and emits
 //! `namespace/name<TAB>container<TAB>image` through `BoundedWriter`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -59,7 +59,7 @@ pub struct ImagesArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
+pub async fn run(args: &ImagesArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, caps) = discovery::resolve(&client, &args.kind).await?;
 
@@ -135,8 +135,8 @@ pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }

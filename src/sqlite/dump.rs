@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -58,7 +58,7 @@ pub struct DumpArgs {
     pub format: OutputFormat,
 }
 
-pub fn run(args: &DumpArgs) -> Result<ExitCode> {
+pub fn run(args: &DumpArgs) -> Result<Outcome> {
     if args.table.contains('\0') {
         return Err(anyhow!("table name must not contain NUL bytes"));
     }
@@ -132,9 +132,9 @@ pub fn run(args: &DumpArgs) -> Result<ExitCode> {
     writer.flush()?;
 
     if emitted == 0 {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -193,7 +193,7 @@ mod tests {
     fn run_default_limit_returns_success() {
         let tmp = seeded_db();
         let code = run(&args(tmp.path(), "users")).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
         let mut a = args(tmp.path(), "users");
         a.limit = 2;
         let code = run(&a).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         a.order_by = Some("id".into());
         a.desc = true;
         let code = run(&a).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
     fn empty_table_yields_exit_one() {
         let tmp = seeded_db();
         let code = run(&args(tmp.path(), "empty_t")).unwrap();
-        assert_eq!(code, ExitCode::from(1));
+        assert_eq!(code, Outcome::NotFound);
     }
 
     #[test]

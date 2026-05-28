@@ -10,7 +10,7 @@
 //! `summary` annotations are collapsed to one space-separated line so each
 //! alert stays one row (mirrors the `sak k8s events` pattern).
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -181,7 +181,7 @@ pub(super) fn state_filter(args: &AlertsArgs) -> StateFilter {
     }
 }
 
-pub fn run(args: &AlertsArgs) -> Result<ExitCode> {
+pub fn run(args: &AlertsArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/alerts", |data| {
         let alerts = data
             .get("alerts")

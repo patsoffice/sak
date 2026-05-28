@@ -5,8 +5,8 @@
 //! [`crate::value::resolve_expression`] machinery the `json` and `config`
 //! domains use.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -82,7 +82,7 @@ pub struct GetArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &GetArgs) -> Result<ExitCode> {
+pub async fn run(args: &GetArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, caps) = discovery::resolve(&client, &args.kind).await?;
 
@@ -136,7 +136,7 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
             let obj = client::get_dyn(&client, &ar, effective_ns.as_deref(), name).await?;
             let Some(obj) = obj else {
                 writer.flush()?;
-                return Ok(ExitCode::from(1));
+                return Ok(Outcome::NotFound);
             };
             let value: Value = serde_json::to_value(&obj)?;
 
@@ -202,9 +202,9 @@ pub async fn run(args: &GetArgs) -> Result<ExitCode> {
     }
 
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

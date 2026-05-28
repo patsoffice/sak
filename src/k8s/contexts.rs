@@ -10,8 +10,8 @@
 //! Because it does not import `kube::Api`, the read-only chokepoint test in
 //! `client.rs` is unaffected.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -46,7 +46,7 @@ pub struct ContextsArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &ContextsArgs) -> Result<ExitCode> {
+pub async fn run(args: &ContextsArgs) -> Result<Outcome> {
     let kubeconfig = Kubeconfig::read().context("failed to read kubeconfig")?;
     let current = kubeconfig.current_context.as_deref().unwrap_or("");
 
@@ -74,15 +74,15 @@ pub async fn run(args: &ContextsArgs) -> Result<ExitCode> {
         );
         if !writer.write_line(&line)? {
             writer.flush()?;
-            return Ok(ExitCode::SUCCESS);
+            return Ok(Outcome::Found);
         }
         found_any = true;
     }
 
     writer.flush()?;
     if found_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }

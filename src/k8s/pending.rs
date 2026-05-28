@@ -5,8 +5,8 @@
 //! `(namespace, name)`. The reason is the `message` from `status.conditions[*]`
 //! where `type == "PodScheduled"` and `status == "False"`, else `-`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -98,7 +98,7 @@ fn extract_pending_row(pod: &Value) -> Option<PendingRow> {
     })
 }
 
-pub async fn run(args: &PendingArgs) -> Result<ExitCode> {
+pub async fn run(args: &PendingArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, _caps) = discovery::resolve(&client, "pod").await?;
 
@@ -150,9 +150,9 @@ pub async fn run(args: &PendingArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

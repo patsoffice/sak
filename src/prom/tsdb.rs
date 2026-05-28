@@ -18,7 +18,7 @@
 //! OOM-ing?" incident — the response is the same data the built-in
 //! `/tsdb-status` UI page renders.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -52,7 +52,7 @@ pub struct TsdbStatsArgs {
     pub common: CommonPromArgs,
 }
 
-pub fn run(args: &TsdbStatsArgs) -> Result<ExitCode> {
+pub fn run(args: &TsdbStatsArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/status/tsdb", |data| {
         extract_tsdb_lines(data)
     })

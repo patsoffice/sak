@@ -12,8 +12,8 @@
 //! is the raw byte count from the LXD response. `description` comes from
 //! `properties.description`, falling back to `-` if absent.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -47,7 +47,7 @@ pub struct ImagesArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
+pub async fn run(args: &ImagesArgs) -> Result<Outcome> {
     let client = LxcClient::connect()?;
 
     let path = match &args.project {
@@ -57,7 +57,7 @@ pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
 
     let metadata = match client.get_json_recursive(&path, 1).await? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     let Value::Array(mut items) = metadata else {
@@ -84,9 +84,9 @@ pub async fn run(args: &ImagesArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

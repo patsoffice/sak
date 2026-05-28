@@ -12,8 +12,8 @@
 //! map to unix-timestamp `start` / `end` query parameters. With both
 //! omitted Prometheus applies its server-side default window.
 
+use crate::output::Outcome;
 use std::fmt::Write as _;
-use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
@@ -60,7 +60,7 @@ pub struct SeriesArgs {
     pub end: Option<String>,
 }
 
-pub fn run(args: &SeriesArgs) -> Result<ExitCode> {
+pub fn run(args: &SeriesArgs) -> Result<Outcome> {
     let start_dur = args
         .start
         .as_deref()

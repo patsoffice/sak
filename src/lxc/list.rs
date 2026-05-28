@@ -12,8 +12,8 @@
 //! global-scope address found on any interface, or `-` if none. `--format json`
 //! emits the raw instance metadata as newline-delimited JSON instead.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -61,7 +61,7 @@ pub enum Format {
     Json,
 }
 
-pub async fn run(args: &ListArgs) -> Result<ExitCode> {
+pub async fn run(args: &ListArgs) -> Result<Outcome> {
     let client = LxcClient::connect()?;
 
     let path = match &args.project {
@@ -71,7 +71,7 @@ pub async fn run(args: &ListArgs) -> Result<ExitCode> {
 
     let metadata = match client.get_json_recursive(&path, 2).await? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     let Value::Array(mut items) = metadata else {
@@ -102,9 +102,9 @@ pub async fn run(args: &ListArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

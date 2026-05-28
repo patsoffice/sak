@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use base64::Engine;
@@ -54,7 +54,7 @@ pub enum OutputFormat {
     Tsv,
 }
 
-pub fn run(args: &QueryArgs) -> Result<ExitCode> {
+pub fn run(args: &QueryArgs) -> Result<Outcome> {
     if !is_read_statement(&args.sql) {
         return Err(anyhow!(
             "only SELECT, WITH, EXPLAIN, and PRAGMA statements are allowed (after \
@@ -89,9 +89,9 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
     writer.flush()?;
 
     if emitted == 0 {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -417,7 +417,7 @@ mod tests {
             OutputFormat::Json,
         ))
         .unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -429,7 +429,7 @@ mod tests {
             OutputFormat::Json,
         ))
         .unwrap();
-        assert_eq!(code, ExitCode::from(1));
+        assert_eq!(code, Outcome::NotFound);
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod tests {
             OutputFormat::Tsv,
         ))
         .unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]

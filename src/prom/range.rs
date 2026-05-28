@@ -10,7 +10,7 @@
 //! the resolution (default `60s`). `end` is always "now", so re-running the
 //! same command walks the window forward in real time.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
@@ -54,7 +54,7 @@ pub struct RangeArgs {
     pub step: String,
 }
 
-pub fn run(args: &RangeArgs) -> Result<ExitCode> {
+pub fn run(args: &RangeArgs) -> Result<Outcome> {
     let since = parse_duration(&args.since).map_err(|e| anyhow!("--since: {e}"))?;
     let step = parse_duration(&args.step).map_err(|e| anyhow!("--step: {e}"))?;
     if step == 0 {

@@ -14,8 +14,8 @@
 //! A 404 from the daemon (instance not found) maps to exit code 1; any other
 //! error is exit code 2 with a message on stderr.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -74,7 +74,7 @@ pub struct ConfigArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &ConfigArgs) -> Result<ExitCode> {
+pub async fn run(args: &ConfigArgs) -> Result<Outcome> {
     let client = LxcClient::connect()?;
 
     let path = match &args.project {
@@ -84,7 +84,7 @@ pub async fn run(args: &ConfigArgs) -> Result<ExitCode> {
 
     let metadata = match client.get_json(&path).await? {
         Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
+        None => return Ok(Outcome::NotFound),
     };
 
     let subset = config_subset(&metadata);
@@ -116,9 +116,9 @@ pub async fn run(args: &ConfigArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

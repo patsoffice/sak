@@ -5,8 +5,8 @@
 //! waiting/terminated reason from any container in `status.containerStatuses`,
 //! else `-`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -89,7 +89,7 @@ fn extract_failing_row(pod: &Value) -> Option<FailingRow> {
     })
 }
 
-pub async fn run(args: &FailingArgs) -> Result<ExitCode> {
+pub async fn run(args: &FailingArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, _caps) = discovery::resolve(&client, "pod").await?;
 
@@ -141,9 +141,9 @@ pub async fn run(args: &FailingArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

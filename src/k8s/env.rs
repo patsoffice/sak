@@ -6,8 +6,8 @@
 //! references, by design — surfacing secret material would defeat the
 //! purpose of a read-only LLM tool.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -67,7 +67,7 @@ pub struct EnvArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &EnvArgs) -> Result<ExitCode> {
+pub async fn run(args: &EnvArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, _caps) = discovery::resolve(&client, &args.kind).await?;
 
@@ -87,7 +87,7 @@ pub async fn run(args: &EnvArgs) -> Result<ExitCode> {
     let obj = client::get_dyn(&client, &ar, Some(ns.as_str()), &args.name).await?;
     let Some(obj) = obj else {
         // Not found → sak exit code 1, no stdout output.
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     };
     let value: Value = serde_json::to_value(&obj)?;
 
@@ -112,9 +112,9 @@ pub async fn run(args: &EnvArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

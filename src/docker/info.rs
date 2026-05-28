@@ -9,12 +9,13 @@
 //! A 404 from the daemon (container not found) maps to exit code 1; any other
 //! error is exit code 2 with a message on stderr.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
 
 use crate::docker::client::DockerClient;
+use crate::output::rendered_or_not_found;
 
 #[derive(Args)]
 #[command(
@@ -43,15 +44,11 @@ pub struct InfoArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &InfoArgs) -> Result<ExitCode> {
+pub async fn run(args: &InfoArgs) -> Result<Outcome> {
     let client = DockerClient::connect()?;
-
     let path = format!("/containers/{}/json", args.name);
-
-    let metadata = match client.get_json(&path).await? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    crate::output::emit_json(&metadata, args.limit)
+    rendered_or_not_found(client.get_json(&path).await?, |metadata| {
+        crate::output::emit_json(&metadata, args.limit)?;
+        Ok(())
+    })
 }

@@ -42,7 +42,7 @@ pub mod series;
 pub mod targets;
 pub mod tsdb;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -95,7 +95,7 @@ pub enum AmCommand {
 }
 
 /// Dispatch a `sak prom` subcommand. Synchronous — no tokio runtime.
-pub fn run(cmd: &PromCommand) -> Result<ExitCode> {
+pub fn run(cmd: &PromCommand) -> Result<Outcome> {
     match cmd {
         PromCommand::Alerts(args) => alerts::run(args),
         PromCommand::Query(args) => query::run(args),

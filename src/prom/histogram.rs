@@ -18,10 +18,10 @@
 //! verbatim. This is what turns the cert-expiry triage histogram from
 //! `le="2.592e+06"` into `le=<30.00d`.
 
+use crate::output::Outcome;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, ValueEnum};
@@ -97,7 +97,7 @@ pub(super) struct BucketRow {
     pub rate: Option<f64>,
 }
 
-pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
+pub fn run(args: &HistogramArgs) -> Result<Outcome> {
     let rate_window =
         parse_duration(&args.rate_window).map_err(|e| anyhow!("--rate-window: {e}"))?;
     if rate_window == 0 {
@@ -121,12 +121,12 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
     let cum_data =
         match client.get_prom(&format!("/api/v1/query?query={}", urlencode(&cum_query)))? {
             Some(v) => v,
-            None => return Ok(ExitCode::from(1)),
+            None => return Ok(Outcome::NotFound),
         };
     let rate_data =
         match client.get_prom(&format!("/api/v1/query?query={}", urlencode(&rate_query)))? {
             Some(v) => v,
-            None => return Ok(ExitCode::from(1)),
+            None => return Ok(Outcome::NotFound),
         };
 
     if args.common.json {
@@ -139,7 +139,7 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
 
     let rows = build_buckets(&cum_data, &rate_data)?;
     if rows.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -155,9 +155,9 @@ pub fn run(args: &HistogramArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
     Ok(if wrote_any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

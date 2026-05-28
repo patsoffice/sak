@@ -15,9 +15,9 @@
 //! `pub(super)` so `sak k8s describe` can populate its events section without
 //! duplicating event-list logic.
 
+use crate::output::Outcome;
 use std::cmp::Ordering;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -179,7 +179,7 @@ fn event_matches(ev: &Value, kind: &str, name: &str) -> bool {
     ikind.eq_ignore_ascii_case(kind) && iname == name
 }
 
-pub async fn run(args: &EventsArgs) -> Result<ExitCode> {
+pub async fn run(args: &EventsArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, _caps) = discovery::resolve(&client, "event").await?;
 
@@ -239,9 +239,9 @@ pub async fn run(args: &EventsArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

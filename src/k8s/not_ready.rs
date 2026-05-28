@@ -11,8 +11,8 @@
 //! not the wanted value, or when the condition is absent entirely. Missing
 //! `status`/`reason`/`message` render as `-`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -133,7 +133,7 @@ fn unmet(obj: &Value, cond_type: &str, want: &str) -> Option<NotReadyRow> {
     }
 }
 
-pub async fn run(args: &NotReadyArgs) -> Result<ExitCode> {
+pub async fn run(args: &NotReadyArgs) -> Result<Outcome> {
     let client = client::build_client().await?;
     let (ar, caps) = discovery::resolve(&client, &args.kind).await?;
 
@@ -209,9 +209,9 @@ pub async fn run(args: &NotReadyArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

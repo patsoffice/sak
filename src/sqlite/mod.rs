@@ -27,7 +27,7 @@ pub mod query;
 pub mod schema;
 pub mod tables;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -44,7 +44,7 @@ pub enum SqliteCommand {
 }
 
 /// Dispatch a `sak sqlite` subcommand.
-pub fn run(cmd: &SqliteCommand) -> Result<ExitCode> {
+pub fn run(cmd: &SqliteCommand) -> Result<Outcome> {
     match cmd {
         SqliteCommand::Count(args) => count::run(args),
         SqliteCommand::Dump(args) => dump::run(args),

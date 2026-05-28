@@ -9,12 +9,13 @@
 //! A 404 from the daemon (instance not found) maps to exit code 1; any other
 //! error is exit code 2 with a message on stderr.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
 
 use crate::lxc::client::LxcClient;
+use crate::output::rendered_or_not_found;
 
 #[derive(Args)]
 #[command(
@@ -46,18 +47,14 @@ pub struct InfoArgs {
     pub limit: Option<usize>,
 }
 
-pub async fn run(args: &InfoArgs) -> Result<ExitCode> {
+pub async fn run(args: &InfoArgs) -> Result<Outcome> {
     let client = LxcClient::connect()?;
-
     let path = match &args.project {
         Some(p) => format!("/1.0/instances/{}?project={p}", args.name),
         None => format!("/1.0/instances/{}", args.name),
     };
-
-    let metadata = match client.get_json_recursive(&path, 1).await? {
-        Some(v) => v,
-        None => return Ok(ExitCode::from(1)),
-    };
-
-    crate::output::emit_json(&metadata, args.limit)
+    rendered_or_not_found(client.get_json_recursive(&path, 1).await?, |metadata| {
+        crate::output::emit_json(&metadata, args.limit)?;
+        Ok(())
+    })
 }

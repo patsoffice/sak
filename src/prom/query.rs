@@ -13,8 +13,8 @@
 //! also sorted, so re-running the same query against an unchanged Prom
 //! produces identical text — critical for LLM diff stability.
 
+use crate::output::Outcome;
 use std::fmt::Write as _;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow, bail};
 use clap::Args;
@@ -51,7 +51,7 @@ pub struct QueryArgs {
     pub query: String,
 }
 
-pub fn run(args: &QueryArgs) -> Result<ExitCode> {
+pub fn run(args: &QueryArgs) -> Result<Outcome> {
     let path = format!("/api/v1/query?query={}", urlencode(&args.query));
     run_prom(&args.common, &path, |data| {
         let mut lines = format_result(data)?;

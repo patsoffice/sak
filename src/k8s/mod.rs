@@ -37,7 +37,7 @@ pub mod pending;
 pub mod restarts;
 pub mod schema;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -78,11 +78,11 @@ pub enum K8sCommand {
 /// Delegates to [`crate::output::run_async`], which builds a current-thread
 /// tokio runtime locally and `block_on`s the async command body. The runtime
 /// is dropped before this function returns, so the rest of sak stays sync.
-pub fn run(cmd: &K8sCommand) -> Result<ExitCode> {
+pub fn run(cmd: &K8sCommand) -> Result<Outcome> {
     crate::output::run_async(dispatch(cmd))
 }
 
-async fn dispatch(cmd: &K8sCommand) -> Result<ExitCode> {
+async fn dispatch(cmd: &K8sCommand) -> Result<Outcome> {
     match cmd {
         K8sCommand::Contexts(args) => contexts::run(args).await,
         K8sCommand::Kinds(args) => kinds::run(args).await,

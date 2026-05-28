@@ -4,7 +4,7 @@
 //! ascending for diff-stable output. This is the "what dimensions can I
 //! group by?" entry point an LLM reaches for first on an unfamiliar Prom.
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -32,7 +32,7 @@ pub struct LabelsArgs {
     pub common: CommonPromArgs,
 }
 
-pub fn run(args: &LabelsArgs) -> Result<ExitCode> {
+pub fn run(args: &LabelsArgs) -> Result<Outcome> {
     run_prom(&args.common, "/api/v1/labels", |data| {
         let mut names = extract_strings(data, "/api/v1/labels")?;
         names.sort();

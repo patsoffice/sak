@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -38,7 +38,7 @@ pub struct CountArgs {
     pub where_clause: Option<String>,
 }
 
-pub fn run(args: &CountArgs) -> Result<ExitCode> {
+pub fn run(args: &CountArgs) -> Result<Outcome> {
     if args.table.contains('\0') {
         return Err(anyhow!("table name must not contain NUL bytes"));
     }
@@ -72,7 +72,7 @@ pub fn run(args: &CountArgs) -> Result<ExitCode> {
     writer.write_line(count)?;
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Wrap an identifier in double quotes, doubling any internal double quotes —
@@ -125,14 +125,14 @@ mod tests {
     fn run_succeeds_on_empty_table() {
         let tmp = seeded_db();
         let code = run(&args(tmp.path(), "empty_t", None)).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
     fn run_succeeds_on_populated_table() {
         let tmp = seeded_db();
         let code = run(&args(tmp.path(), "users", None)).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
     fn run_with_where_succeeds() {
         let tmp = seeded_db();
         let code = run(&args(tmp.path(), "users", Some("active = 1"))).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
@@ -179,7 +179,7 @@ mod tests {
         // The table is literally named  weird"name  — quote_ident must
         // double the embedded `"` so SQLite sees the right identifier.
         let code = run(&args(tmp.path(), "weird\"name", None)).unwrap();
-        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]
