@@ -848,10 +848,20 @@ fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
 /// alone — sak can't perform them and doesn't shadow those reads yet.
 fn check_nix_store(args: &[String]) -> Option<String> {
     let has = |f: &str| args.iter().any(|a| a == f);
-    if has("--query") && (has("--references") || has("--referrers") || has("--requisites")) {
+    if !has("--query") {
+        return None;
+    }
+    if has("--references") || has("--referrers") || has("--requisites") {
         return block(
             "Use `sak nix references <path>` (--referrers / --closure) instead of \
              `nix-store --query --references/--referrers/--requisites`.",
+        );
+    }
+    // `--info`, `-S`/`--size` map onto path metadata.
+    if has("--info") || has("-S") || has("--size") {
+        return block(
+            "Use `sak nix path-info <path...>` instead of `nix-store --query --info`/`-S` \
+             (TSV path/nar_size/closure_size/deriver/signatures, --closure, --format json).",
         );
     }
     None
@@ -885,6 +895,11 @@ fn check_nix_subverbs(pos: &[&str]) -> Option<String> {
         (Some("derivation"), Some("show")) | (Some("show-derivation"), _) => block(
             "Use `sak nix derivation-show [installable]` instead of `nix derivation show` \
              (JSON passthrough, --recursive).",
+        ),
+        // `nix path-info` is always a read (no mutating subcommand).
+        (Some("path-info"), _) => block(
+            "Use `sak nix path-info <path...>` instead of `nix path-info` \
+             (TSV path/nar_size/closure_size/deriver/signatures, --closure, --format json).",
         ),
         _ => None,
     }

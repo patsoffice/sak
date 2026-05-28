@@ -481,10 +481,24 @@ fn nix_derivation_show_blocks() {
 }
 
 #[test]
+fn nix_path_info_blocks() {
+    assert!(blocks("nix path-info /nix/store/x"));
+    assert!(blocks("nix path-info --closure /nix/store/x /nix/store/y"));
+    assert!(blocks("nix path-info --json /nix/store/x"));
+}
+
+#[test]
 fn nix_store_query_refs_block() {
     assert!(blocks("nix-store --query --references /nix/store/x"));
     assert!(blocks("nix-store --query --referrers /nix/store/x"));
     assert!(blocks("nix-store --query --requisites /nix/store/x"));
+}
+
+#[test]
+fn nix_store_query_info_size_block() {
+    assert!(blocks("nix-store --query --info /nix/store/x"));
+    assert!(blocks("nix-store --query -S /nix/store/x"));
+    assert!(blocks("nix-store --query --size /nix/store/x"));
 }
 
 #[test]
