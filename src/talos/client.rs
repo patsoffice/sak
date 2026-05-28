@@ -115,24 +115,37 @@ pub fn invoke_ok(
 mod tests {
     use super::*;
 
-    /// Tokens that must not appear in any `src/talos/*.rs` file other than
-    /// `client.rs`. The directory walk and comment-skip mechanics live in
-    /// [`crate::test_support::assert_no_forbidden_tokens`].
-    ///
-    /// Two strings cover the surface: the literal binary name as a quoted
-    /// string ("talosctl") and the `Command::new(` constructor. Either alone
-    /// would leave loopholes (you could spawn talosctl by building the
-    /// `Command` from a variable, or build a non-talosctl `Command::new` and
-    /// then later re-target it). Together, every realistic shell-out path
-    /// trips the test.
-    const FORBIDDEN_TOKENS: &[&str] = &["\"talosctl\"", "Command::new("];
+    /// Binary-name string: its only legitimate appearance outside
+    /// `client.rs` is as the `tool:` field of a [`crate::hook::rule::HookRule`]
+    /// in `src/talos/hook.rs` and inside that file's static redirect messages
+    /// (which mention "talosctl" by design), so that file is exempt.
+    const TALOSCTL_NAME_TOKEN: &[&str] = &["\"talosctl\""];
+
+    /// The `Command::new(` constructor — banned strictly (no `hook.rs`
+    /// exemption) because hook rules are pure data and never spawn
+    /// subprocesses. Banning the name alone would leave the variable-built
+    /// `Command` loophole; banning the constructor alone would let a
+    /// non-talosctl `Command` be re-targeted. The two assertions together
+    /// close every realistic shell-out path.
+    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
     #[test]
-    fn no_talosctl_invocations_outside_client_module() {
+    fn no_talosctl_name_token_outside_client_or_hook() {
+        crate::test_support::assert_no_forbidden_tokens_except(
+            "talos",
+            TALOSCTL_NAME_TOKEN,
+            &["client.rs", "hook.rs"],
+            "the \"talosctl\" name literal must be confined to client.rs (chokepoint) \
+             or hook.rs (HookRule.tool fields + redirect messages)",
+        );
+    }
+
+    #[test]
+    fn no_command_new_outside_client_module() {
         crate::test_support::assert_no_forbidden_tokens(
             "talos",
-            FORBIDDEN_TOKENS,
-            "talosctl invocations / Command::new must be confined to src/talos/client.rs",
+            COMMAND_NEW_TOKEN,
+            "Command::new(...) must be confined to src/talos/client.rs",
         );
     }
 

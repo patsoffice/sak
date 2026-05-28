@@ -19,6 +19,7 @@
 //! code 2 rather than reading a `/proc` that does not exist.
 
 pub mod cpuinfo;
+pub mod hook;
 pub mod loadavg;
 pub mod meminfo;
 pub mod mounts;

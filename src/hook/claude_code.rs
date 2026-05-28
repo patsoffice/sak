@@ -358,6 +358,8 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::nix::hook::HOOK_RULES,
         crate::gh::hook::HOOK_RULES,
         crate::helm::hook::HOOK_RULES,
+        crate::talos::hook::HOOK_RULES,
+        crate::linux::hook::HOOK_RULES,
     ]
 }
 
@@ -447,11 +449,9 @@ fn check(tokens: &[String]) -> Option<String> {
 
     match cmd_base {
         "kubectl" => check_kubectl(&pos),
-        "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "sqlite3" => check_sqlite(args),
-        "sysctl" => check_sysctl(args),
         _ => None,
     }
 }
@@ -474,19 +474,6 @@ fn check_kubectl(pos: &[&str]) -> Option<String> {
         // `kubectl config get-contexts` → `sak k8s contexts`
         Some("config") if pos.get(1).copied() == Some("get-contexts") => {
             block("Use `sak k8s contexts` instead of `kubectl config get-contexts`.")
-        }
-        _ => None,
-    }
-}
-
-fn check_talosctl(pos: &[&str]) -> Option<String> {
-    match pos.first().copied() {
-        Some("get") | Some("read") => {
-            let sub = pos[0];
-            block(&format!(
-                "Use `sak talos {sub}` instead of `talosctl {sub}` \
-                 (fans out across nodes; also `sak talos certs` for fleet cert inventory)."
-            ))
         }
         _ => None,
     }
@@ -537,24 +524,6 @@ fn check_sqlite(args: &[String]) -> Option<String> {
         );
     }
     None
-}
-
-fn check_sysctl(args: &[String]) -> Option<String> {
-    // Mutations are out of scope for sak — allow them through. Setting a knob is
-    // `key=value` (with or without `-w`); loading config files is `-p`/`--load`
-    // or `--system`. Everything else (`sysctl`, `-a`, `<key>`) is a read.
-    let is_write = args.iter().any(|a| {
-        a.contains('=')
-            || a == "-w"
-            || a == "--write"
-            || a == "-p"
-            || a == "--load"
-            || a == "--system"
-    });
-    if is_write {
-        return None;
-    }
-    block("Use `sak linux sysctl [pattern]` instead of `sysctl` for reads.")
 }
 
 #[cfg(test)]
@@ -646,6 +615,8 @@ mod engine_tests {
         assert!(tool_in_registries("nix-store"));
         assert!(tool_in_registries("gh"));
         assert!(tool_in_registries("helm"));
+        assert!(tool_in_registries("talosctl"));
+        assert!(tool_in_registries("sysctl"));
         assert!(!tool_in_registries("kubectl"));
         assert!(!tool_in_registries("sqlite3"));
     }

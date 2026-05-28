@@ -27,6 +27,7 @@ pub mod certs;
 pub mod client;
 pub mod config;
 pub mod get;
+pub mod hook;
 pub mod read;
 
 use std::process::ExitCode;
