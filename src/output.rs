@@ -1,4 +1,68 @@
 use std::io::{self, StdoutLock, Write};
+use std::process::ExitCode;
+
+/// Typed result of a command's `run()` — replaces bare [`ExitCode`] integers.
+///
+/// The found / not-found / partial axis is matchable and testable, and the
+/// magic exit-1 (negative-result) is named rather than spelled `ExitCode::from(1)`.
+/// Errors stay in the `Err` arm of `anyhow::Result<Outcome>` and continue to
+/// map to exit code 2 via [`main`](crate::main)'s error renderer.
+///
+/// Two commands intentionally invert the found/not-found mapping (`sak cert
+/// expiring`, `sak helm lint`) — see those modules for the spec-inversion
+/// comments. They return the variant whose [`Outcome::exit_code`] matches the
+/// desired shell-script semantics, not the literal "did we find something".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Operation succeeded and produced at least one result. Exit 0.
+    Found,
+    /// Operation succeeded with no results (negative result, not an error).
+    /// Exit 1.
+    NotFound,
+    /// Operation produced partial output to stdout, but at least one item
+    /// hit a per-item error already reported on stderr. Exit 2.
+    ///
+    /// Used by [`fs::stat`](crate::fs::stat) and [`fs::wc`](crate::fs::wc),
+    /// which keep going across the input set even when individual files fail.
+    /// Distinct from `Err(...)` because the latter aborts the run before any
+    /// output reaches stdout.
+    Partial,
+}
+
+impl Outcome {
+    /// Map an [`Outcome`] to its process exit code.
+    pub fn exit_code(self) -> ExitCode {
+        match self {
+            Outcome::Found => ExitCode::SUCCESS,
+            Outcome::NotFound => ExitCode::from(1),
+            Outcome::Partial => ExitCode::from(2),
+        }
+    }
+}
+
+/// Single-fetch helper: turn an `Option<T>` from a lookup into an [`Outcome`],
+/// rendering the value via the supplied closure when present.
+///
+/// Used by commands that fetch one named resource and emit its representation
+/// (e.g. `sak docker info`, `sak lxc info`, `sak k8s describe`, `sak helm
+/// status`) — `None` from the foundation chokepoint (`get_json` / `get_dyn` /
+/// `invoke_found`) cleanly becomes [`Outcome::NotFound`] without the
+/// caller writing a `match` ladder around `Ok(Some(_))` / `Ok(None)`.
+///
+/// The closure runs only for `Some`; it can return any error that flows up
+/// through `?` into the `Result<Outcome>`.
+pub fn rendered_or_not_found<T>(
+    value: Option<T>,
+    render: impl FnOnce(T) -> anyhow::Result<()>,
+) -> anyhow::Result<Outcome> {
+    match value {
+        Some(v) => {
+            render(v)?;
+            Ok(Outcome::Found)
+        }
+        None => Ok(Outcome::NotFound),
+    }
+}
 
 /// A writer that writes to stdout and tracks lines written, stopping at a configurable limit.
 /// When the limit is reached, it writes a truncation notice to stderr.
