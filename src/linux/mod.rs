@@ -13,26 +13,45 @@
 //! mutation surface to guard. Every parser is a pure function on `&str`,
 //! unit-tested on hand-built fixtures (mirroring the `k8s::containers` pattern).
 //!
-//! The domain is **Linux-only**. The clap surface (subcommands, `--help`) is
-//! compiled on every platform so `sak linux --help` is discoverable anywhere,
-//! but [`run`] short-circuits on non-Linux targets with a clear error and exit
-//! code 2 rather than reading a `/proc` that does not exist.
+//! The domain is **Linux-only** and gated by `#[cfg(target_os = "linux")]`:
+//! the per-command parsers, the [`LinuxCommand`] enum, [`run`], and the
+//! `/proc` helpers (`read_proc_file`, `parse_kv_line`, `sanitize`, `json_num`)
+//! all drop out on non-Linux targets, taking their would-be dead-code warnings
+//! with them. On macOS and friends the clap surface for `sak linux` therefore
+//! disappears too — `sak linux --help` returns an "unrecognized subcommand"
+//! error rather than advertising commands that can't run. The [`hook`]
+//! submodule stays compiled on every target so the registry's `sysctl`
+//! redirect message remains live even where the destination `sak linux sysctl`
+//! command isn't.
 
-pub mod cpuinfo;
 pub mod hook;
+
+#[cfg(target_os = "linux")]
+pub mod cpuinfo;
+#[cfg(target_os = "linux")]
 pub mod loadavg;
+#[cfg(target_os = "linux")]
 pub mod meminfo;
+#[cfg(target_os = "linux")]
 pub mod mounts;
+#[cfg(target_os = "linux")]
 pub mod network;
+#[cfg(target_os = "linux")]
 pub mod process;
+#[cfg(target_os = "linux")]
 pub mod sysctl;
+#[cfg(target_os = "linux")]
 pub mod uptime;
 
+#[cfg(target_os = "linux")]
 use std::process::ExitCode;
 
+#[cfg(target_os = "linux")]
 use anyhow::Result;
+#[cfg(target_os = "linux")]
 use clap::Subcommand;
 
+#[cfg(target_os = "linux")]
 #[derive(Subcommand)]
 pub enum LinuxCommand {
     Cpuinfo(cpuinfo::CpuinfoArgs),
@@ -45,17 +64,8 @@ pub enum LinuxCommand {
     Network(network::NetworkArgs),
 }
 
+#[cfg(target_os = "linux")]
 pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
-    // The clap types compile everywhere for a consistent `--help`, but the
-    // commands themselves only make sense where `/proc` exists. Reject other
-    // platforms here so the failure is a clear message, not a confusing
-    // "No such file or directory" from deep inside a parser.
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = cmd;
-        anyhow::bail!("the `linux` domain is only available on Linux targets");
-    }
-    #[cfg(target_os = "linux")]
     match cmd {
         LinuxCommand::Cpuinfo(args) => cpuinfo::run(args),
         LinuxCommand::Meminfo(args) => meminfo::run(args),
@@ -74,6 +84,7 @@ pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
 /// kernel-interface path, never an arbitrary file the caller smuggled in.
 /// `/sys` device-tree parsers are an explicit follow-up; until they land this
 /// helper deliberately rejects anything outside `/proc/`.
+#[cfg(target_os = "linux")]
 pub fn read_proc_file(path: &str) -> Result<String> {
     use anyhow::{Context, bail};
     if !path.starts_with("/proc/") {
@@ -90,6 +101,7 @@ pub fn read_proc_file(path: &str) -> Result<String> {
 /// remainder intact. Both key and value are trimmed of the surrounding tabs and
 /// spaces these files pad with. Returns `None` for lines with no colon or an
 /// empty key (blank separators, section headers).
+#[cfg(target_os = "linux")]
 pub fn parse_kv_line(line: &str) -> Option<(String, String)> {
     let (key, value) = line.split_once(':')?;
     let key = key.trim();
@@ -103,6 +115,7 @@ pub fn parse_kv_line(line: &str) -> Option<(String, String)> {
 /// a value never breaks a `key<TAB>value` or column-oriented TSV line. Mirrors
 /// the defense `sak sqlite info` uses; kept local because the sqlite copy lives
 /// behind the optional `sqlite` cargo feature and the linux domain is always on.
+#[cfg(target_os = "linux")]
 pub fn sanitize(value: &str) -> String {
     value
         .chars()
@@ -122,6 +135,7 @@ pub fn sanitize(value: &str) -> String {
 /// integer-only fields like `network`'s `uid`/`inode` (the `u64` parse wins
 /// first), but harmless there and required by `loadavg`/`uptime`, whose values
 /// are genuinely fractional.
+#[cfg(target_os = "linux")]
 pub fn json_num(s: &str) -> serde_json::Value {
     use serde_json::json;
     if let Ok(n) = s.parse::<u64>() {
@@ -133,7 +147,7 @@ pub fn json_num(s: &str) -> serde_json::Value {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 

@@ -31,9 +31,10 @@ use std::sync::LazyLock;
 
 use clap::{Parser, Subcommand};
 
-/// Built at startup so optional-domain examples only appear when the
-/// matching cargo feature is enabled. A `--no-default-features` build
-/// would otherwise advertise commands that don't exist in the binary.
+/// Built at startup so optional-domain and OS-gated examples only appear when
+/// the matching cargo feature is enabled / the target supports them. A
+/// `--no-default-features` build on non-Linux would otherwise advertise
+/// commands that don't exist in the binary.
 static QUICK_START: LazyLock<String> = LazyLock::new(|| {
     #[cfg_attr(
         not(any(
@@ -41,7 +42,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
             feature = "lxc",
             feature = "docker",
             feature = "sqlite",
-            feature = "prom"
+            feature = "prom",
+            target_os = "linux"
         )),
         allow(unused_mut)
     )]
@@ -119,6 +121,11 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak nix derivation-show .#hello             A derivation's JSON (passthrough)
   sak nix path-info /nix/store/…-foo          Store path size/deriver/sigs as TSV
   sak nix flake-metadata                      Flake lock freshness / pin as TSV
+  sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
+    );
+    #[cfg(target_os = "linux")]
+    s.push_str(
+        "
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo
@@ -126,8 +133,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak linux uptime --human                    Uptime + idle from /proc/uptime
   sak linux sysctl '^net\\.ipv4\\.'           sysctl knobs from /proc/sys (regex filter)
   sak linux process --all                     Process table from /proc/<pid>
-  sak linux network --state LISTEN            Decoded sockets from /proc/net/*
-  sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
+  sak linux network --state LISTEN            Decoded sockets from /proc/net/*",
     );
     #[cfg(feature = "k8s")]
     s.push_str(
@@ -265,6 +271,7 @@ enum Command {
     #[command(subcommand)]
     Prom(prom::PromCommand),
     /// Linux /proc system-state inspection (read-only, Linux-only)
+    #[cfg(target_os = "linux")]
     #[command(subcommand)]
     Linux(linux::LinuxCommand),
     /// LLM-agent harness integration hooks (read-only command classification)
@@ -297,6 +304,7 @@ fn main() -> ExitCode {
         Command::Sqlite(cmd) => sqlite::run(cmd),
         #[cfg(feature = "prom")]
         Command::Prom(cmd) => prom::run(cmd),
+        #[cfg(target_os = "linux")]
         Command::Linux(cmd) => linux::run(cmd),
         Command::Hook(cmd) => hook::run(cmd),
     };
