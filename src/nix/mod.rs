@@ -36,6 +36,7 @@ pub mod derivation_show;
 pub mod eval;
 pub mod flake_metadata;
 pub mod flake_show;
+pub mod hook;
 pub mod path_info;
 pub mod profile_list;
 pub mod references;

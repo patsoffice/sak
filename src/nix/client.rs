@@ -206,23 +206,37 @@ pub fn nix_store_query(flag: &str, path: &str) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    /// Tokens that must not appear in any `src/nix/*.rs` file other than
-    /// `client.rs`. The directory walk and comment-skip mechanics live in
-    /// [`crate::test_support::assert_no_forbidden_tokens`].
-    ///
-    /// Three strings cover the surface: the two binary names as quoted strings
-    /// ("nix", "nix-store") and the `Command::new(` constructor. The names alone
-    /// would leave loopholes (spawn via a `Command` built from a variable), and
-    /// `Command::new(` alone would let a non-nix `Command` be re-targeted.
-    /// Together, every realistic shell-out path for either binary trips the test.
-    const FORBIDDEN_TOKENS: &[&str] = &["\"nix\"", "\"nix-store\"", "Command::new("];
+    /// Binary-name strings: their only legitimate appearance outside
+    /// `client.rs` is as the `tool:` field of a [`crate::hook::rule::HookRule`]
+    /// in `src/nix/hook.rs`, so that file is exempt. Banning the names alone
+    /// would leave the `Command::new(` loophole — see the next test.
+    const NIX_NAME_TOKENS: &[&str] = &["\"nix\"", "\"nix-store\""];
+
+    /// The `Command::new(` constructor — banned strictly (no `hook.rs`
+    /// exemption) because hook rules are pure data and never spawn
+    /// subprocesses. Banning the names alone would let a `Command` built from
+    /// a variable slip through; banning the constructor alone would let a
+    /// non-nix `Command` be re-targeted. The two assertions together close
+    /// every realistic shell-out path for either binary.
+    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
     #[test]
-    fn no_nix_invocations_outside_client_module() {
+    fn no_nix_name_tokens_outside_client_or_hook() {
+        crate::test_support::assert_no_forbidden_tokens_except(
+            "nix",
+            NIX_NAME_TOKENS,
+            &["client.rs", "hook.rs"],
+            "nix/nix-store name literals must be confined to client.rs (chokepoint) \
+             or hook.rs (HookRule.tool fields)",
+        );
+    }
+
+    #[test]
+    fn no_command_new_outside_client_module() {
         crate::test_support::assert_no_forbidden_tokens(
             "nix",
-            FORBIDDEN_TOKENS,
-            "nix invocations / Command::new must be confined to src/nix/client.rs",
+            COMMAND_NEW_TOKEN,
+            "Command::new(...) must be confined to src/nix/client.rs",
         );
     }
 

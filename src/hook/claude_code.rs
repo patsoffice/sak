@@ -355,6 +355,7 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::config::hook::HOOK_RULES,
         crate::cert::hook::HOOK_RULES,
         crate::hash::hook::HOOK_RULES,
+        crate::nix::hook::HOOK_RULES,
     ]
 }
 
@@ -449,8 +450,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
         "gh" => check_gh(args, &pos),
         "helm" => check_helm(&pos),
-        "nix" => check_nix(args, &pos),
-        "nix-store" => check_nix_store(args),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -616,98 +615,6 @@ fn check_helm(pos: &[&str]) -> Option<String> {
     }
 }
 
-/// `nix` is hierarchical (`nix flake show`, `nix store info`, ...). Reads gain
-/// redirects as their `sak nix` commands land; everything else — and every
-/// mutating verb (`build`, `copy`, `store delete`, `profile install`, `flake
-/// update`, ...) that `sak nix` can't perform — passes through. The first arg
-/// is the verb, the second (when present) the subverb.
-fn check_nix(args: &[String], pos: &[&str]) -> Option<String> {
-    // `nix eval` is read-only-ish, and `sak nix eval` injects `--read-only`.
-    // Redirect only the pure case: leave `--impure` / `--no-pure-eval` evals
-    // alone, since the injected `--read-only` would change their semantics.
-    if pos.first().copied() == Some("eval") {
-        if args
-            .iter()
-            .any(|a| a == "--impure" || a == "--no-pure-eval")
-        {
-            return None;
-        }
-        return block(
-            "Use `sak nix eval [installable] [--expr <e>] [-f <file>]` instead of `nix eval` \
-             (read-only, --json/--raw, --apply).",
-        );
-    }
-    check_nix_subverbs(pos)
-}
-
-/// `nix-store` is the second nix binary; only `--query` reads, and sak covers
-/// the three reference queries. Redirect those; leave every other `--query`
-/// sub-flag and all mutating operations (`--delete`, `--gc`, `--realise`, ...)
-/// alone — sak can't perform them and doesn't shadow those reads yet.
-fn check_nix_store(args: &[String]) -> Option<String> {
-    let has = |f: &str| args.iter().any(|a| a == f);
-    if !has("--query") {
-        return None;
-    }
-    if has("--references") || has("--referrers") || has("--requisites") {
-        return block(
-            "Use `sak nix references <path>` (--referrers / --closure) instead of \
-             `nix-store --query --references/--referrers/--requisites`.",
-        );
-    }
-    // `--info`, `-S`/`--size` map onto path metadata.
-    if has("--info") || has("-S") || has("--size") {
-        return block(
-            "Use `sak nix path-info <path...>` instead of `nix-store --query --info`/`-S` \
-             (TSV path/nar_size/closure_size/deriver/signatures, --closure, --format json).",
-        );
-    }
-    None
-}
-
-fn check_nix_subverbs(pos: &[&str]) -> Option<String> {
-    match (pos.first().copied(), pos.get(1).copied()) {
-        (Some("flake"), Some("show")) => block(
-            "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \
-             (TSV output-path/type/description, --all-systems, --format json).",
-        ),
-        // `nix flake info` is the (deprecated) alias for `nix flake metadata`.
-        (Some("flake"), Some("metadata")) | (Some("flake"), Some("info")) => block(
-            "Use `sak nix flake-metadata [flake-ref]` instead of `nix flake metadata`/`info` \
-             (TSV locked.rev/lastModified/narHash/original.url/path, --field, --format json).",
-        ),
-        // `nix store ping` is the (deprecated) alias for `nix store info`.
-        (Some("store"), Some("info")) | (Some("store"), Some("ping")) => block(
-            "Use `sak nix store-info` instead of `nix store info`/`nix store ping` \
-             (TSV url/version/trusted/..., --field, --store, --format json).",
-        ),
-        // Only `registry list` is a read; `registry add`/`remove`/`pin` mutate
-        // the registry and pass through (sak nix can't perform them).
-        (Some("registry"), Some("list")) => block(
-            "Use `sak nix registry-list` instead of `nix registry list` \
-             (TSV scope/from/to, --scope, --format json).",
-        ),
-        // Only `profile list` is a read; `profile install`/`remove`/`upgrade`/
-        // `rollback`/`wipe-history` mutate the profile and pass through.
-        (Some("profile"), Some("list")) => block(
-            "Use `sak nix profile-list` instead of `nix profile list` \
-             (TSV index/name/store-path/flake-attr, --profile, --format json).",
-        ),
-        // `nix derivation show` and the deprecated top-level `nix show-derivation`
-        // alias both read; `nix derivation add` mutates and passes through.
-        (Some("derivation"), Some("show")) | (Some("show-derivation"), _) => block(
-            "Use `sak nix derivation-show [installable]` instead of `nix derivation show` \
-             (JSON passthrough, --recursive).",
-        ),
-        // `nix path-info` is always a read (no mutating subcommand).
-        (Some("path-info"), _) => block(
-            "Use `sak nix path-info <path...>` instead of `nix path-info` \
-             (TSV path/nar_size/closure_size/deriver/signatures, --closure, --format json).",
-        ),
-        _ => None,
-    }
-}
-
 /// Whether a `gh api` invocation is an HTTP GET — true when no `-X` /
 /// `--method` flag is present (gh's default), or its value is `GET`
 /// (case-insensitive). Mirrors the chokepoint's method detection in
@@ -852,6 +759,8 @@ mod engine_tests {
         assert!(tool_in_registries("openssl"));
         assert!(tool_in_registries("sha256sum"));
         assert!(tool_in_registries("b3sum"));
+        assert!(tool_in_registries("nix"));
+        assert!(tool_in_registries("nix-store"));
         assert!(!tool_in_registries("kubectl"));
         assert!(!tool_in_registries("sqlite3"));
     }
