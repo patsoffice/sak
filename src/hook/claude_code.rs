@@ -348,7 +348,7 @@ fn block(msg: &str) -> Option<String> {
 /// one at a time; until a tool appears in some registry it falls back to the
 /// legacy per-tool `check_*` below.
 fn registries() -> &'static [&'static [HookRule]] {
-    &[crate::fs::hook::HOOK_RULES]
+    &[crate::fs::hook::HOOK_RULES, crate::git::hook::HOOK_RULES]
 }
 
 /// True when some registry owns `tool`. A registry-owned tool's registry result
@@ -441,7 +441,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
         "openssl" => check_openssl(args),
         "sha256sum" | "sha1sum" | "md5sum" | "shasum" | "b3sum" => check_sum(cmd_base),
-        "git" => check_git(args),
         "kubectl" => check_kubectl(&pos),
         "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
@@ -505,89 +504,6 @@ fn check_sum(base: &str) -> Option<String> {
         "Use `sak hash {algo} <file>` instead of `{base}` \
          (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3)."
     ))
-}
-
-fn check_git(args: &[String]) -> Option<String> {
-    // Strip git global flags to find the actual subcommand.
-    let stripped = strip_git_global_flags(args);
-    let sub = stripped.first().map(String::as_str)?;
-    let rest: Vec<&str> = stripped[1..].iter().map(String::as_str).collect();
-
-    match sub {
-        "status" => block("Use `sak git status` instead of `git status`."),
-        "diff" => block(
-            "Use `sak git diff` (--staged, --name-only, --stat, --commit supported) \
-             instead of `git diff`.",
-        ),
-        "log" => block(
-            "Use `sak git log` (--oneline, -n, --author, --grep, --since, -- <path> supported) \
-             instead of `git log`.",
-        ),
-        "show" => block(
-            "Use `sak git show` (--stat, --name-only, --format supported) \
-             instead of `git show`.",
-        ),
-        "blame" => block("Use `sak git blame` (-L 10,20 supported) instead of `git blame`."),
-        "shortlog" => block("Use `sak git contributors` instead of `git shortlog`."),
-        "branch" => {
-            // Listing-only forms: no args, or only list-like flags.
-            let list_flags = [
-                "-a",
-                "--all",
-                "-r",
-                "--remotes",
-                "-l",
-                "--list",
-                "-v",
-                "-vv",
-                "--verbose",
-                "--show-current",
-            ];
-            if rest.is_empty() || rest.iter().all(|a| list_flags.contains(a)) {
-                return block(
-                    "Use `sak git branch` to list branches. \
-                     (`git branch -d/-D/-m/-c/<name>` is allowed.)",
-                );
-            }
-            None
-        }
-        "tag" => {
-            // Listing-only forms.
-            let list_ok = |a: &&str| {
-                matches!(*a, "-l" | "--list" | "-n" | "--column" | "--no-column")
-                    || a.starts_with("-n")
-                    || a.starts_with("--sort")
-            };
-            if rest.is_empty() || rest.iter().all(list_ok) {
-                return block(
-                    "Use `sak git tags` to list tags. \
-                     (`git tag -a/-d <name>` is allowed.)",
-                );
-            }
-            None
-        }
-        "remote" => {
-            if rest.is_empty()
-                || matches!(
-                    rest.first().copied(),
-                    Some("-v" | "--verbose" | "show" | "get-url")
-                )
-            {
-                return block(
-                    "Use `sak git remote` to list remotes. \
-                     (`git remote add/remove/set-url` is allowed.)",
-                );
-            }
-            None
-        }
-        "stash" => {
-            if rest.first().copied() == Some("list") {
-                return block("Use `sak git stash-list` instead of `git stash list`.");
-            }
-            None
-        }
-        _ => None,
-    }
 }
 
 fn check_kubectl(pos: &[&str]) -> Option<String> {
@@ -973,11 +889,12 @@ mod engine_tests {
 
     #[test]
     fn migrated_tools_are_registry_owned_others_fall_back() {
-        // fs has migrated, so its tools are registry-owned and skip the legacy
+        // Migrated domains' tools are registry-owned and skip the legacy
         // fallback; tools whose domains have not migrated still are not.
         assert!(tool_in_registries("cat"));
         assert!(tool_in_registries("tree"));
-        assert!(!tool_in_registries("git"));
+        assert!(tool_in_registries("git"));
         assert!(!tool_in_registries("kubectl"));
+        assert!(!tool_in_registries("sqlite3"));
     }
 }

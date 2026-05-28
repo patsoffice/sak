@@ -2,6 +2,7 @@ pub mod blame;
 pub mod branch;
 pub mod contributors;
 pub mod diff;
+pub mod hook;
 pub mod log;
 pub mod remote;
 pub mod show;
