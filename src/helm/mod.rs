@@ -25,6 +25,7 @@ pub mod client;
 pub mod dependency_list;
 pub mod get;
 pub mod history;
+pub mod hook;
 pub mod lint;
 pub mod list;
 pub mod repo_list;

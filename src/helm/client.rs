@@ -196,23 +196,37 @@ fn allowlist_summary() -> String {
 mod tests {
     use super::*;
 
-    /// Tokens that must not appear in any `src/helm/*.rs` file other than
-    /// `client.rs`. The directory walk and comment-skip mechanics live in
-    /// [`crate::test_support::assert_no_forbidden_tokens`].
-    ///
-    /// Two strings cover the surface: the literal binary name as a quoted
-    /// string ("helm") and the `Command::new(` constructor. Either alone would
-    /// leave loopholes (spawn helm via a `Command` built from a variable, or
-    /// build a non-helm `Command::new` then re-target it). Together, every
-    /// realistic shell-out path trips the test.
-    const FORBIDDEN_TOKENS: &[&str] = &["\"helm\"", "Command::new("];
+    /// Binary-name string: its only legitimate appearance outside
+    /// `client.rs` is as the `tool:` field of a [`crate::hook::rule::HookRule`]
+    /// in `src/helm/hook.rs` and inside that file's static redirect messages
+    /// (which mention "helm" by design), so that file is exempt.
+    const HELM_NAME_TOKEN: &[&str] = &["\"helm\""];
+
+    /// The `Command::new(` constructor — banned strictly (no `hook.rs`
+    /// exemption) because hook rules are pure data and never spawn
+    /// subprocesses. Banning the name alone would leave the variable-built
+    /// `Command` loophole; banning the constructor alone would let a
+    /// non-helm `Command` be re-targeted. The two assertions together close
+    /// every realistic shell-out path.
+    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
     #[test]
-    fn no_helm_invocations_outside_client_module() {
+    fn no_helm_name_token_outside_client_or_hook() {
+        crate::test_support::assert_no_forbidden_tokens_except(
+            "helm",
+            HELM_NAME_TOKEN,
+            &["client.rs", "hook.rs"],
+            "the \"helm\" name literal must be confined to client.rs (chokepoint) \
+             or hook.rs (HookRule.tool fields + redirect messages)",
+        );
+    }
+
+    #[test]
+    fn no_command_new_outside_client_module() {
         crate::test_support::assert_no_forbidden_tokens(
             "helm",
-            FORBIDDEN_TOKENS,
-            "helm invocations / Command::new must be confined to src/helm/client.rs",
+            COMMAND_NEW_TOKEN,
+            "Command::new(...) must be confined to src/helm/client.rs",
         );
     }
 

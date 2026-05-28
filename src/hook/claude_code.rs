@@ -357,6 +357,7 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::hash::hook::HOOK_RULES,
         crate::nix::hook::HOOK_RULES,
         crate::gh::hook::HOOK_RULES,
+        crate::helm::hook::HOOK_RULES,
     ]
 }
 
@@ -449,7 +450,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
-        "helm" => check_helm(&pos),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
         _ => None,
@@ -516,58 +516,6 @@ fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
         Some("image") if matches!(pos.get(1).copied(), Some("list") | Some("ls")) => block(
             &format!("Use `sak lxc images` instead of `{base} image list`."),
         ),
-        _ => None,
-    }
-}
-
-fn check_helm(pos: &[&str]) -> Option<String> {
-    // `helm ls` is an alias for `helm list`. Reads gain redirects as their sak
-    // commands land; the rest still pass through. Mutating verbs (`install`,
-    // `upgrade`, `uninstall`, `repo add`, ...) are never redirected — `sak
-    // helm` can't perform them.
-    match pos.first().copied() {
-        Some("list") | Some("ls") => block(
-            "Use `sak helm list` instead of `helm list`/`helm ls` (TSV/JSON, --status/--filter/-A).",
-        ),
-        Some("status") => block(
-            "Use `sak helm status <release>` instead of `helm status` (TSV/JSON, --revision).",
-        ),
-        Some("get") => block(
-            "Use `sak helm get <release> --what all|manifest|values|notes|hooks` instead of `helm get`.",
-        ),
-        // Every `helm show`/`helm inspect` (deprecated alias) subcommand is a
-        // read — chart/values/readme/crds/all.
-        Some("show") | Some("inspect") => block(
-            "Use `sak helm show <chart> --what all|chart|values|readme|crds` instead of `helm show`.",
-        ),
-        // `helm template` renders locally and never contacts the cluster.
-        Some("template") => block(
-            "Use `sak helm template <chart>` instead of `helm template` (offline render to YAML).",
-        ),
-        Some("lint") => {
-            block("Use `sak helm lint <chart>` instead of `helm lint` (TSV findings + pass/fail).")
-        }
-        // Both `helm search repo` and `helm search hub` are reads.
-        Some("search") => {
-            block("Use `sak helm search <term> --source repo|hub` instead of `helm search`.")
-        }
-        Some("history") | Some("hist") => {
-            block("Use `sak helm history <release>` instead of `helm history` (TSV/JSON, --max).")
-        }
-        // Only `repo list` is a read; `repo add`/`update`/`remove` are writes
-        // sak can't perform, so they pass through.
-        Some("repo") if pos.get(1).copied() == Some("list") => {
-            block("Use `sak helm repo-list` instead of `helm repo list` (TSV/JSON).")
-        }
-        // `dependency` aliases: `dep`, `dependencies`. Only `list` is a read;
-        // `dependency update`/`build` are writes (they fetch + write Chart.lock).
-        Some("dependency") | Some("dependencies") | Some("dep")
-            if pos.get(1).copied() == Some("list") =>
-        {
-            block(
-                "Use `sak helm dependency-list <chart>` instead of `helm dependency list` (TSV/JSON).",
-            )
-        }
         _ => None,
     }
 }
@@ -697,6 +645,7 @@ mod engine_tests {
         assert!(tool_in_registries("nix"));
         assert!(tool_in_registries("nix-store"));
         assert!(tool_in_registries("gh"));
+        assert!(tool_in_registries("helm"));
         assert!(!tool_in_registries("kubectl"));
         assert!(!tool_in_registries("sqlite3"));
     }
