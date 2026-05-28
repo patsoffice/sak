@@ -12,6 +12,7 @@
 //! pure command-string classification.
 
 pub mod claude_code;
+pub mod rule;
 
 #[cfg(test)]
 mod tests;

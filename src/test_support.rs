@@ -14,12 +14,27 @@ use std::path::PathBuf;
 /// Assert that none of `forbidden` appears in any `*.rs` file under
 /// `src/<domain>/` other than `client.rs`.
 ///
-/// `domain` is the directory name beneath `src/` (e.g. `"k8s"`). Lines whose
-/// first non-whitespace characters are `//` (line and doc comments) are
-/// exempt, so the chokepoint can be referenced in documentation without
-/// tripping the test. On any match, panics with a `path:line: forbidden token`
-/// listing prefixed by `summary`.
+/// Thin wrapper over [`assert_no_forbidden_tokens_except`] with `client.rs` as
+/// the sole exempt file — the common case for the mutation-surface chokepoint.
 pub fn assert_no_forbidden_tokens(domain: &str, forbidden: &[&str], summary: &str) {
+    assert_no_forbidden_tokens_except(domain, forbidden, &["client.rs"], summary);
+}
+
+/// Assert that none of `forbidden` appears in any `*.rs` file under
+/// `src/<domain>/` other than the files named in `exempt_files`.
+///
+/// `domain` is the directory name beneath `src/` (e.g. `"k8s"`);
+/// `exempt_files` are bare file names (e.g. `"client.rs"`, `"hook.rs"`) skipped
+/// in the scan. Lines whose first non-whitespace characters are `//` (line and
+/// doc comments) are exempt, so the chokepoint can be referenced in
+/// documentation without tripping the test. On any match, panics with a
+/// `path:line: forbidden token` listing prefixed by `summary`.
+pub fn assert_no_forbidden_tokens_except(
+    domain: &str,
+    forbidden: &[&str],
+    exempt_files: &[&str],
+    summary: &str,
+) {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join(domain);
@@ -31,7 +46,10 @@ pub fn assert_no_forbidden_tokens(domain: &str, forbidden: &[&str], summary: &st
         if path.extension() != Some(OsStr::new("rs")) {
             continue;
         }
-        if path.file_name() == Some(OsStr::new("client.rs")) {
+        if exempt_files
+            .iter()
+            .any(|f| path.file_name() == Some(OsStr::new(f)))
+        {
             continue;
         }
 

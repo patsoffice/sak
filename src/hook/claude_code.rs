@@ -28,6 +28,8 @@ use anyhow::Result;
 use clap::Args;
 use serde::Deserialize;
 
+use super::rule::{self, HookRule};
+
 #[derive(Args)]
 #[command(
     about = "Pre-tool-use hook for Claude Code",
@@ -342,9 +344,96 @@ fn block(msg: &str) -> Option<String> {
     Some(format!("{}{}", msg, BYPASS_HINT))
 }
 
+/// Aggregate every domain's `HOOK_RULES` table. Domains migrate into this list
+/// one at a time; until a tool appears in some registry it falls back to the
+/// legacy per-tool `check_*` below. Empty today — the foundation wires the
+/// engine without migrating any domain, so behavior is unchanged.
+fn registries() -> &'static [&'static [HookRule]] {
+    &[]
+}
+
+/// True when some registry owns `tool`. A registry-owned tool's registry result
+/// is authoritative (block *or* allow) and never falls through to `check_*`, so
+/// a domain migrates by moving its rows into a registry and deleting its
+/// `check_*` arm in the same change.
+fn tool_in_registries(tool: &str) -> bool {
+    registries()
+        .iter()
+        .flat_map(|reg| reg.iter())
+        .any(|r| r.tool == tool)
+}
+
+/// Apply the registries' rules for `tool` to `args`, returning the first
+/// matching rule's message wrapped with the bypass hint. Split from
+/// [`tool_in_registries`] so the engine can be unit-tested against a synthetic
+/// registry without touching the global table.
+fn check_registries(tool: &str, args: &[String]) -> Option<String> {
+    apply_registries(registries(), tool, args)
+}
+
+fn apply_registries(regs: &[&[HookRule]], tool: &str, args: &[String]) -> Option<String> {
+    let normalized = normalize_args(tool, args);
+    let pos = positionals(&normalized);
+    for reg in regs {
+        for r in reg.iter() {
+            if r.tool != tool {
+                continue;
+            }
+            if !rule::subcommand_matches(r.subcommand, &pos) {
+                continue;
+            }
+            if let Some(guard) = r.guard
+                && !guard(&normalized)
+            {
+                continue;
+            }
+            return block(r.message);
+        }
+    }
+    None
+}
+
+/// Tool-specific argument normalization applied before subcommand/guard
+/// matching. Only `git` needs it today — its global flags precede the
+/// subcommand — and every other tool is identity.
+fn normalize_args(tool: &str, args: &[String]) -> Vec<String> {
+    match tool {
+        "git" => strip_git_global_flags(args),
+        _ => args.to_vec(),
+    }
+}
+
+/// Drop git's global flags (`-C <dir>`, `-c <k=v>`, `--git-dir <d>`,
+/// `--work-tree <d>`, `--namespace <n>`) that precede the subcommand, returning
+/// the args from the subcommand onward. Shared by the registry engine and the
+/// legacy `check_git` so the two agree on where the subcommand starts.
+fn strip_git_global_flags(args: &[String]) -> Vec<String> {
+    let mut i = 0;
+    while i < args.len() && args[i].starts_with('-') {
+        let a = &args[i];
+        if matches!(
+            a.as_str(),
+            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace"
+        ) && i + 1 < args.len()
+        {
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    args[i..].to_vec()
+}
+
 fn check(tokens: &[String]) -> Option<String> {
     let cmd_base = basename(&tokens[0]);
     let args: &[String] = &tokens[1..];
+
+    // Per-domain registries take precedence. A registry-owned tool never falls
+    // through to the legacy check_* below.
+    if tool_in_registries(cmd_base) {
+        return check_registries(cmd_base, args);
+    }
+
     let pos = positionals(args);
 
     match cmd_base {
@@ -563,24 +652,9 @@ fn check_sum(base: &str) -> Option<String> {
 
 fn check_git(args: &[String]) -> Option<String> {
     // Strip git global flags to find the actual subcommand.
-    let mut i = 0;
-    while i < args.len() && args[i].starts_with('-') {
-        let a = &args[i];
-        if matches!(
-            a.as_str(),
-            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace"
-        ) && i + 1 < args.len()
-        {
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-    if i >= args.len() {
-        return None;
-    }
-    let sub = args[i].as_str();
-    let rest: Vec<&str> = args[i + 1..].iter().map(String::as_str).collect();
+    let stripped = strip_git_global_flags(args);
+    let sub = stripped.first().map(String::as_str)?;
+    let rest: Vec<&str> = stripped[1..].iter().map(String::as_str).collect();
 
     match sub {
         "status" => block("Use `sak git status` instead of `git status`."),
@@ -967,4 +1041,85 @@ fn check_sysctl(args: &[String]) -> Option<String> {
         return None;
     }
     block("Use `sak linux sysctl [pattern]` instead of `sysctl` for reads.")
+}
+
+#[cfg(test)]
+mod engine_tests {
+    //! Engine-level tests for the declarative-registry path. The global
+    //! `registries()` is empty in the foundation, so these drive
+    //! `apply_registries` against a synthetic table to prove subcommand
+    //! matching, guards, and per-tool normalization work before any domain
+    //! migrates. End-to-end coverage of the real (still-legacy) rules lives in
+    //! `super::super::tests`.
+    use super::*;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn has_no_dashes(args: &[String]) -> bool {
+        args.iter().all(|a| !a.starts_with('-'))
+    }
+
+    const DEMO: &[HookRule] = &[
+        HookRule {
+            tool: "demo",
+            subcommand: &[&["list"], &["ls"]],
+            guard: None,
+            message: "Use `sak demo list`.",
+        },
+        // Conditional rule: only fires when no flags are present.
+        HookRule {
+            tool: "demo",
+            subcommand: &[&["plain"]],
+            guard: Some(has_no_dashes),
+            message: "Use `sak demo plain`.",
+        },
+    ];
+
+    #[test]
+    fn subcommand_alternatives_block_and_carry_message() {
+        assert_eq!(
+            apply_registries(&[DEMO], "demo", &args(&["list"])),
+            Some(format!("Use `sak demo list`.{BYPASS_HINT}"))
+        );
+        assert!(apply_registries(&[DEMO], "demo", &args(&["ls", "-A"])).is_some());
+    }
+
+    #[test]
+    fn unmatched_subcommand_returns_none() {
+        assert!(apply_registries(&[DEMO], "demo", &args(&["status"])).is_none());
+        // A different tool is never matched by this registry.
+        assert!(apply_registries(&[DEMO], "other", &args(&["list"])).is_none());
+    }
+
+    #[test]
+    fn guard_gates_the_match() {
+        assert!(apply_registries(&[DEMO], "demo", &args(&["plain"])).is_some());
+        // Same subcommand, but the guard rejects the flagged form.
+        assert!(apply_registries(&[DEMO], "demo", &args(&["plain", "--force"])).is_none());
+    }
+
+    #[test]
+    fn git_normalization_strips_global_flags_before_matching() {
+        const G: &[HookRule] = &[HookRule {
+            tool: "git",
+            subcommand: &[&["status"]],
+            guard: None,
+            message: "Use `sak git status`.",
+        }];
+        // `-C /tmp` precedes the subcommand; normalize_args drops it so the
+        // `status` prefix still matches.
+        assert!(apply_registries(&[G], "git", &args(&["-C", "/tmp", "status"])).is_some());
+        assert!(apply_registries(&[G], "git", &args(&["status"])).is_some());
+    }
+
+    #[test]
+    fn global_registries_are_empty_so_nothing_is_owned() {
+        // Foundation invariant: no domain has migrated, so the legacy fallback
+        // still owns every tool.
+        assert!(!tool_in_registries("git"));
+        assert!(!tool_in_registries("kubectl"));
+        assert!(registries().is_empty());
+    }
 }
