@@ -4,6 +4,7 @@ pub mod find;
 pub mod glob;
 pub mod grep;
 pub mod head;
+pub mod hook;
 pub mod largest;
 pub mod read;
 pub mod size;

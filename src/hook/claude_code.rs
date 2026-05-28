@@ -346,10 +346,9 @@ fn block(msg: &str) -> Option<String> {
 
 /// Aggregate every domain's `HOOK_RULES` table. Domains migrate into this list
 /// one at a time; until a tool appears in some registry it falls back to the
-/// legacy per-tool `check_*` below. Empty today — the foundation wires the
-/// engine without migrating any domain, so behavior is unchanged.
+/// legacy per-tool `check_*` below.
 fn registries() -> &'static [&'static [HookRule]] {
-    &[]
+    &[crate::fs::hook::HOOK_RULES]
 }
 
 /// True when some registry owns `tool`. A registry-owned tool's registry result
@@ -437,15 +436,6 @@ fn check(tokens: &[String]) -> Option<String> {
     let pos = positionals(args);
 
     match cmd_base {
-        "cat" | "head" | "tail" => check_cat(cmd_base, args, &pos),
-        "grep" | "egrep" | "fgrep" => check_grep(cmd_base, args, &pos),
-        "rg" | "ripgrep" => block(&format!(
-            "Use `sak fs grep <pattern> <path>` instead of `{cmd_base}`."
-        )),
-        "find" => check_find(args),
-        "tree" => check_tree(&pos),
-        "stat" => check_stat(&pos),
-        "wc" => check_wc(&pos),
         "jq" => check_jq(&pos),
         "yq" | "tomlq" => check_yq(cmd_base, &pos),
         "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
@@ -464,139 +454,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "sysctl" => check_sysctl(args),
         _ => None,
     }
-}
-
-fn check_cat(base: &str, args: &[String], pos: &[&str]) -> Option<String> {
-    // Heredoc (`<<EOF`) means stdin, not a file — allow.
-    if args.iter().any(|a| a.contains("<<")) {
-        return None;
-    }
-    // `head`/`tail` take a value after `-c`/`-n`/`--bytes`/`--lines`. The shared
-    // `positionals()` helper doesn't know that, so it would mistake the value in
-    // `head -c 200` (a stdin read) for a filename and wrongly redirect it.
-    // Recompute file args for those two bases, skipping the consumed value.
-    let file_args: Vec<&str> = match base {
-        "head" | "tail" => headtail_file_args(args),
-        _ => pos.to_vec(),
-    };
-    if file_args.is_empty() {
-        return None;
-    }
-    // `head`/`tail` have dedicated, more ergonomic sak commands; `cat` maps to
-    // `read`. `tail -f` (follow) has no read-only sak equivalent, but it's still
-    // a read, so steer it to `sak fs tail` like the rest.
-    match base {
-        "head" => {
-            block("Use `sak fs head <file> [n]` instead of `head` (--bytes N, --no-line-numbers).")
-        }
-        "tail" => {
-            block("Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers).")
-        }
-        _ => block(
-            "Use `sak fs read <file>` instead of `cat` for reading files. \
-             Ranges: `-n 1-50` (lines), `-n -20` (last 20).",
-        ),
-    }
-}
-
-/// File-argument positionals for `head`/`tail`, skipping the value consumed by a
-/// *separated* `-c`/`-n`/`--bytes`/`--lines` flag (the `200` in `head -c 200`).
-/// Combined / inline forms (`-c200`, `-20`, `--bytes=200`) are single
-/// dash-prefixed tokens already dropped by the leading-`-` filter, so only the
-/// separated case needs special handling.
-fn headtail_file_args(args: &[String]) -> Vec<&str> {
-    const VALUE_FLAGS: &[&str] = &["-c", "-n", "--bytes", "--lines"];
-    let mut files = Vec::new();
-    let mut skip_value = false;
-    for a in args {
-        if skip_value {
-            skip_value = false;
-            continue;
-        }
-        if VALUE_FLAGS.contains(&a.as_str()) {
-            skip_value = true;
-            continue;
-        }
-        if a.starts_with('-') {
-            continue;
-        }
-        files.push(a.as_str());
-    }
-    files
-}
-
-/// `tree` is always a read — redirect every invocation to `sak fs tree`.
-fn check_tree(_pos: &[&str]) -> Option<String> {
-    block(
-        "Use `sak fs tree [path]` instead of `tree` \
-         (--max-depth N, --dirs-only, --hidden).",
-    )
-}
-
-/// `stat` is always a read — redirect when given a path (bare `stat` is a usage
-/// error, nothing to redirect).
-fn check_stat(pos: &[&str]) -> Option<String> {
-    if pos.is_empty() {
-        return None;
-    }
-    block("Use `sak fs stat <path...>` instead of `stat` (--format json).")
-}
-
-/// `wc` reading files maps to `sak fs wc`; a bare `wc` (or piped stdin) reads
-/// standard input and has nothing to redirect.
-fn check_wc(pos: &[&str]) -> Option<String> {
-    if pos.is_empty() {
-        return None;
-    }
-    block("Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes).")
-}
-
-fn check_grep(_base: &str, args: &[String], pos: &[&str]) -> Option<String> {
-    let recursive = args.iter().any(|a| {
-        a == "-r"
-            || a == "-R"
-            || a == "--recursive"
-            || (a.starts_with('-') && !a.starts_with("--") && a.contains('r'))
-            || (a.starts_with('-') && !a.starts_with("--") && a.contains('R'))
-    });
-    if recursive || pos.len() >= 2 {
-        return block(
-            "Use `sak fs grep <pattern> <path>` instead of `grep`. \
-             Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline. \
-             If you're spelunking a dump (a diff, JSON, issue text) for a fact, \
-             query the source instead (br show <id>, sak json/git) rather than \
-             grepping raw text; to drop a command's stderr noise use 2>/dev/null, \
-             not a grep filter.",
-        );
-    }
-    None
-}
-
-fn check_find(args: &[String]) -> Option<String> {
-    let write_flags = [
-        "-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprintf",
-    ];
-    if args.iter().any(|a| write_flags.contains(&a.as_str())) {
-        return None;
-    }
-    // A `find` with metadata predicates (-size/-mtime/-type) maps to `sak fs
-    // find`; a name-only search maps to `sak fs glob`. Mention both.
-    let by_metadata = args.iter().any(|a| {
-        matches!(
-            a.as_str(),
-            "-size" | "-mtime" | "-mmin" | "-newer" | "-type"
-        )
-    });
-    if by_metadata {
-        return block(
-            "Use `sak fs find <path>` instead of `find` for metadata searches \
-             (--size +1M, --mtime -7d, --type f|d|l, --name <glob>).",
-        );
-    }
-    block(
-        "Use `sak fs glob '<pattern>'` instead of `find` for name searches \
-         (or `sak fs find <path>` to filter by --size/--mtime/--type).",
-    )
 }
 
 fn check_jq(pos: &[&str]) -> Option<String> {
@@ -1115,11 +972,12 @@ mod engine_tests {
     }
 
     #[test]
-    fn global_registries_are_empty_so_nothing_is_owned() {
-        // Foundation invariant: no domain has migrated, so the legacy fallback
-        // still owns every tool.
+    fn migrated_tools_are_registry_owned_others_fall_back() {
+        // fs has migrated, so its tools are registry-owned and skip the legacy
+        // fallback; tools whose domains have not migrated still are not.
+        assert!(tool_in_registries("cat"));
+        assert!(tool_in_registries("tree"));
         assert!(!tool_in_registries("git"));
         assert!(!tool_in_registries("kubectl"));
-        assert!(registries().is_empty());
     }
 }
