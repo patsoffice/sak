@@ -434,6 +434,14 @@ fn nix_flake_show_blocks() {
 }
 
 #[test]
+fn nix_flake_metadata_blocks() {
+    assert!(blocks("nix flake metadata"));
+    assert!(blocks("nix flake metadata github:nixos/nixpkgs"));
+    // Deprecated alias.
+    assert!(blocks("nix flake info"));
+}
+
+#[test]
 fn nix_store_info_blocks() {
     assert!(blocks("nix store info"));
     assert!(blocks("nix store info --store https://cache.nixos.org"));
@@ -522,11 +530,10 @@ fn nix_writes_and_unshadowed_allow() {
     assert!(allows("nix copy --to ssh://host /nix/store/abc"));
     assert!(allows("nix flake update"));
     assert!(allows("nix store delete /nix/store/abc"));
-    // Reads without a sak equivalent yet pass through until their command lands.
-    assert!(allows("nix flake metadata"));
-    // `flake` with a non-show subverb is not the shadowed read; `store` with a
+    // `flake` with an unshadowed subverb passes through; `store` with a
     // non-info/ping subverb (e.g. `gc`, `optimise`) passes through too.
     assert!(allows("nix flake check"));
+    assert!(allows("nix flake lock"));
     assert!(allows("nix store gc"));
     assert!(allows("nix store optimise"));
     // `registry` mutations pass through; only `registry list` is shadowed.

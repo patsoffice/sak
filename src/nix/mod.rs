@@ -34,6 +34,7 @@
 pub mod client;
 pub mod derivation_show;
 pub mod eval;
+pub mod flake_metadata;
 pub mod flake_show;
 pub mod path_info;
 pub mod profile_list;
@@ -59,6 +60,7 @@ pub enum NixCommand {
     References(references::ReferencesArgs),
     DerivationShow(derivation_show::DerivationShowArgs),
     PathInfo(path_info::PathInfoArgs),
+    FlakeMetadata(flake_metadata::FlakeMetadataArgs),
 }
 
 pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
@@ -71,6 +73,7 @@ pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
         NixCommand::References(args) => references::run(args),
         NixCommand::DerivationShow(args) => derivation_show::run(args),
         NixCommand::PathInfo(args) => path_info::run(args),
+        NixCommand::FlakeMetadata(args) => flake_metadata::run(args),
     }
 }
 

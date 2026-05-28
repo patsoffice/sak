@@ -118,6 +118,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak nix references /nix/store/…-foo         Store path refs / referrers / closure
   sak nix derivation-show .#hello             A derivation's JSON (passthrough)
   sak nix path-info /nix/store/…-foo          Store path size/deriver/sigs as TSV
+  sak nix flake-metadata                      Flake lock freshness / pin as TSV
   sak linux cpuinfo                           Parsed /proc/cpuinfo, one row per CPU
   sak linux meminfo                           Parsed /proc/meminfo as key<TAB>value_kb
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo

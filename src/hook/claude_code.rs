@@ -873,6 +873,11 @@ fn check_nix_subverbs(pos: &[&str]) -> Option<String> {
             "Use `sak nix flake-show [flake-ref]` instead of `nix flake show` \
              (TSV output-path/type/description, --all-systems, --format json).",
         ),
+        // `nix flake info` is the (deprecated) alias for `nix flake metadata`.
+        (Some("flake"), Some("metadata")) | (Some("flake"), Some("info")) => block(
+            "Use `sak nix flake-metadata [flake-ref]` instead of `nix flake metadata`/`info` \
+             (TSV locked.rev/lastModified/narHash/original.url/path, --field, --format json).",
+        ),
         // `nix store ping` is the (deprecated) alias for `nix store info`.
         (Some("store"), Some("info")) | (Some("store"), Some("ping")) => block(
             "Use `sak nix store-info` instead of `nix store info`/`nix store ping` \
