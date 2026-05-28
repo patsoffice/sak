@@ -21,6 +21,7 @@
 pub mod client;
 pub mod count;
 pub mod dump;
+pub mod hook;
 pub mod info;
 pub mod query;
 pub mod schema;

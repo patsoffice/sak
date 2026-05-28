@@ -20,6 +20,7 @@
 
 pub mod client;
 pub mod config;
+pub mod hook;
 pub mod images;
 pub mod info;
 pub mod list;

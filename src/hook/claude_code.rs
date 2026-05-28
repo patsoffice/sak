@@ -344,9 +344,12 @@ fn block(msg: &str) -> Option<String> {
     Some(format!("{}{}", msg, BYPASS_HINT))
 }
 
-/// Aggregate every domain's `HOOK_RULES` table. Domains migrate into this list
-/// one at a time; until a tool appears in some registry it falls back to the
-/// legacy per-tool `check_*` below.
+/// Aggregate every domain's `HOOK_RULES` table. The always-on domains
+/// (`fs`, `git`, `json`, `config`, `cert`, `hash`, `nix`, `gh`, `helm`,
+/// `talos`, `linux`) are listed unconditionally; the cargo-feature-gated
+/// domains (`k8s`, `docker`, `lxc`, `sqlite`) are `#[cfg]` per-element so a
+/// `--no-default-features` binary drops their rules entirely — it never
+/// suggests a command it doesn't ship.
 fn registries() -> &'static [&'static [HookRule]] {
     &[
         crate::fs::hook::HOOK_RULES,
@@ -360,13 +363,22 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::helm::hook::HOOK_RULES,
         crate::talos::hook::HOOK_RULES,
         crate::linux::hook::HOOK_RULES,
+        #[cfg(feature = "k8s")]
+        crate::k8s::hook::HOOK_RULES,
+        #[cfg(feature = "docker")]
+        crate::docker::hook::HOOK_RULES,
+        #[cfg(feature = "lxc")]
+        crate::lxc::hook::HOOK_RULES,
+        #[cfg(feature = "sqlite")]
+        crate::sqlite::hook::HOOK_RULES,
     ]
 }
 
-/// True when some registry owns `tool`. A registry-owned tool's registry result
-/// is authoritative (block *or* allow) and never falls through to `check_*`, so
-/// a domain migrates by moving its rows into a registry and deleting its
-/// `check_*` arm in the same change.
+/// True when some registry owns `tool`. Test-only invariant helper now that
+/// the legacy fallback is gone: the engine no longer branches on ownership
+/// (every classify goes through [`check_registries`]), but tests still want
+/// to assert which tools are wired in.
+#[cfg(test)]
 fn tool_in_registries(tool: &str) -> bool {
     registries()
         .iter()
@@ -435,95 +447,12 @@ fn strip_git_global_flags(args: &[String]) -> Vec<String> {
     args[i..].to_vec()
 }
 
+/// Classify a single command's tokens (post env-stripping). With every
+/// domain migrated, this is now a thin wrapper over the registry engine —
+/// the legacy per-tool `check_*` fallback that used to sit here is gone.
 fn check(tokens: &[String]) -> Option<String> {
     let cmd_base = basename(&tokens[0]);
-    let args: &[String] = &tokens[1..];
-
-    // Per-domain registries take precedence. A registry-owned tool never falls
-    // through to the legacy check_* below.
-    if tool_in_registries(cmd_base) {
-        return check_registries(cmd_base, args);
-    }
-
-    let pos = positionals(args);
-
-    match cmd_base {
-        "kubectl" => check_kubectl(&pos),
-        "docker" => check_docker(&pos),
-        "lxc" | "incus" => check_lxc(cmd_base, &pos),
-        "sqlite3" => check_sqlite(args),
-        _ => None,
-    }
-}
-
-fn check_kubectl(pos: &[&str]) -> Option<String> {
-    match pos.first().copied() {
-        Some("get") | Some("describe") | Some("logs") | Some("events") => {
-            let sub = pos[0];
-            block(&format!(
-                "Use `sak k8s {sub}` instead of `kubectl {sub}`. \
-                 Also: sak k8s failing/pending/restarts/images/contexts/kinds/schema."
-            ))
-        }
-        // `kubectl api-resources` → `sak k8s kinds`
-        Some("api-resources") => block("Use `sak k8s kinds` instead of `kubectl api-resources`."),
-        // `kubectl explain` → `sak k8s schema`
-        Some("explain") => {
-            block("Use `sak k8s schema <group/version/Kind>` instead of `kubectl explain`.")
-        }
-        // `kubectl config get-contexts` → `sak k8s contexts`
-        Some("config") if pos.get(1).copied() == Some("get-contexts") => {
-            block("Use `sak k8s contexts` instead of `kubectl config get-contexts`.")
-        }
-        _ => None,
-    }
-}
-
-fn check_docker(pos: &[&str]) -> Option<String> {
-    match pos.first().copied() {
-        Some("ps") => block("Use `sak docker list` instead of `docker ps`."),
-        Some("images") => block("Use `sak docker images` instead of `docker images`."),
-        Some("inspect") => block(
-            "Use `sak docker info <container>` or `sak docker config <container>` \
-             instead of `docker inspect`.",
-        ),
-        _ => None,
-    }
-}
-
-fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
-    match pos.first().copied() {
-        Some("list") => block(&format!("Use `sak lxc list` instead of `{base} list`.")),
-        Some("info") => block(&format!(
-            "Use `sak lxc info <instance>` instead of `{base} info`."
-        )),
-        Some("config") if pos.get(1).copied() == Some("show") => block(&format!(
-            "Use `sak lxc config <instance>` instead of `{base} config show`."
-        )),
-        Some("image") if matches!(pos.get(1).copied(), Some("list") | Some("ls")) => block(
-            &format!("Use `sak lxc images` instead of `{base} image list`."),
-        ),
-        _ => None,
-    }
-}
-
-fn check_sqlite(args: &[String]) -> Option<String> {
-    let joined = args.join(" ").to_lowercase();
-    let markers = [
-        ".tables",
-        ".schema",
-        ".dump",
-        ".indexes",
-        ".databases",
-        "select ",
-    ];
-    if markers.iter().any(|m| joined.contains(m)) {
-        return block(
-            "Use `sak sqlite tables/schema/count/query/dump/info <db>` \
-             instead of `sqlite3` for reads.",
-        );
-    }
-    None
+    check_registries(cmd_base, &tokens[1..])
 }
 
 #[cfg(test)]
@@ -598,9 +527,9 @@ mod engine_tests {
     }
 
     #[test]
-    fn migrated_tools_are_registry_owned_others_fall_back() {
-        // Migrated domains' tools are registry-owned and skip the legacy
-        // fallback; tools whose domains have not migrated still are not.
+    fn always_on_domain_tools_are_owned() {
+        // Tools from always-on domains are in the registry regardless of
+        // cargo features.
         assert!(tool_in_registries("cat"));
         assert!(tool_in_registries("tree"));
         assert!(tool_in_registries("git"));
@@ -617,7 +546,56 @@ mod engine_tests {
         assert!(tool_in_registries("helm"));
         assert!(tool_in_registries("talosctl"));
         assert!(tool_in_registries("sysctl"));
+    }
+
+    /// Feature-gated tools are owned only when their cargo feature is on.
+    /// The matching pair below covers the lean-build path. This is the
+    /// invariant the whole registry epic exists to enable: a
+    /// `--no-default-features` binary doesn't suggest commands it doesn't
+    /// ship.
+    #[cfg(feature = "k8s")]
+    #[test]
+    fn k8s_tool_owned_when_feature_on() {
+        assert!(tool_in_registries("kubectl"));
+    }
+    #[cfg(not(feature = "k8s"))]
+    #[test]
+    fn k8s_tool_not_owned_when_feature_off() {
         assert!(!tool_in_registries("kubectl"));
+    }
+
+    #[cfg(feature = "docker")]
+    #[test]
+    fn docker_tool_owned_when_feature_on() {
+        assert!(tool_in_registries("docker"));
+    }
+    #[cfg(not(feature = "docker"))]
+    #[test]
+    fn docker_tool_not_owned_when_feature_off() {
+        assert!(!tool_in_registries("docker"));
+    }
+
+    #[cfg(feature = "lxc")]
+    #[test]
+    fn lxc_tools_owned_when_feature_on() {
+        assert!(tool_in_registries("lxc"));
+        assert!(tool_in_registries("incus"));
+    }
+    #[cfg(not(feature = "lxc"))]
+    #[test]
+    fn lxc_tools_not_owned_when_feature_off() {
+        assert!(!tool_in_registries("lxc"));
+        assert!(!tool_in_registries("incus"));
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_tool_owned_when_feature_on() {
+        assert!(tool_in_registries("sqlite3"));
+    }
+    #[cfg(not(feature = "sqlite"))]
+    #[test]
+    fn sqlite_tool_not_owned_when_feature_off() {
         assert!(!tool_in_registries("sqlite3"));
     }
 }

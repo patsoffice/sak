@@ -124,7 +124,13 @@ fn git_with_global_flags() {
 }
 
 // ── kubectl ───────────────────────────────────────────────────
+//
+// Block assertions are gated on `feature = "k8s"`; with the feature off the
+// rules are absent from `registries()` and these commands pass through
+// (asserted by `kubectl_reads_allow_in_lean_build` below). Write
+// assertions need no gating — writes pass through in both builds.
 
+#[cfg(feature = "k8s")]
 #[test]
 fn kubectl_reads_block() {
     assert!(blocks("kubectl get pods"));
@@ -134,6 +140,19 @@ fn kubectl_reads_block() {
     assert!(blocks("kubectl api-resources"));
     assert!(blocks("kubectl explain pod"));
     assert!(blocks("kubectl config get-contexts"));
+}
+
+#[cfg(not(feature = "k8s"))]
+#[test]
+fn kubectl_reads_allow_in_lean_build() {
+    // Lean-build regression: a `--no-default-features` binary doesn't ship
+    // `sak k8s`, so it must not suggest it for `kubectl get` either.
+    assert!(allows("kubectl get pods"));
+    assert!(allows("kubectl describe deploy foo"));
+    assert!(allows("kubectl logs pod-x"));
+    assert!(allows("kubectl api-resources"));
+    assert!(allows("kubectl explain pod"));
+    assert!(allows("kubectl config get-contexts"));
 }
 
 #[test]
@@ -165,12 +184,24 @@ fn talosctl_writes_allow() {
 }
 
 // ── docker ────────────────────────────────────────────────────
+//
+// Same gating shape as kubectl: block assertions need `feature = "docker"`,
+// writes pass through unconditionally.
 
+#[cfg(feature = "docker")]
 #[test]
 fn docker_reads_block() {
     assert!(blocks("docker ps"));
     assert!(blocks("docker images"));
     assert!(blocks("docker inspect foo"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_reads_allow_in_lean_build() {
+    assert!(allows("docker ps"));
+    assert!(allows("docker images"));
+    assert!(allows("docker inspect foo"));
 }
 
 #[test]
@@ -185,7 +216,11 @@ fn docker_writes_allow() {
 }
 
 // ── lxc / incus ───────────────────────────────────────────────
+//
+// Both `lxc` and `incus` are gated on `feature = "lxc"` (they share the
+// same domain and chokepoint). Writes pass through unconditionally.
 
+#[cfg(feature = "lxc")]
 #[test]
 fn lxc_reads_block() {
     assert!(blocks("lxc list"));
@@ -195,6 +230,17 @@ fn lxc_reads_block() {
     assert!(blocks("lxc image ls"));
     assert!(blocks("incus list"));
     assert!(blocks("incus info my-ct"));
+}
+
+#[cfg(not(feature = "lxc"))]
+#[test]
+fn lxc_reads_allow_in_lean_build() {
+    assert!(allows("lxc list"));
+    assert!(allows("lxc info my-ct"));
+    assert!(allows("lxc config show my-ct"));
+    assert!(allows("lxc image list"));
+    assert!(allows("incus list"));
+    assert!(allows("incus info my-ct"));
 }
 
 #[test]
@@ -775,13 +821,27 @@ fn sum_tools_suggest_matching_algo() {
 }
 
 // ── sqlite3 ───────────────────────────────────────────────────
+//
+// Gated on `feature = "sqlite"`. Writes pass through unconditionally
+// (sqlite mutations like INSERT/CREATE never have a read marker, so the
+// guard rejects them in both builds).
 
+#[cfg(feature = "sqlite")]
 #[test]
 fn sqlite_reads_block() {
     assert!(blocks("sqlite3 db.sqlite .tables"));
     assert!(blocks("sqlite3 db.sqlite .schema"));
     assert!(blocks("sqlite3 db.sqlite .dump users"));
     assert!(blocks("sqlite3 db.sqlite \"SELECT * FROM users\""));
+}
+
+#[cfg(not(feature = "sqlite"))]
+#[test]
+fn sqlite_reads_allow_in_lean_build() {
+    assert!(allows("sqlite3 db.sqlite .tables"));
+    assert!(allows("sqlite3 db.sqlite .schema"));
+    assert!(allows("sqlite3 db.sqlite .dump users"));
+    assert!(allows("sqlite3 db.sqlite \"SELECT * FROM users\""));
 }
 
 #[test]

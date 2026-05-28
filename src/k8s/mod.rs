@@ -28,6 +28,7 @@ pub mod env;
 pub mod events;
 pub mod failing;
 pub mod get;
+pub mod hook;
 pub mod images;
 pub mod kinds;
 pub mod logs;
