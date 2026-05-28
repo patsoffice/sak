@@ -284,40 +284,35 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Per-arm `.map(Outcome::exit_code)` adapters keep the `match` expression
-    // uniform while domains migrate from `Result<ExitCode>` to `Result<Outcome>`
-    // incrementally. The cleanup phase removes the adapters once every domain
-    // has migrated, collapsing the trailing `match result` arm to call
-    // `outcome.exit_code()` directly.
-    let result = match &cli.command {
-        Command::Fs(cmd) => fs::run(cmd).map(Outcome::exit_code),
-        Command::Git(cmd) => git::run(cmd).map(Outcome::exit_code),
-        Command::Json(cmd) => json::run(cmd).map(Outcome::exit_code),
-        Command::Config(cmd) => config::run(cmd).map(Outcome::exit_code),
-        Command::Csv(cmd) => csv::run(cmd).map(Outcome::exit_code),
-        Command::Cert(cmd) => cert::run(cmd).map(Outcome::exit_code),
-        Command::Hash(cmd) => hash::run(cmd).map(Outcome::exit_code),
-        Command::Talos(cmd) => talos::run(cmd).map(Outcome::exit_code),
-        Command::Gh(cmd) => gh::run(cmd).map(Outcome::exit_code),
-        Command::Helm(cmd) => helm::run(cmd).map(Outcome::exit_code),
-        Command::Nix(cmd) => nix::run(cmd).map(Outcome::exit_code),
+    let result: anyhow::Result<Outcome> = match &cli.command {
+        Command::Fs(cmd) => fs::run(cmd),
+        Command::Git(cmd) => git::run(cmd),
+        Command::Json(cmd) => json::run(cmd),
+        Command::Config(cmd) => config::run(cmd),
+        Command::Csv(cmd) => csv::run(cmd),
+        Command::Cert(cmd) => cert::run(cmd),
+        Command::Hash(cmd) => hash::run(cmd),
+        Command::Talos(cmd) => talos::run(cmd),
+        Command::Gh(cmd) => gh::run(cmd),
+        Command::Helm(cmd) => helm::run(cmd),
+        Command::Nix(cmd) => nix::run(cmd),
         #[cfg(feature = "k8s")]
-        Command::K8s(cmd) => k8s::run(cmd).map(Outcome::exit_code),
+        Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]
-        Command::Lxc(cmd) => lxc::run(cmd).map(Outcome::exit_code),
+        Command::Lxc(cmd) => lxc::run(cmd),
         #[cfg(feature = "docker")]
-        Command::Docker(cmd) => docker::run(cmd).map(Outcome::exit_code),
+        Command::Docker(cmd) => docker::run(cmd),
         #[cfg(feature = "sqlite")]
-        Command::Sqlite(cmd) => sqlite::run(cmd).map(Outcome::exit_code),
+        Command::Sqlite(cmd) => sqlite::run(cmd),
         #[cfg(feature = "prom")]
-        Command::Prom(cmd) => prom::run(cmd).map(Outcome::exit_code),
+        Command::Prom(cmd) => prom::run(cmd),
         #[cfg(target_os = "linux")]
-        Command::Linux(cmd) => linux::run(cmd).map(Outcome::exit_code),
+        Command::Linux(cmd) => linux::run(cmd),
         Command::Hook(cmd) => hook::run(cmd),
     };
 
     match result {
-        Ok(code) => code,
+        Ok(outcome) => outcome.exit_code(),
         Err(e) => {
             eprintln!("sak: error: {:#}", e);
             ExitCode::from(2)

@@ -22,11 +22,12 @@
 //! ```
 
 use std::io::{self, Read};
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
 use serde::Deserialize;
+
+use crate::output::Outcome;
 
 use super::rule::{self, HookRule};
 
@@ -81,9 +82,18 @@ struct ToolInput {
     command: String,
 }
 
-pub fn run(args: &ClaudeCodeArgs) -> Result<ExitCode> {
+// Claude Code's pre-tool-use hook protocol uses exit codes as decision
+// signals, not as result-found indicators:
+//   - exit 0 → allow the tool call (we re-use Outcome::Found for its `0`)
+//   - exit 2 → block + the stderr message is fed back to the model
+//     (we re-use Outcome::Partial for its `2`)
+// The variant names are the wrong shape for hook semantics — nothing was
+// "found" or "partial". They're picked here purely for their exit_code()
+// mapping. The alternative would have been a fourth Outcome variant just
+// for hook, which we explicitly didn't add.
+pub fn run(args: &ClaudeCodeArgs) -> Result<Outcome> {
     if std::env::var("SAK_HOOK_BYPASS").as_deref() == Ok("1") {
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     let command = match &args.check {
@@ -93,31 +103,31 @@ pub fn run(args: &ClaudeCodeArgs) -> Result<ExitCode> {
             io::stdin().read_to_string(&mut buf)?;
             // Empty stdin → nothing to check.
             if buf.trim().is_empty() {
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
             let payload: HookPayload = match serde_json::from_str(&buf) {
                 Ok(p) => p,
                 // Malformed JSON shouldn't block real work — fail open.
-                Err(_) => return Ok(ExitCode::SUCCESS),
+                Err(_) => return Ok(Outcome::Found),
             };
             // Only intercept Bash tool calls.
             if payload.tool_name != "Bash" {
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
             payload.tool_input.command
         }
     };
 
     if command.trim().is_empty() {
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     if let Some(msg) = classify(&command) {
         eprintln!("{}", msg);
-        return Ok(ExitCode::from(2));
+        return Ok(Outcome::Partial);
     }
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 const BYPASS_HINT: &str = " Set SAK_HOOK_BYPASS=1 to override.";

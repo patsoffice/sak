@@ -17,10 +17,10 @@ pub mod rule;
 #[cfg(test)]
 mod tests;
 
-use std::process::ExitCode;
-
 use anyhow::Result;
 use clap::Subcommand;
+
+use crate::output::Outcome;
 
 #[derive(Subcommand)]
 pub enum HookCommand {
@@ -29,7 +29,7 @@ pub enum HookCommand {
     ClaudeCode(claude_code::ClaudeCodeArgs),
 }
 
-pub fn run(cmd: &HookCommand) -> Result<ExitCode> {
+pub fn run(cmd: &HookCommand) -> Result<Outcome> {
     match cmd {
         HookCommand::ClaudeCode(args) => claude_code::run(args),
     }
