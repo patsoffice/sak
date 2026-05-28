@@ -356,6 +356,7 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::cert::hook::HOOK_RULES,
         crate::hash::hook::HOOK_RULES,
         crate::nix::hook::HOOK_RULES,
+        crate::gh::hook::HOOK_RULES,
     ]
 }
 
@@ -448,7 +449,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
         "lxc" | "incus" => check_lxc(cmd_base, &pos),
-        "gh" => check_gh(args, &pos),
         "helm" => check_helm(&pos),
         "sqlite3" => check_sqlite(args),
         "sysctl" => check_sysctl(args),
@@ -520,49 +520,6 @@ fn check_lxc(base: &str, pos: &[&str]) -> Option<String> {
     }
 }
 
-fn check_gh(args: &[String], pos: &[&str]) -> Option<String> {
-    match (pos.first().copied(), pos.get(1).copied()) {
-        // Only redirect GET reads. A non-GET `gh api` means the caller wants a
-        // write that `sak gh` deliberately can't perform, so it passes through
-        // to real `gh`. (Other read verbs get their own redirects as those
-        // commands land.)
-        (Some("api"), _) if gh_api_method_is_get(args) => {
-            block("Use `sak gh api <endpoint>` instead of `gh api` for GET requests.")
-        }
-        (Some("pr"), Some("list")) => {
-            block("Use `sak gh pr-list` instead of `gh pr list` (TSV/JSON, --fields forwarded).")
-        }
-        (Some("pr"), Some("view")) => {
-            block("Use `sak gh pr-view <pr>` instead of `gh pr view` (JSON/TSV).")
-        }
-        (Some("issue"), Some("list")) => block(
-            "Use `sak gh issue-list` instead of `gh issue list` (TSV/JSON, --fields forwarded).",
-        ),
-        (Some("issue"), Some("view")) => {
-            block("Use `sak gh issue-view <issue>` instead of `gh issue view` (JSON/TSV).")
-        }
-        (Some("run"), Some("list")) => {
-            block("Use `sak gh run-list` instead of `gh run list` (TSV/JSON, --fields forwarded).")
-        }
-        (Some("run"), Some("view")) => block(
-            "Use `sak gh run-view <run-id>` instead of `gh run view` (JSON/TSV, or --log/--log-failed).",
-        ),
-        (Some("release"), Some("list")) => block(
-            "Use `sak gh release-list` instead of `gh release list` (TSV/JSON, --fields forwarded).",
-        ),
-        (Some("release"), Some("view")) => {
-            block("Use `sak gh release-view [<tag>]` instead of `gh release view` (JSON/TSV).")
-        }
-        (Some("workflow"), Some("list")) => block(
-            "Use `sak gh workflow-list` instead of `gh workflow list` (TSV/JSON, --fields forwarded).",
-        ),
-        (Some("repo"), Some("view")) => {
-            block("Use `sak gh repo-view [<owner/name>]` instead of `gh repo view` (JSON/TSV).")
-        }
-        _ => None,
-    }
-}
-
 fn check_helm(pos: &[&str]) -> Option<String> {
     // `helm ls` is an alias for `helm list`. Reads gain redirects as their sak
     // commands land; the rest still pass through. Mutating verbs (`install`,
@@ -613,28 +570,6 @@ fn check_helm(pos: &[&str]) -> Option<String> {
         }
         _ => None,
     }
-}
-
-/// Whether a `gh api` invocation is an HTTP GET — true when no `-X` /
-/// `--method` flag is present (gh's default), or its value is `GET`
-/// (case-insensitive). Mirrors the chokepoint's method detection in
-/// `src/gh/client.rs::check_api_method`.
-fn gh_api_method_is_get(args: &[String]) -> bool {
-    let mut i = 0;
-    while i < args.len() {
-        let a = args[i].as_str();
-        let method = if a == "-X" || a == "--method" {
-            i += 1;
-            args.get(i).map(String::as_str)
-        } else {
-            a.strip_prefix("-X").or_else(|| a.strip_prefix("--method="))
-        };
-        if let Some(m) = method {
-            return m.eq_ignore_ascii_case("GET");
-        }
-        i += 1;
-    }
-    true
 }
 
 fn check_sqlite(args: &[String]) -> Option<String> {
@@ -761,6 +696,7 @@ mod engine_tests {
         assert!(tool_in_registries("b3sum"));
         assert!(tool_in_registries("nix"));
         assert!(tool_in_registries("nix-store"));
+        assert!(tool_in_registries("gh"));
         assert!(!tool_in_registries("kubectl"));
         assert!(!tool_in_registries("sqlite3"));
     }

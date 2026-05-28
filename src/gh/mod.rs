@@ -29,6 +29,7 @@
 pub mod api;
 pub mod argv;
 pub mod client;
+pub mod hook;
 pub mod issue_list;
 pub mod issue_view;
 pub mod pr_list;
