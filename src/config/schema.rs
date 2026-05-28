@@ -1,7 +1,7 @@
+use crate::output::Outcome;
 use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -46,7 +46,7 @@ pub struct SchemaArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
+pub fn run(args: &SchemaArgs) -> Result<Outcome> {
     let inputs = read_config_inputs(&args.files, args.format)?;
 
     let stdout = io::stdout();
@@ -74,16 +74,16 @@ pub fn run(args: &SchemaArgs) -> Result<ExitCode> {
             let line = format!("{}: {}", label, format_schema_types(types));
             if !writer.write_line(&line)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -109,7 +109,7 @@ mod tests {
             format: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -121,7 +121,7 @@ mod tests {
             format: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
             format: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]

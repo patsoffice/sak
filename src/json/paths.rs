@@ -1,7 +1,7 @@
+use crate::output::Outcome;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -51,7 +51,7 @@ pub struct PathsArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &PathsArgs) -> Result<ExitCode> {
+pub fn run(args: &PathsArgs) -> Result<Outcome> {
     if args.separator.is_empty() {
         bail!("--separator must not be empty");
     }
@@ -75,15 +75,15 @@ pub fn run(args: &PathsArgs) -> Result<ExitCode> {
             any = true;
             if !writer.write_line(path)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }

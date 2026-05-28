@@ -16,10 +16,10 @@
 
 pub mod hook;
 
+use crate::output::Outcome;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -91,7 +91,7 @@ pub struct HashArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(cmd: &HashCommand) -> Result<ExitCode> {
+pub fn run(cmd: &HashCommand) -> Result<Outcome> {
     let (algo, args) = match cmd {
         HashCommand::Sha256(a) => (Algo::Sha256, a),
         HashCommand::Sha1(a) => (Algo::Sha1, a),
@@ -111,7 +111,7 @@ pub fn run(cmd: &HashCommand) -> Result<ExitCode> {
         let hex = hash_reader(algo, io::stdin().lock())?;
         writer.write_line(&hex)?;
         writer.flush()?;
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     for path in &args.files {
@@ -128,14 +128,14 @@ pub fn run(cmd: &HashCommand) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Check each `<hex>  <path>` entry in `sumfile` against the freshly computed
 /// digest. Emits `<path>: OK` / `<path>: FAILED` per entry (matching
 /// `sha256sum --check`). Exit 0 if every entry matched, 1 if any entry failed
 /// (mismatch or unreadable file), 2 only if the sumfile itself can't be read.
-fn verify(algo: Algo, sumfile: &PathBuf, limit: Option<usize>) -> Result<ExitCode> {
+fn verify(algo: Algo, sumfile: &PathBuf, limit: Option<usize>) -> Result<Outcome> {
     let f = File::open(sumfile)
         .with_context(|| format!("cannot read sumfile: {}", sumfile.display()))?;
     let reader = BufReader::new(f);
@@ -182,9 +182,9 @@ fn verify(algo: Algo, sumfile: &PathBuf, limit: Option<usize>) -> Result<ExitCod
         );
     }
     Ok(if any_failed {
-        ExitCode::from(1)
+        Outcome::NotFound
     } else {
-        ExitCode::SUCCESS
+        Outcome::Found
     })
 }
 
@@ -353,16 +353,13 @@ mod tests {
         let good = dir.path().join("good.sums");
         let mut f = File::create(&good).unwrap();
         writeln!(f, "{}  {}", hex, data_path.display()).unwrap();
-        assert_eq!(
-            verify(Algo::Sha256, &good, None).unwrap(),
-            ExitCode::SUCCESS
-        );
+        assert_eq!(verify(Algo::Sha256, &good, None).unwrap(), Outcome::Found);
 
         // Wrong digest → exit 1.
         let bad = dir.path().join("bad.sums");
         let mut f = File::create(&bad).unwrap();
         writeln!(f, "{}  {}", "0".repeat(64), data_path.display()).unwrap();
-        assert_eq!(verify(Algo::Sha256, &bad, None).unwrap(), ExitCode::from(1));
+        assert_eq!(verify(Algo::Sha256, &bad, None).unwrap(), Outcome::NotFound);
     }
 
     #[test]

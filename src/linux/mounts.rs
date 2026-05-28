@@ -14,8 +14,8 @@
 //! on fixtures that include a bind mount and an overlay mount (the overlay line
 //! has zero optional fields, exercising the empty-optional case).
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -96,7 +96,7 @@ struct MountEntry {
     options: String,
 }
 
-pub fn run(args: &MountsArgs) -> Result<ExitCode> {
+pub fn run(args: &MountsArgs) -> Result<Outcome> {
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
@@ -153,9 +153,9 @@ pub fn run(args: &MountsArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

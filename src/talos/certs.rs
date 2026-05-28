@@ -141,7 +141,10 @@ pub fn run(args: &CertsArgs) -> Result<ExitCode> {
         return Ok(ExitCode::from(1));
     }
 
+    // `inspect::emit` returns `Result<Outcome>` after the cert-domain phase-2
+    // migration; bridge to ExitCode until phase 3 migrates the talos domain.
     inspect::emit(&infos, format, args.field.as_deref(), args.limit)
+        .map(crate::output::Outcome::exit_code)
 }
 
 #[cfg(test)]

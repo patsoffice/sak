@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -129,7 +129,7 @@ fn walk(
     }
 }
 
-pub fn run(args: &TreeArgs) -> Result<ExitCode> {
+pub fn run(args: &TreeArgs) -> Result<Outcome> {
     let base = args
         .path
         .canonicalize()
@@ -165,7 +165,7 @@ pub fn run(args: &TreeArgs) -> Result<ExitCode> {
         writer.write_decoration(&format!("\n{} {}, {} {}", counts.dirs, d, counts.files, f))?;
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -268,6 +268,6 @@ mod tests {
     #[test]
     fn run_succeeds() {
         let dir = fixture();
-        assert_eq!(run(&args(dir.path())).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args(dir.path())).unwrap(), Outcome::Found);
     }
 }

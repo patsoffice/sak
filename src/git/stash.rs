@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -26,7 +26,7 @@ pub struct StashArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &StashArgs) -> Result<ExitCode> {
+pub fn run(args: &StashArgs) -> Result<Outcome> {
     let mut repo = super::open_repo(&args.repo)?;
 
     let mut entries: Vec<(usize, String)> = Vec::new();
@@ -36,7 +36,7 @@ pub fn run(args: &StashArgs) -> Result<ExitCode> {
     })?;
 
     if entries.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -50,7 +50,7 @@ pub fn run(args: &StashArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -65,6 +65,6 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 }

@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -62,7 +62,7 @@ pub struct InspectArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &InspectArgs) -> Result<ExitCode> {
+pub fn run(args: &InspectArgs) -> Result<Outcome> {
     let _ = args.chain;
     let format = if args.json {
         OutputFormat::Json
@@ -84,7 +84,7 @@ pub fn run(args: &InspectArgs) -> Result<ExitCode> {
 
     let raw_inputs = read_cert_inputs(&args.files)?;
     if raw_inputs.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     // Number certs within the same source so chain depth shows up in `index`.
@@ -109,7 +109,7 @@ pub fn emit(
     format: OutputFormat,
     field: Option<&str>,
     limit: Option<usize>,
-) -> Result<ExitCode> {
+) -> Result<Outcome> {
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, limit);
@@ -122,7 +122,7 @@ pub fn emit(
             }
         }
         writer.flush()?;
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     match format {
@@ -169,7 +169,7 @@ pub fn emit(
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -197,7 +197,7 @@ mod tests {
             chain: false,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]

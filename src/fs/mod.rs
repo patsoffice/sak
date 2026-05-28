@@ -13,8 +13,8 @@ pub mod tail;
 pub mod tree;
 pub mod wc;
 
+use crate::output::Outcome;
 use std::path::Path;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -36,7 +36,7 @@ pub enum FsCommand {
     Wc(wc::WcArgs),
 }
 
-pub fn run(cmd: &FsCommand) -> Result<ExitCode> {
+pub fn run(cmd: &FsCommand) -> Result<Outcome> {
     match cmd {
         FsCommand::Glob(args) => glob::run(args),
         FsCommand::Grep(args) => grep::run(args),

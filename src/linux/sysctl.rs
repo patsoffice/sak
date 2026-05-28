@@ -12,9 +12,9 @@
 //! permission-denied entries) are silently skipped — `sysctl -a` does the same.
 //! Output is sorted by key for deterministic diffs.
 
+use crate::output::Outcome;
 use std::io;
 use std::path::Path;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -73,7 +73,7 @@ pub enum Format {
     Json,
 }
 
-pub fn run(args: &SysctlArgs) -> Result<ExitCode> {
+pub fn run(args: &SysctlArgs) -> Result<Outcome> {
     let re = match &args.pattern {
         Some(p) => Some(Regex::new(p).with_context(|| format!("invalid pattern regex: {p}"))?),
         None => None,
@@ -134,9 +134,9 @@ pub fn run(args: &SysctlArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

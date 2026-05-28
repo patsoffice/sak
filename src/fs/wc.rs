@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -95,7 +95,7 @@ fn row(c: &Counts, name: Option<&str>, sel: (bool, bool, bool)) -> String {
     cols.join("\t")
 }
 
-pub fn run(args: &WcArgs) -> Result<ExitCode> {
+pub fn run(args: &WcArgs) -> Result<Outcome> {
     // No explicit selection means show all three columns.
     let sel = if !(args.lines || args.words || args.bytes) {
         (true, true, true)
@@ -112,7 +112,7 @@ pub fn run(args: &WcArgs) -> Result<ExitCode> {
         let c = count(&data);
         writer.write_line(&row(&c, None, sel))?;
         writer.flush()?;
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     let mut total = Counts::default();
@@ -139,9 +139,9 @@ pub fn run(args: &WcArgs) -> Result<ExitCode> {
     writer.flush()?;
 
     if any_error {
-        Ok(ExitCode::from(2))
+        Ok(Outcome::Partial)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -194,7 +194,7 @@ mod tests {
             bytes: false,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -206,6 +206,6 @@ mod tests {
             bytes: false,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(2));
+        assert_eq!(run(&args).unwrap(), Outcome::Partial);
     }
 }

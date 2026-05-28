@@ -15,9 +15,9 @@
 //! pure function over `&str` so it is unit-tested on hand-built fixtures from
 //! both architectures with no machine of that arch in the loop.
 
+use crate::output::Outcome;
 use std::collections::BTreeMap;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -86,7 +86,7 @@ struct CpuRecord {
     flags: Vec<String>,
 }
 
-pub fn run(args: &CpuinfoArgs) -> Result<ExitCode> {
+pub fn run(args: &CpuinfoArgs) -> Result<Outcome> {
     let raw = read_proc_file("/proc/cpuinfo")?;
     let records = parse_cpuinfo(&raw);
 
@@ -108,9 +108,9 @@ pub fn run(args: &CpuinfoArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

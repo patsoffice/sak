@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -40,7 +40,7 @@ pub struct ExistsArgs {
     pub any: bool,
 }
 
-pub fn run(args: &ExistsArgs) -> Result<ExitCode> {
+pub fn run(args: &ExistsArgs) -> Result<Outcome> {
     let inputs = read_json_inputs(&args.files)?;
 
     let mut all_present = true;
@@ -55,9 +55,9 @@ pub fn run(args: &ExistsArgs) -> Result<ExitCode> {
 
     let exists = if args.any { any_present } else { all_present };
     if exists {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -82,7 +82,7 @@ mod tests {
             files: vec![p],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -93,7 +93,7 @@ mod tests {
             files: vec![p],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -104,7 +104,7 @@ mod tests {
             files: vec![p],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod tests {
             files: vec![p],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -126,7 +126,7 @@ mod tests {
             files: vec![p],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
             files: vec![p1, p2],
             any: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -160,6 +160,6 @@ mod tests {
             files: vec![p1, p2],
             any: true,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

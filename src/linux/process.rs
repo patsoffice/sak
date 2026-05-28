@@ -14,10 +14,10 @@
 //! `/proc` subdir. The status/stat/cmdline parsers are pure functions, unit
 //! tested on hand-built fixtures including the spaces-and-parens `comm` case.
 
+use crate::output::Outcome;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -95,7 +95,7 @@ struct Process {
     status: BTreeMap<String, String>,
 }
 
-pub fn run(args: &ProcessArgs) -> Result<ExitCode> {
+pub fn run(args: &ProcessArgs) -> Result<Outcome> {
     if args.all && args.pid.is_some() {
         bail!("pass either a PID or --all, not both");
     }
@@ -124,7 +124,7 @@ pub fn run(args: &ProcessArgs) -> Result<ExitCode> {
     } else if let Some(pid) = args.pid {
         match collect_process(&pid.to_string()) {
             Some(p) => procs.push(p),
-            None => return Ok(ExitCode::from(1)),
+            None => return Ok(Outcome::NotFound),
         }
     }
 
@@ -146,9 +146,9 @@ pub fn run(args: &ProcessArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

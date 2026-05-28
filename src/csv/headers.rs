@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -170,7 +170,7 @@ fn process_reader<R: Read>(
     Ok(true)
 }
 
-pub fn run(args: &HeadersArgs) -> Result<ExitCode> {
+pub fn run(args: &HeadersArgs) -> Result<Outcome> {
     let delim = parse_delimiter(&args.delimiter)?;
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -200,7 +200,7 @@ pub fn run(args: &HeadersArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -283,6 +283,6 @@ mod tests {
             sample: 100,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

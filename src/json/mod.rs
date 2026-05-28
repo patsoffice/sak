@@ -12,9 +12,9 @@ pub mod select;
 pub mod type_;
 pub mod validate;
 
+use crate::output::Outcome;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
@@ -36,7 +36,7 @@ pub enum JsonCommand {
     Diff(diff::DiffArgs),
 }
 
-pub fn run(cmd: &JsonCommand) -> Result<ExitCode> {
+pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
     match cmd {
         JsonCommand::Query(args) => query::run(args),
         JsonCommand::Exists(args) => exists::run(args),

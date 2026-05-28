@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -61,7 +61,7 @@ pub struct GrepArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &GrepArgs) -> Result<ExitCode> {
+pub fn run(args: &GrepArgs) -> Result<Outcome> {
     let inputs = read_json_inputs(&args.files)?;
     let re = build_regex(&args.pattern, args.ignore_case)?;
     let mode = if args.value {
@@ -87,16 +87,16 @@ pub fn run(args: &GrepArgs) -> Result<ExitCode> {
             };
             if !writer.write_line(&line)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -139,14 +139,14 @@ mod tests {
     fn grep_keys_default() {
         let (_d, p) = write_tmp(r#"{"aws_region":"us-east-1","port":80}"#);
         let args = args_with("^aws_", p);
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
     fn grep_no_match_exits_1() {
         let (_d, p) = write_tmp(r#"{"a":1}"#);
         let args = args_with("nope", p);
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -154,7 +154,7 @@ mod tests {
         let (_d, p) = write_tmp(r#"{"email":"alice@example.com","name":"alice"}"#);
         let mut args = args_with("@example\\.com$", p);
         args.value = true;
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod tests {
         let (_d, p) = write_tmp(r#"{"items":[1,2],"items_count":2}"#);
         let mut args = args_with("^items", p);
         args.type_filter = Some(TypeFilter::Array);
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -170,7 +170,7 @@ mod tests {
         let (_d, p) = write_tmp(r#"{"port":8080}"#);
         let mut args = args_with("port", p);
         args.paths_only = true;
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod tests {
         let (_d, p) = write_tmp(r#"{"PASSWORD":"hunter2"}"#);
         let mut args = args_with("password", p);
         args.ignore_case = true;
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]

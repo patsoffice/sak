@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -47,7 +47,7 @@ pub struct ShowArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ShowArgs) -> Result<ExitCode> {
+pub fn run(args: &ShowArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let obj = repo
@@ -136,7 +136,7 @@ pub fn run(args: &ShowArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 fn expand_format(fmt: &str, commit: &git2::Commit) -> String {
@@ -227,7 +227,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -244,7 +244,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]

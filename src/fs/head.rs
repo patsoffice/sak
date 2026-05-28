@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -39,7 +39,7 @@ pub struct HeadArgs {
     pub no_line_numbers: bool,
 }
 
-pub fn run(args: &HeadArgs) -> Result<ExitCode> {
+pub fn run(args: &HeadArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
         return head_bytes(&args.file, n);
     }
@@ -56,7 +56,7 @@ pub fn run(args: &HeadArgs) -> Result<ExitCode> {
 }
 
 /// Write the first `n` bytes of `file` raw to stdout (byte-faithful).
-fn head_bytes(file: &PathBuf, n: usize) -> Result<ExitCode> {
+fn head_bytes(file: &PathBuf, n: usize) -> Result<Outcome> {
     let f =
         std::fs::File::open(file).with_context(|| format!("cannot open: {}", file.display()))?;
     let mut buf = Vec::with_capacity(n.min(64 * 1024));
@@ -64,11 +64,11 @@ fn head_bytes(file: &PathBuf, n: usize) -> Result<ExitCode> {
         .read_to_end(&mut buf)
         .with_context(|| format!("error reading: {}", file.display()))?;
     if buf.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
     let stdout = io::stdout();
     stdout.lock().write_all(&buf)?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -94,7 +94,7 @@ mod tests {
             bytes: None,
             no_line_numbers: true,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -108,7 +108,7 @@ mod tests {
             bytes: Some(4),
             no_line_numbers: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -122,6 +122,6 @@ mod tests {
             bytes: None,
             no_line_numbers: true,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

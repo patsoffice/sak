@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -29,7 +29,7 @@ pub struct StatusArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &StatusArgs) -> Result<ExitCode> {
+pub fn run(args: &StatusArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let mut opts = StatusOptions::new();
@@ -40,7 +40,7 @@ pub fn run(args: &StatusArgs) -> Result<ExitCode> {
     let statuses = repo.statuses(Some(&mut opts))?;
 
     if statuses.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     // Collect and sort by path for determinism
@@ -64,7 +64,7 @@ pub fn run(args: &StatusArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 fn format_status(status: Status) -> String {
@@ -113,7 +113,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]
@@ -126,7 +126,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]

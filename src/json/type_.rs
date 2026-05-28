@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -37,7 +37,7 @@ pub struct TypeArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &TypeArgs) -> Result<ExitCode> {
+pub fn run(args: &TypeArgs) -> Result<Outcome> {
     let inputs = read_json_inputs(&args.files)?;
 
     let stdout = io::stdout();
@@ -56,15 +56,15 @@ pub fn run(args: &TypeArgs) -> Result<ExitCode> {
         found_any = true;
         if !writer.write_line(type_name(target))? {
             writer.flush()?;
-            return Ok(ExitCode::SUCCESS);
+            return Ok(Outcome::Found);
         }
     }
 
     writer.flush()?;
     if found_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -89,7 +89,7 @@ mod tests {
             files: vec![p],
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -100,7 +100,7 @@ mod tests {
             files: vec![p],
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod tests {
             files: vec![p],
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -122,7 +122,7 @@ mod tests {
             files: vec![p],
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
                 files: vec![p],
                 limit: None,
             };
-            assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+            assert_eq!(run(&args).unwrap(), Outcome::Found);
         }
     }
 }

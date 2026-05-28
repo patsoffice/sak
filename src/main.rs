@@ -31,6 +31,8 @@ use std::sync::LazyLock;
 
 use clap::{Parser, Subcommand};
 
+use crate::output::Outcome;
+
 /// Built at startup so optional-domain and OS-gated examples only appear when
 /// the matching cargo feature is enabled / the target supports them. A
 /// `--no-default-features` build on non-Linux would otherwise advertise
@@ -282,14 +284,19 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
+    // Per-arm `.map(Outcome::exit_code)` adapters keep the `match` expression
+    // uniform while domains migrate from `Result<ExitCode>` to `Result<Outcome>`
+    // incrementally. The cleanup phase removes the adapters once every domain
+    // has migrated, collapsing the trailing `match result` arm to call
+    // `outcome.exit_code()` directly.
     let result = match &cli.command {
-        Command::Fs(cmd) => fs::run(cmd),
-        Command::Git(cmd) => git::run(cmd),
-        Command::Json(cmd) => json::run(cmd),
-        Command::Config(cmd) => config::run(cmd),
-        Command::Csv(cmd) => csv::run(cmd),
-        Command::Cert(cmd) => cert::run(cmd),
-        Command::Hash(cmd) => hash::run(cmd),
+        Command::Fs(cmd) => fs::run(cmd).map(Outcome::exit_code),
+        Command::Git(cmd) => git::run(cmd).map(Outcome::exit_code),
+        Command::Json(cmd) => json::run(cmd).map(Outcome::exit_code),
+        Command::Config(cmd) => config::run(cmd).map(Outcome::exit_code),
+        Command::Csv(cmd) => csv::run(cmd).map(Outcome::exit_code),
+        Command::Cert(cmd) => cert::run(cmd).map(Outcome::exit_code),
+        Command::Hash(cmd) => hash::run(cmd).map(Outcome::exit_code),
         Command::Talos(cmd) => talos::run(cmd),
         Command::Gh(cmd) => gh::run(cmd),
         Command::Helm(cmd) => helm::run(cmd),
@@ -305,7 +312,7 @@ fn main() -> ExitCode {
         #[cfg(feature = "prom")]
         Command::Prom(cmd) => prom::run(cmd),
         #[cfg(target_os = "linux")]
-        Command::Linux(cmd) => linux::run(cmd),
+        Command::Linux(cmd) => linux::run(cmd).map(Outcome::exit_code),
         Command::Hook(cmd) => hook::run(cmd),
     };
 

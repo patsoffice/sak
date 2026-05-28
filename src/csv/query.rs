@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
@@ -271,7 +271,7 @@ fn process_source<R: Read>(
     Ok(true)
 }
 
-pub fn run(args: &QueryArgs) -> Result<ExitCode> {
+pub fn run(args: &QueryArgs) -> Result<Outcome> {
     let delim = parse_delimiter(&args.delimiter)?;
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -315,9 +315,9 @@ pub fn run(args: &QueryArgs) -> Result<ExitCode> {
     // `config query` (0 = results, 1 = no results). The output header is
     // decoration and does not count as a result.
     if found_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -418,7 +418,7 @@ mod tests {
         std::fs::write(&p, "name,role,city\nalice,admin,nyc\nbob,user,sf\n").unwrap();
         let mut args = args_for(p, Some("name,city"));
         args.filter = vec!["role=admin".to_string()];
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -428,7 +428,7 @@ mod tests {
         std::fs::write(&p, "1,2,3\n4,5,6\n").unwrap();
         let mut args = args_for(p, Some("1,3"));
         args.no_header = true;
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -441,6 +441,6 @@ mod tests {
         std::fs::write(&p, "name,role\nalice,admin\nbob,user\n").unwrap();
         let mut args = args_for(p, Some("name"));
         args.filter = vec!["role=nobody".to_string()];
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

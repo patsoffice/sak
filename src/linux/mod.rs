@@ -44,7 +44,7 @@ pub mod sysctl;
 pub mod uptime;
 
 #[cfg(target_os = "linux")]
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 #[cfg(target_os = "linux")]
 use anyhow::Result;
@@ -65,7 +65,7 @@ pub enum LinuxCommand {
 }
 
 #[cfg(target_os = "linux")]
-pub fn run(cmd: &LinuxCommand) -> Result<ExitCode> {
+pub fn run(cmd: &LinuxCommand) -> Result<Outcome> {
     match cmd {
         LinuxCommand::Cpuinfo(args) => cpuinfo::run(args),
         LinuxCommand::Meminfo(args) => meminfo::run(args),

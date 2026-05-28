@@ -10,8 +10,8 @@ pub mod stash;
 pub mod status;
 pub mod tags;
 
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
@@ -32,7 +32,7 @@ pub enum GitCommand {
     Contributors(contributors::ContributorsArgs),
 }
 
-pub fn run(cmd: &GitCommand) -> Result<ExitCode> {
+pub fn run(cmd: &GitCommand) -> Result<Outcome> {
     match cmd {
         GitCommand::Status(args) => status::run(args),
         GitCommand::Diff(args) => diff::run(args),

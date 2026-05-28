@@ -12,9 +12,9 @@
 //! v4 and v6 entries: `0100007F` must decode to `127.0.0.1`, and each 32-bit
 //! word of a v6 address is individually byte-reversed.
 
+use crate::output::Outcome;
 use std::io;
 use std::net::Ipv6Addr;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -91,7 +91,7 @@ struct Conn {
     inode: String,
 }
 
-pub fn run(args: &NetworkArgs) -> Result<ExitCode> {
+pub fn run(args: &NetworkArgs) -> Result<Outcome> {
     let families: &[&str] = match args.proto {
         Proto::Tcp => &["tcp"],
         Proto::Tcp6 => &["tcp6"],
@@ -141,9 +141,9 @@ pub fn run(args: &NetworkArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

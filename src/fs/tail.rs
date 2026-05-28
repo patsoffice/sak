@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -40,7 +40,7 @@ pub struct TailArgs {
     pub no_line_numbers: bool,
 }
 
-pub fn run(args: &TailArgs) -> Result<ExitCode> {
+pub fn run(args: &TailArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
         return tail_bytes(&args.file, n);
     }
@@ -58,7 +58,7 @@ pub fn run(args: &TailArgs) -> Result<ExitCode> {
 }
 
 /// Write the last `n` bytes of `file` raw to stdout (byte-faithful).
-fn tail_bytes(file: &PathBuf, n: usize) -> Result<ExitCode> {
+fn tail_bytes(file: &PathBuf, n: usize) -> Result<Outcome> {
     let mut f =
         std::fs::File::open(file).with_context(|| format!("cannot open: {}", file.display()))?;
     let len = f
@@ -67,7 +67,7 @@ fn tail_bytes(file: &PathBuf, n: usize) -> Result<ExitCode> {
         .len();
     let n = (n as u64).min(len);
     if n == 0 {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
     f.seek(SeekFrom::Start(len - n))
         .with_context(|| format!("error seeking: {}", file.display()))?;
@@ -76,7 +76,7 @@ fn tail_bytes(file: &PathBuf, n: usize) -> Result<ExitCode> {
         .with_context(|| format!("error reading: {}", file.display()))?;
     let stdout = io::stdout();
     stdout.lock().write_all(&buf)?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -102,7 +102,7 @@ mod tests {
             bytes: None,
             no_line_numbers: true,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -116,7 +116,7 @@ mod tests {
             bytes: Some(3),
             no_line_numbers: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -130,7 +130,7 @@ mod tests {
             bytes: Some(1000),
             no_line_numbers: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -144,6 +144,6 @@ mod tests {
             bytes: Some(10),
             no_line_numbers: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

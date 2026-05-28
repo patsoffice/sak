@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -47,13 +47,13 @@ fn load(path: &Path) -> Result<Value> {
     serde_json::from_str(&s).with_context(|| format!("invalid JSON: {}", name))
 }
 
-pub fn run(args: &DiffArgs) -> Result<ExitCode> {
+pub fn run(args: &DiffArgs) -> Result<Outcome> {
     let a = load(&args.a)?;
     let b = load(&args.b)?;
 
     let entries = diff(&a, &b);
     if entries.is_empty() {
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     let stdout = io::stdout();
@@ -65,7 +65,7 @@ pub fn run(args: &DiffArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::from(1))
+    Ok(Outcome::NotFound)
 }
 
 #[cfg(test)]
@@ -86,7 +86,7 @@ mod tests {
         let (_d1, a) = write_tmp("a.json", r#"{"x":1}"#);
         let (_d2, b) = write_tmp("b.json", r#"{"x":1}"#);
         let args = DiffArgs { a, b, limit: None };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
         let (_d1, a) = write_tmp("a.json", r#"{"x":1}"#);
         let (_d2, b) = write_tmp("b.json", r#"{"x":2}"#);
         let args = DiffArgs { a, b, limit: None };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]

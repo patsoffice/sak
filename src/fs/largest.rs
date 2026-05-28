@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -58,7 +58,7 @@ pub struct LargestArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &LargestArgs) -> Result<ExitCode> {
+pub fn run(args: &LargestArgs) -> Result<Outcome> {
     let min_size = match &args.min_size {
         Some(s) => parse_size(s).with_context(|| format!("invalid --min-size: {s}"))?,
         None => 0,
@@ -94,7 +94,7 @@ pub fn run(args: &LargestArgs) -> Result<ExitCode> {
     files.truncate(args.top);
 
     if files.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -111,7 +111,7 @@ pub fn run(args: &LargestArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn empty_dir_is_exit_1() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(run(&args(dir.path())).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args(dir.path())).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -173,8 +173,8 @@ mod tests {
         let mut a = args(dir.path());
         a.min_size = Some("1K".to_string());
         // Only file is below the threshold → no results.
-        assert_eq!(run(&a).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&a).unwrap(), Outcome::NotFound);
         write_file(dir.path(), "big.txt", 4096);
-        assert_eq!(run(&a).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&a).unwrap(), Outcome::Found);
     }
 }

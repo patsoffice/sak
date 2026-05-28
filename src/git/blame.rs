@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -36,7 +36,7 @@ pub struct BlameArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &BlameArgs) -> Result<ExitCode> {
+pub fn run(args: &BlameArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let mut blame_opts = BlameOptions::new();
@@ -83,7 +83,7 @@ pub fn run(args: &BlameArgs) -> Result<ExitCode> {
     };
 
     if start_line > lines.len() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let width = line_number_width(end_line);
@@ -121,7 +121,7 @@ pub fn run(args: &BlameArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 fn parse_line_range(range: &str) -> Result<(usize, usize)> {
@@ -183,7 +183,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]

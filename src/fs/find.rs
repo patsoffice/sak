@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -216,7 +216,7 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146097 + doe - 719468
 }
 
-pub fn run(args: &FindArgs) -> Result<ExitCode> {
+pub fn run(args: &FindArgs) -> Result<Outcome> {
     let size_pred = match &args.size {
         Some(s) => Some(SizePred::parse(s).with_context(|| format!("invalid --size: {s}"))?),
         None => None,
@@ -306,7 +306,7 @@ pub fn run(args: &FindArgs) -> Result<ExitCode> {
     matches.sort();
 
     if matches.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -318,7 +318,7 @@ pub fn run(args: &FindArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -421,19 +421,16 @@ mod tests {
         };
 
         // Files over 1K: only big.bin.
-        assert_eq!(
-            run(&mk(Some("+1K"), None, None)).unwrap(),
-            ExitCode::SUCCESS
-        );
+        assert_eq!(run(&mk(Some("+1K"), None, None)).unwrap(), Outcome::Found);
         // A directory type filter with a name that won't match → exit 1.
         assert_eq!(
             run(&mk(None, Some(FindType::D), Some("nope*"))).unwrap(),
-            ExitCode::from(1)
+            Outcome::NotFound
         );
         // Directory named subdir matches.
         assert_eq!(
             run(&mk(None, Some(FindType::D), Some("subdir"))).unwrap(),
-            ExitCode::SUCCESS
+            Outcome::Found
         );
     }
 }

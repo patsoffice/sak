@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -153,7 +153,7 @@ fn unescape_pointer_token(s: &str) -> String {
     s.replace("~1", "/").replace("~0", "~")
 }
 
-pub fn run(args: &SelectArgs) -> Result<ExitCode> {
+pub fn run(args: &SelectArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.paths)?;
     let inputs = read_json_inputs_maybe_lines(&args.files, args.lines)?;
 
@@ -180,16 +180,16 @@ pub fn run(args: &SelectArgs) -> Result<ExitCode> {
         for line in formatted.split('\n') {
             if !writer.write_line(line)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if found_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 
@@ -340,7 +340,7 @@ mod tests {
             lines: false,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod tests {
             lines: false,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -371,7 +371,7 @@ mod tests {
             limit: None,
         };
         // No matches and not asking for nulls → no record emitted → exit 1.
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -387,7 +387,7 @@ mod tests {
             limit: None,
         };
         // null_missing always emits the record, so exit 0.
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -402,6 +402,6 @@ mod tests {
             lines: true,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

@@ -1,7 +1,7 @@
+use crate::output::Outcome;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -69,7 +69,7 @@ fn parse_line_range(spec: &str) -> Result<(Option<usize>, Option<usize>)> {
     }
 }
 
-pub fn run(args: &ReadArgs) -> Result<ExitCode> {
+pub fn run(args: &ReadArgs) -> Result<Outcome> {
     let file =
         File::open(&args.file).with_context(|| format!("cannot open: {}", args.file.display()))?;
     let reader = BufReader::new(file);
@@ -140,7 +140,7 @@ pub fn run(args: &ReadArgs) -> Result<ExitCode> {
     };
 
     if lines.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let max_line_num = lines.last().map(|(n, _)| *n).unwrap_or(1);
@@ -162,7 +162,7 @@ pub fn run(args: &ReadArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -243,7 +243,7 @@ mod tests {
             offset: 0,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(exit, Outcome::Found);
     }
 
     #[test]
@@ -266,6 +266,6 @@ mod tests {
             offset: 0,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(exit, Outcome::Found);
     }
 }

@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -42,7 +42,7 @@ pub struct BranchArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &BranchArgs) -> Result<ExitCode> {
+pub fn run(args: &BranchArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let branch_type = if args.all {
@@ -82,7 +82,7 @@ pub fn run(args: &BranchArgs) -> Result<ExitCode> {
     }
 
     if entries.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -99,7 +99,7 @@ pub fn run(args: &BranchArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -133,7 +133,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -148,6 +148,6 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 }

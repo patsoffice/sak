@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -60,7 +60,7 @@ pub struct FromYamlArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &FromYamlArgs) -> Result<ExitCode> {
+pub fn run(args: &FromYamlArgs) -> Result<Outcome> {
     let format = if args.json {
         OutputFormat::Json
     } else if args.tsv {
@@ -96,7 +96,7 @@ pub fn run(args: &FromYamlArgs) -> Result<ExitCode> {
     let infos = certs_from_string(&source, &extracted)?;
 
     if infos.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     inspect::emit(&infos, format, args.field.as_deref(), args.limit)
@@ -185,7 +185,7 @@ mod tests {
             field: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
             field: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -249,6 +249,6 @@ mod tests {
             field: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

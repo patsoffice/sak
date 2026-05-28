@@ -3,7 +3,7 @@ pub mod query;
 pub mod stats;
 pub mod validate;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -16,7 +16,7 @@ pub enum CsvCommand {
     Validate(validate::ValidateArgs),
 }
 
-pub fn run(cmd: &CsvCommand) -> Result<ExitCode> {
+pub fn run(cmd: &CsvCommand) -> Result<Outcome> {
     match cmd {
         CsvCommand::Headers(args) => headers::run(args),
         CsvCommand::Query(args) => query::run(args),

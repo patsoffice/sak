@@ -11,8 +11,8 @@
 //! ([`parse_meminfo`]) is a pure function over `&str`, unit-tested on a
 //! hand-built fixture covering both the `kB`-suffixed and unitless shapes.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -73,7 +73,7 @@ pub enum Format {
     Json,
 }
 
-pub fn run(args: &MeminfoArgs) -> Result<ExitCode> {
+pub fn run(args: &MeminfoArgs) -> Result<Outcome> {
     let raw = read_proc_file("/proc/meminfo")?;
     let mut fields = parse_meminfo(&raw);
 
@@ -99,9 +99,9 @@ pub fn run(args: &MeminfoArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if wrote_any {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

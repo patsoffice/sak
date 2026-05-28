@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -56,7 +56,7 @@ pub struct DiffArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &DiffArgs) -> Result<ExitCode> {
+pub fn run(args: &DiffArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let mut opts = DiffOptions::new();
@@ -67,7 +67,7 @@ pub fn run(args: &DiffArgs) -> Result<ExitCode> {
     let diff = build_diff(&repo, args, &mut opts)?;
 
     if diff.deltas().len() == 0 {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -118,7 +118,7 @@ pub fn run(args: &DiffArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 fn build_diff<'a>(
@@ -184,7 +184,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -224,6 +224,6 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 }

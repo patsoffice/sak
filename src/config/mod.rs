@@ -25,11 +25,11 @@ pub mod schema;
 pub mod type_;
 pub mod validate;
 
+use crate::output::Outcome;
 use std::ffi::OsStr;
 use std::fmt;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Subcommand, ValueEnum};
@@ -51,7 +51,7 @@ pub enum ConfigCommand {
     Convert(convert::ConvertArgs),
 }
 
-pub fn run(cmd: &ConfigCommand) -> Result<ExitCode> {
+pub fn run(cmd: &ConfigCommand) -> Result<Outcome> {
     match cmd {
         ConfigCommand::Query(args) => query::run(args),
         ConfigCommand::Exists(args) => exists::run(args),

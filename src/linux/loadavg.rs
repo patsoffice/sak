@@ -6,8 +6,8 @@
 //! consistent typed output: fixed columns in TSV, and real numbers (not strings)
 //! in JSON, with the `running/total` pair split into its own fields.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -59,10 +59,10 @@ struct LoadAvg {
     last_pid: String,
 }
 
-pub fn run(args: &LoadavgArgs) -> Result<ExitCode> {
+pub fn run(args: &LoadavgArgs) -> Result<Outcome> {
     let raw = read_proc_file("/proc/loadavg")?;
     let Some(la) = parse_loadavg(&raw) else {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     };
 
     let line = match args.format {
@@ -78,7 +78,7 @@ pub fn run(args: &LoadavgArgs) -> Result<ExitCode> {
     let mut writer = BoundedWriter::new(handle, None);
     writer.write_line(&line)?;
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Parse the first (and only) line of `/proc/loadavg`. Returns `None` if the

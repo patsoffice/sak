@@ -1,8 +1,8 @@
+use crate::output::Outcome;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -57,7 +57,7 @@ pub struct DuplicatesArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &DuplicatesArgs) -> Result<ExitCode> {
+pub fn run(args: &DuplicatesArgs) -> Result<Outcome> {
     let min_size = parse_size(&args.min_size)
         .with_context(|| format!("invalid --min-size: {}", args.min_size))?;
 
@@ -115,7 +115,7 @@ pub fn run(args: &DuplicatesArgs) -> Result<ExitCode> {
     }
 
     if groups.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     // Deterministic order: largest groups' wasted space first (size desc),
@@ -134,12 +134,12 @@ pub fn run(args: &DuplicatesArgs) -> Result<ExitCode> {
             // exact byte count is the honest figure.
             if !writer.write_line(&format!("{size}\t{hex}\t{rel}"))? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Stream a file through SHA-256 in 64KB chunks, returning lowercase hex.
@@ -189,7 +189,7 @@ mod tests {
         write_file(dir.path(), "a.txt", b"hello world contents here");
         write_file(dir.path(), "b.txt", b"hello world contents here");
         write_file(dir.path(), "c.txt", b"different");
-        assert_eq!(run(&args(dir.path())).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args(dir.path())).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
         // Same length, different bytes — must not be grouped.
         write_file(dir.path(), "a.txt", b"aaaa");
         write_file(dir.path(), "b.txt", b"bbbb");
-        assert_eq!(run(&args(dir.path())).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args(dir.path())).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_file(dir.path(), "a.txt", b"unique one");
         write_file(dir.path(), "b.txt", b"unique two longer");
-        assert_eq!(run(&args(dir.path())).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args(dir.path())).unwrap(), Outcome::NotFound);
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
         write_file(dir.path(), "b.txt", b"hi");
         let mut a = args(dir.path());
         a.min_size = "1K".to_string();
-        assert_eq!(run(&a).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&a).unwrap(), Outcome::NotFound);
     }
 
     #[test]

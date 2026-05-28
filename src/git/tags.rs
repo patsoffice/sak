@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -46,7 +46,7 @@ pub struct TagsArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &TagsArgs) -> Result<ExitCode> {
+pub fn run(args: &TagsArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let pattern = args.pattern.as_deref();
@@ -92,7 +92,7 @@ pub fn run(args: &TagsArgs) -> Result<ExitCode> {
     }
 
     if entries.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     match args.sort {
@@ -111,7 +111,7 @@ pub fn run(args: &TagsArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -153,7 +153,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]
@@ -169,6 +169,6 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 }

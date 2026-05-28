@@ -1,7 +1,7 @@
+use crate::output::Outcome;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -52,12 +52,12 @@ pub struct ContributorsArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ContributorsArgs) -> Result<ExitCode> {
+pub fn run(args: &ContributorsArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
     let mut revwalk = repo.revwalk()?;
     if revwalk.push_head().is_err() {
-        return Ok(ExitCode::from(1)); // No HEAD (empty repo)
+        return Ok(Outcome::NotFound); // No HEAD (empty repo)
     }
     revwalk.set_sorting(Sort::TIME)?;
 
@@ -89,7 +89,7 @@ pub fn run(args: &ContributorsArgs) -> Result<ExitCode> {
     }
 
     if counts.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let mut entries: Vec<((String, String), usize)> = counts.into_iter().collect();
@@ -132,7 +132,7 @@ pub fn run(args: &ContributorsArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 pub fn parse_date_to_epoch(date: &Option<String>) -> Result<Option<i64>> {
@@ -228,7 +228,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(result, Outcome::Found);
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
             limit: None,
         };
         let result = run(&args).unwrap();
-        assert_eq!(result, ExitCode::from(1));
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]

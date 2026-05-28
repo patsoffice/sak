@@ -17,9 +17,9 @@ pub mod from_yaml;
 pub mod hook;
 pub mod inspect;
 
+use crate::output::Outcome;
 use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -39,7 +39,7 @@ pub enum CertCommand {
     FromYaml(from_yaml::FromYamlArgs),
 }
 
-pub fn run(cmd: &CertCommand) -> Result<ExitCode> {
+pub fn run(cmd: &CertCommand) -> Result<Outcome> {
     match cmd {
         CertCommand::Inspect(args) => inspect::run(args),
         CertCommand::Expiring(args) => expiring::run(args),

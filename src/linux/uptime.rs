@@ -6,8 +6,8 @@
 //! column as `Xd Yh Zm`. The arithmetic lives in [`humanize`], a pure function
 //! unit-tested without touching `/proc`.
 
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -61,10 +61,10 @@ struct Uptime {
     idle: String,
 }
 
-pub fn run(args: &UptimeArgs) -> Result<ExitCode> {
+pub fn run(args: &UptimeArgs) -> Result<Outcome> {
     let raw = read_proc_file("/proc/uptime")?;
     let Some(up) = parse_uptime(&raw) else {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     };
 
     let line = match args.format {
@@ -87,7 +87,7 @@ pub fn run(args: &UptimeArgs) -> Result<ExitCode> {
     let mut writer = BoundedWriter::new(handle, None);
     writer.write_line(&line)?;
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Parse the first (and only) line of `/proc/uptime`. Returns `None` if the line

@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -86,7 +86,7 @@ fn format_csv_error(source: &str, err: &::csv::Error) -> String {
     }
 }
 
-pub fn run(args: &ValidateArgs) -> Result<ExitCode> {
+pub fn run(args: &ValidateArgs) -> Result<Outcome> {
     let delim = parse_delimiter(&args.delimiter)?;
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -141,9 +141,9 @@ pub fn run(args: &ValidateArgs) -> Result<ExitCode> {
 
     writer.flush().context("flushing stdout")?;
     if any_invalid {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -170,7 +170,7 @@ mod tests {
             quiet: true,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -225,6 +225,6 @@ mod tests {
             quiet: true,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

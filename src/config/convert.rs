@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -54,7 +54,7 @@ pub struct ConvertArgs {
     pub compact: bool,
 }
 
-pub fn run(args: &ConvertArgs) -> Result<ExitCode> {
+pub fn run(args: &ConvertArgs) -> Result<Outcome> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
 
@@ -87,7 +87,7 @@ pub fn run(args: &ConvertArgs) -> Result<ExitCode> {
     }
 
     handle.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Serialize `value` as `target` to `w`, ensuring the output ends with a single newline.
@@ -264,7 +264,7 @@ mod tests {
             pretty: false,
             compact: false,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]

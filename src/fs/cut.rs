@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -354,7 +354,7 @@ fn process_lines<R: BufRead>(
     Ok(true)
 }
 
-pub fn run(args: &CutArgs) -> Result<ExitCode> {
+pub fn run(args: &CutArgs) -> Result<Outcome> {
     let spec = parse_field_spec(&args.fields)?;
 
     let splitter = if let Some(ref re_pat) = args.regex_delim {
@@ -412,7 +412,7 @@ pub fn run(args: &CutArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -556,6 +556,6 @@ mod tests {
             limit: None,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(exit, Outcome::Found);
     }
 }

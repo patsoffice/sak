@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -224,7 +224,7 @@ fn compute_stats<R: Read>(
     Ok((headers, stats, row_count))
 }
 
-pub fn run(args: &StatsArgs) -> Result<ExitCode> {
+pub fn run(args: &StatsArgs) -> Result<Outcome> {
     if args.files.len() > 1 {
         bail!("sak csv stats accepts at most one input file");
     }
@@ -277,7 +277,7 @@ pub fn run(args: &StatsArgs) -> Result<ExitCode> {
         }
     }
     writer.flush().context("flushing stdout")?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -407,7 +407,7 @@ mod tests {
             sample: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]

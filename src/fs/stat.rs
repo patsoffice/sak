@@ -1,7 +1,7 @@
+use crate::output::Outcome;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
@@ -129,7 +129,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-pub fn run(args: &StatArgs) -> Result<ExitCode> {
+pub fn run(args: &StatArgs) -> Result<Outcome> {
     let mut records: Vec<StatRecord> = Vec::new();
     let mut any_error = false;
     for path in &args.paths {
@@ -174,9 +174,9 @@ pub fn run(args: &StatArgs) -> Result<ExitCode> {
     writer.flush()?;
 
     if any_error {
-        Ok(ExitCode::from(2))
+        Ok(Outcome::Partial)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -222,7 +222,7 @@ mod tests {
             format: Format::Human,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(2));
+        assert_eq!(run(&args).unwrap(), Outcome::Partial);
     }
 
     #[test]
@@ -234,6 +234,6 @@ mod tests {
             format: Format::Json,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

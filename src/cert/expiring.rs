@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -57,7 +57,7 @@ pub struct ExpiringArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ExpiringArgs) -> Result<ExitCode> {
+pub fn run(args: &ExpiringArgs) -> Result<Outcome> {
     let format = if args.json {
         OutputFormat::Json
     } else if args.tsv {
@@ -100,9 +100,9 @@ pub fn run(args: &ExpiringArgs) -> Result<ExitCode> {
     // the opposite of sak's normal "exit 0 = found, exit 1 = nothing".
     // Documented prominently in long_about so callers aren't surprised.
     if any_matched {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -133,7 +133,7 @@ mod tests {
             field: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -149,6 +149,6 @@ mod tests {
             field: None,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

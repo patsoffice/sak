@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -473,7 +473,7 @@ fn emit_result(
     Ok(true)
 }
 
-pub fn run(args: &GrepArgs) -> Result<ExitCode> {
+pub fn run(args: &GrepArgs) -> Result<Outcome> {
     let re = build_regex(&args.pattern, args.ignore_case, args.word, args.multiline)?;
     let files = collect_files(args)?;
     let read_stdin = args.paths.iter().any(|p| p.as_os_str() == "-");
@@ -514,7 +514,7 @@ pub fn run(args: &GrepArgs) -> Result<ExitCode> {
             &mut writer,
         )? {
             writer.flush()?;
-            return Ok(ExitCode::SUCCESS);
+            return Ok(Outcome::Found);
         }
     }
 
@@ -555,9 +555,9 @@ pub fn run(args: &GrepArgs) -> Result<ExitCode> {
     writer.flush()?;
 
     if any_match {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
 

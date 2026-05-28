@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
@@ -103,7 +103,7 @@ fn split_patterns_path(positionals: &[String]) -> (Vec<String>, PathBuf) {
     (positionals.to_vec(), PathBuf::from("."))
 }
 
-pub fn run(args: &GlobArgs) -> Result<ExitCode> {
+pub fn run(args: &GlobArgs) -> Result<Outcome> {
     let (patterns, path) = split_patterns_path(&args.patterns);
 
     let mut builder = GlobSetBuilder::new();
@@ -170,7 +170,7 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
     }
 
     if results.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let stdout = io::stdout();
@@ -185,7 +185,7 @@ pub fn run(args: &GlobArgs) -> Result<ExitCode> {
     }
 
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -232,7 +232,7 @@ mod tests {
         };
 
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(exit, Outcome::Found);
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
             limit: None,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::from(1));
+        assert_eq!(exit, Outcome::NotFound);
     }
 
     #[test]

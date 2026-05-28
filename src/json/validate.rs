@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -74,7 +74,7 @@ fn validate_lines(name: &str, content: &str) -> (usize, Vec<String>) {
     (total, errs)
 }
 
-pub fn run(args: &ValidateArgs) -> Result<ExitCode> {
+pub fn run(args: &ValidateArgs) -> Result<Outcome> {
     let _ = args.strict; // reserved
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -148,9 +148,9 @@ pub fn run(args: &ValidateArgs) -> Result<ExitCode> {
 
     writer.flush()?;
     if any_invalid {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     } else {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     }
 }
 
@@ -173,7 +173,7 @@ mod tests {
             limit: None,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(exit, Outcome::Found);
     }
 
     #[test]
@@ -190,7 +190,7 @@ mod tests {
             limit: None,
         };
         let exit = run(&args).unwrap();
-        assert_eq!(exit, ExitCode::from(1));
+        assert_eq!(exit, Outcome::NotFound);
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
             lines: true,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::SUCCESS);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
@@ -243,6 +243,6 @@ mod tests {
             lines: true,
             limit: None,
         };
-        assert_eq!(run(&args).unwrap(), ExitCode::from(1));
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
     }
 }

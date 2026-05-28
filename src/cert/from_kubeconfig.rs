@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -59,7 +59,7 @@ pub struct FromKubeconfigArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &FromKubeconfigArgs) -> Result<ExitCode> {
+pub fn run(args: &FromKubeconfigArgs) -> Result<Outcome> {
     let format = if args.json {
         OutputFormat::Json
     } else if args.tsv {
@@ -87,7 +87,7 @@ pub fn run(args: &FromKubeconfigArgs) -> Result<ExitCode> {
     let infos = extract_kubeconfig_certs(&source, &kubeconfig, args.user.as_deref(), args.ca)?;
 
     if infos.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     inspect::emit(&infos, format, args.field.as_deref(), args.limit)
