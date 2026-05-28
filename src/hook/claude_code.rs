@@ -348,7 +348,14 @@ fn block(msg: &str) -> Option<String> {
 /// one at a time; until a tool appears in some registry it falls back to the
 /// legacy per-tool `check_*` below.
 fn registries() -> &'static [&'static [HookRule]] {
-    &[crate::fs::hook::HOOK_RULES, crate::git::hook::HOOK_RULES]
+    &[
+        crate::fs::hook::HOOK_RULES,
+        crate::git::hook::HOOK_RULES,
+        crate::json::hook::HOOK_RULES,
+        crate::config::hook::HOOK_RULES,
+        crate::cert::hook::HOOK_RULES,
+        crate::hash::hook::HOOK_RULES,
+    ]
 }
 
 /// True when some registry owns `tool`. A registry-owned tool's registry result
@@ -436,11 +443,6 @@ fn check(tokens: &[String]) -> Option<String> {
     let pos = positionals(args);
 
     match cmd_base {
-        "jq" => check_jq(&pos),
-        "yq" | "tomlq" => check_yq(cmd_base, &pos),
-        "plistutil" => block("Use `sak config query/keys/flatten <file>` instead of `plistutil`."),
-        "openssl" => check_openssl(args),
-        "sha256sum" | "sha1sum" | "md5sum" | "shasum" | "b3sum" => check_sum(cmd_base),
         "kubectl" => check_kubectl(&pos),
         "talosctl" => check_talosctl(&pos),
         "docker" => check_docker(&pos),
@@ -453,57 +455,6 @@ fn check(tokens: &[String]) -> Option<String> {
         "sysctl" => check_sysctl(args),
         _ => None,
     }
-}
-
-fn check_jq(pos: &[&str]) -> Option<String> {
-    // jq FILTER (stdin) is 1 positional; jq FILTER FILE is 2+.
-    if pos.len() >= 2 {
-        return block(
-            "Use `sak json query <path> <file>` instead of `jq` for files. \
-             Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
-        );
-    }
-    None
-}
-
-fn check_yq(base: &str, pos: &[&str]) -> Option<String> {
-    if pos.len() >= 2 {
-        return block(&format!(
-            "Use `sak config query <path> <file>` instead of `{base}` for files. \
-             Handles TOML/YAML/JSON/plist."
-        ));
-    }
-    None
-}
-
-fn check_openssl(args: &[String]) -> Option<String> {
-    match args.first().map(|s| s.as_str()) {
-        Some("x509") => block(
-            "Use `sak cert inspect <cert>` instead of `openssl x509`. \
-             Also: `sak cert expiring --days 30`, `sak cert from-kubeconfig`.",
-        ),
-        Some("dgst") => {
-            block("Use `sak hash sha256|sha1|md5|blake3 <file>` instead of `openssl dgst`.")
-        }
-        _ => None,
-    }
-}
-
-/// `*sum` / `b3sum` are read-only digest tools (their `-c`/`--check` mode maps
-/// to `sak hash --verify`), so every invocation redirects to `sak hash`.
-fn check_sum(base: &str) -> Option<String> {
-    let algo = match base {
-        "sha1sum" => "sha1",
-        "md5sum" => "md5",
-        "b3sum" => "blake3",
-        // sha256sum and shasum (shasum defaults to SHA-1 but takes `-a 256`):
-        // suggest sha256 and let the algo list cover the rest.
-        _ => "sha256",
-    };
-    block(&format!(
-        "Use `sak hash {algo} <file>` instead of `{base}` \
-         (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3)."
-    ))
 }
 
 fn check_kubectl(pos: &[&str]) -> Option<String> {
@@ -894,6 +845,13 @@ mod engine_tests {
         assert!(tool_in_registries("cat"));
         assert!(tool_in_registries("tree"));
         assert!(tool_in_registries("git"));
+        assert!(tool_in_registries("jq"));
+        assert!(tool_in_registries("yq"));
+        assert!(tool_in_registries("plistutil"));
+        // openssl is split across cert (x509) and hash (dgst); either suffices.
+        assert!(tool_in_registries("openssl"));
+        assert!(tool_in_registries("sha256sum"));
+        assert!(tool_in_registries("b3sum"));
         assert!(!tool_in_registries("kubectl"));
         assert!(!tool_in_registries("sqlite3"));
     }

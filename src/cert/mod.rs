@@ -14,6 +14,7 @@
 pub mod expiring;
 pub mod from_kubeconfig;
 pub mod from_yaml;
+pub mod hook;
 pub mod inspect;
 
 use std::io::{self, Read};

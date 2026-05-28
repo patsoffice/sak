@@ -14,6 +14,8 @@
 //! there is no chokepoint test or read-only enforcement here, mirroring the
 //! `cert` domain.
 
+pub mod hook;
+
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;

@@ -16,6 +16,7 @@ pub mod diff;
 pub mod exists;
 pub mod flatten;
 pub mod grep;
+pub mod hook;
 pub mod keys;
 pub mod length;
 pub mod paths;
