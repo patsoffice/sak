@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
@@ -84,7 +84,7 @@ pub struct SearchArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &SearchArgs) -> Result<ExitCode> {
+pub fn run(args: &SearchArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     // No cluster involved — repo searches the local cache, hub hits the

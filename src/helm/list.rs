@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
@@ -117,7 +117,7 @@ impl Row {
     }
 }
 
-pub fn run(args: &ListArgs) -> Result<ExitCode> {
+pub fn run(args: &ListArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let conn = Conn {

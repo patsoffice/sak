@@ -30,7 +30,7 @@ pub mod get;
 pub mod hook;
 pub mod read;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -42,7 +42,7 @@ pub enum TalosCommand {
     Get(get::GetArgs),
 }
 
-pub fn run(cmd: &TalosCommand) -> Result<ExitCode> {
+pub fn run(cmd: &TalosCommand) -> Result<Outcome> {
     match cmd {
         TalosCommand::Certs(args) => certs::run(args),
         TalosCommand::Read(args) => read::run(args),

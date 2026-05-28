@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -44,7 +44,7 @@ pub struct DerivationShowArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &DerivationShowArgs) -> Result<ExitCode> {
+pub fn run(args: &DerivationShowArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let stdout = client::invoke_ok("derivation", Some("show"), &argv_refs)?;

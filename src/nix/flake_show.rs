@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -69,7 +69,7 @@ impl Row {
     }
 }
 
-pub fn run(args: &FlakeShowArgs) -> Result<ExitCode> {
+pub fn run(args: &FlakeShowArgs) -> Result<Outcome> {
     let mut argv = vec!["--json"];
     if args.all_systems {
         argv.push("--all-systems");

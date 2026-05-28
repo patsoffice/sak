@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -67,7 +67,7 @@ pub struct StoreInfoArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &StoreInfoArgs) -> Result<ExitCode> {
+pub fn run(args: &StoreInfoArgs) -> Result<Outcome> {
     let mut argv = vec!["--json"];
     if let Some(store) = &args.store {
         argv.push("--store");
@@ -108,12 +108,12 @@ fn emit_tsv(writer: &mut BoundedWriter<'_>, stdout: &[u8]) -> Result<bool> {
 /// Extract one named field and print its value bare. A scalar prints verbatim;
 /// an array / object prints as compact JSON. A missing or null field is "no
 /// results" (exit 1) with no output.
-fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<ExitCode> {
+fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<Outcome> {
     let text = String::from_utf8_lossy(stdout);
     let value: Value =
         serde_json::from_str(text.trim()).context("parsing `nix store info --json` output")?;
     let cell = match value.get(field) {
-        None | Some(Value::Null) => return Ok(ExitCode::from(1)),
+        None | Some(Value::Null) => return Ok(Outcome::NotFound),
         Some(Value::String(s)) => s.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
     };
@@ -121,7 +121,7 @@ fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<ExitCo
     let mut writer = BoundedWriter::new(out.lock(), limit);
     writer.write_line(&cell)?;
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -176,14 +176,13 @@ mod tests {
     #[test]
     fn emit_field_missing_is_exit_1() {
         let code = emit_field(br#"{"url":"daemon"}"#, "version", None).unwrap();
-        // ExitCode has no PartialEq; compare via Debug.
-        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::from(1)));
+        assert_eq!(code, Outcome::NotFound);
     }
 
     #[test]
     fn emit_field_present_is_success() {
         let code = emit_field(br#"{"url":"daemon"}"#, "url", None).unwrap();
-        assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(code, Outcome::Found);
     }
 
     #[test]

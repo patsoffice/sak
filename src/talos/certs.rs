@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -84,7 +84,7 @@ const CERT_PATHS: &[&str] = &[
     "/var/lib/kubelet/pki/kubelet-client-current.pem",
 ];
 
-pub fn run(args: &CertsArgs) -> Result<ExitCode> {
+pub fn run(args: &CertsArgs) -> Result<Outcome> {
     let format = if args.json {
         OutputFormat::Json
     } else if args.tsv {
@@ -138,13 +138,10 @@ pub fn run(args: &CertsArgs) -> Result<ExitCode> {
     }
 
     if infos.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
-    // `inspect::emit` returns `Result<Outcome>` after the cert-domain phase-2
-    // migration; bridge to ExitCode until phase 3 migrates the talos domain.
     inspect::emit(&infos, format, args.field.as_deref(), args.limit)
-        .map(crate::output::Outcome::exit_code)
 }
 
 #[cfg(test)]

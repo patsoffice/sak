@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -72,7 +72,7 @@ pub struct LintArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &LintArgs) -> Result<ExitCode> {
+pub fn run(args: &LintArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     // `helm lint` reads local chart files only — no cluster. Use `invoke` (not
@@ -116,9 +116,9 @@ pub fn run(args: &LintArgs) -> Result<ExitCode> {
 
     // Inverted convention: pass = exit 0, fail = exit 1.
     Ok(if passed {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

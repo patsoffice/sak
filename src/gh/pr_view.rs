@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -60,7 +60,7 @@ pub struct PrViewArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &PrViewArgs) -> Result<ExitCode> {
+pub fn run(args: &PrViewArgs) -> Result<Outcome> {
     let fields = render::parse_fields(&args.fields);
     if fields.is_empty() {
         anyhow::bail!("--fields must name at least one gh field");

@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -72,7 +72,7 @@ impl Row {
     }
 }
 
-pub fn run(args: &PathInfoArgs) -> Result<ExitCode> {
+pub fn run(args: &PathInfoArgs) -> Result<Outcome> {
     let mut argv = vec!["--json".to_string()];
     if args.closure {
         argv.push("--closure-size".to_string());

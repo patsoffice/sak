@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -62,7 +62,7 @@ const COLUMNS: [&str; 5] = [
     "path",
 ];
 
-pub fn run(args: &FlakeMetadataArgs) -> Result<ExitCode> {
+pub fn run(args: &FlakeMetadataArgs) -> Result<Outcome> {
     let stdout = client::invoke_ok("flake", Some("metadata"), &["--json", &args.flake_ref])?;
 
     if let Some(field) = &args.field {
@@ -108,12 +108,12 @@ fn emit_tsv(writer: &mut BoundedWriter<'_>, stdout: &[u8]) -> Result<bool> {
 /// Extract one dotted field and print its value bare. A scalar prints verbatim;
 /// an array / object prints as compact JSON. A missing or null field is "no
 /// results" (exit 1) with no output.
-fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<ExitCode> {
+fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<Outcome> {
     let text = String::from_utf8_lossy(stdout);
     let value: Value =
         serde_json::from_str(text.trim()).context("parsing `nix flake metadata --json` output")?;
     let cell = match get_path(&value, field) {
-        None | Some(Value::Null) => return Ok(ExitCode::from(1)),
+        None | Some(Value::Null) => return Ok(Outcome::NotFound),
         Some(Value::String(s)) => s.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
     };
@@ -121,7 +121,7 @@ fn emit_field(stdout: &[u8], field: &str, limit: Option<usize>) -> Result<ExitCo
     let mut writer = BoundedWriter::new(out.lock(), limit);
     writer.write_line(&cell)?;
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]
@@ -182,8 +182,8 @@ mod tests {
     fn emit_field_present_and_missing() {
         let stdout = serde_json::to_vec(&fixture()).unwrap();
         let present = emit_field(&stdout, "locked.rev", None).unwrap();
-        assert_eq!(format!("{present:?}"), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(format!("{present:?}"), format!("{:?}", Outcome::Found));
         let missing = emit_field(&stdout, "locked.rev.nope", None).unwrap();
-        assert_eq!(format!("{missing:?}"), format!("{:?}", ExitCode::from(1)));
+        assert_eq!(format!("{missing:?}"), format!("{:?}", Outcome::NotFound));
     }
 }

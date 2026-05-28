@@ -297,10 +297,10 @@ fn main() -> ExitCode {
         Command::Csv(cmd) => csv::run(cmd).map(Outcome::exit_code),
         Command::Cert(cmd) => cert::run(cmd).map(Outcome::exit_code),
         Command::Hash(cmd) => hash::run(cmd).map(Outcome::exit_code),
-        Command::Talos(cmd) => talos::run(cmd),
-        Command::Gh(cmd) => gh::run(cmd),
-        Command::Helm(cmd) => helm::run(cmd),
-        Command::Nix(cmd) => nix::run(cmd),
+        Command::Talos(cmd) => talos::run(cmd).map(Outcome::exit_code),
+        Command::Gh(cmd) => gh::run(cmd).map(Outcome::exit_code),
+        Command::Helm(cmd) => helm::run(cmd).map(Outcome::exit_code),
+        Command::Nix(cmd) => nix::run(cmd).map(Outcome::exit_code),
         #[cfg(feature = "k8s")]
         Command::K8s(cmd) => k8s::run(cmd),
         #[cfg(feature = "lxc")]

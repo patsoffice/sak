@@ -43,7 +43,7 @@ pub mod references;
 pub mod registry_list;
 pub mod store_info;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
@@ -64,7 +64,7 @@ pub enum NixCommand {
     FlakeMetadata(flake_metadata::FlakeMetadataArgs),
 }
 
-pub fn run(cmd: &NixCommand) -> Result<ExitCode> {
+pub fn run(cmd: &NixCommand) -> Result<Outcome> {
     match cmd {
         NixCommand::FlakeShow(args) => flake_show::run(args),
         NixCommand::StoreInfo(args) => store_info::run(args),
@@ -112,7 +112,7 @@ pub fn emit_to_stdout(
     limit: Option<usize>,
     json_empty_marker: &str,
     tsv: impl FnOnce(&mut BoundedWriter<'_>, &[u8]) -> Result<bool>,
-) -> Result<ExitCode> {
+) -> Result<Outcome> {
     let out = std::io::stdout();
     let mut writer = BoundedWriter::new(out.lock(), limit);
     let any = match format {
@@ -121,9 +121,9 @@ pub fn emit_to_stdout(
     };
     writer.flush()?;
     Ok(if any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

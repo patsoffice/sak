@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -70,7 +70,7 @@ pub struct TemplateArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &TemplateArgs) -> Result<ExitCode> {
+pub fn run(args: &TemplateArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     // --namespace sets .Release.Namespace at render time; no cluster contact.

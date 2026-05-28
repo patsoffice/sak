@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::io::{self, Write};
-use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -63,7 +63,7 @@ pub struct EvalArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &EvalArgs) -> Result<ExitCode> {
+pub fn run(args: &EvalArgs) -> Result<Outcome> {
     if args.installable.is_none() && args.expr.is_none() && args.file.is_none() {
         bail!("nix eval needs an INSTALLABLE positional, `--expr <expr>`, or `--file <path>`");
     }
@@ -77,7 +77,7 @@ pub fn run(args: &EvalArgs) -> Result<ExitCode> {
         // version, ...) round-trips unchanged. --limit is documented to apply
         // only in JSON mode. Mirrors `sak talos read`'s single-node path.
         io::stdout().write_all(&stdout)?;
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     // JSON mode: nix appends a trailing newline; re-emit line-wise so --limit
@@ -93,7 +93,7 @@ pub fn run(args: &EvalArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Assemble the `nix eval` argv (the chokepoint injects `--read-only` and the

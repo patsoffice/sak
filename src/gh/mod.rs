@@ -42,7 +42,7 @@ pub mod run_list;
 pub mod run_view;
 pub mod workflow_list;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Subcommand;
@@ -62,7 +62,7 @@ pub enum GhCommand {
     RepoView(repo_view::RepoViewArgs),
 }
 
-pub fn run(cmd: &GhCommand) -> Result<ExitCode> {
+pub fn run(cmd: &GhCommand) -> Result<Outcome> {
     match cmd {
         GhCommand::Api(args) => api::run(args),
         GhCommand::PrList(args) => pr_list::run(args),

@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -85,7 +85,7 @@ impl RunViewArgs {
     }
 }
 
-pub fn run(args: &RunViewArgs) -> Result<ExitCode> {
+pub fn run(args: &RunViewArgs) -> Result<Outcome> {
     if args.log_mode() {
         let argv = build_argv(args, "");
         let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
@@ -123,10 +123,10 @@ fn build_argv(args: &RunViewArgs, fields_csv: &str) -> Vec<String> {
 
 /// Stream raw log text through the bounded writer, one line at a time, so
 /// `--limit` truncates cleanly. Empty output maps to sak's exit code 1.
-fn emit_log(stdout: &[u8], limit: Option<usize>) -> Result<ExitCode> {
+fn emit_log(stdout: &[u8], limit: Option<usize>) -> Result<Outcome> {
     let text = String::from_utf8_lossy(stdout);
     if text.trim().is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
     let out = io::stdout();
     let handle = out.lock();
@@ -138,7 +138,7 @@ fn emit_log(stdout: &[u8], limit: Option<usize>) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]

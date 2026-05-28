@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -72,7 +72,7 @@ pub struct GetArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &GetArgs) -> Result<ExitCode> {
+pub fn run(args: &GetArgs) -> Result<Outcome> {
     let cfg_path = config::resolve_path(args.talosconfig.as_deref())?;
     let cfg = config::load(&cfg_path)?;
     let nodes = config::resolve_nodes(&cfg, args.node.as_deref());
@@ -120,15 +120,15 @@ pub fn run(args: &GetArgs) -> Result<ExitCode> {
             let trimmed = line.strip_suffix('\n').unwrap_or(line);
             if !writer.write_line(trimmed)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if any_success {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }

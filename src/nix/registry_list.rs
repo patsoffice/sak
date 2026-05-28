@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -81,7 +81,7 @@ impl Row {
     }
 }
 
-pub fn run(args: &RegistryListArgs) -> Result<ExitCode> {
+pub fn run(args: &RegistryListArgs) -> Result<Outcome> {
     let stdout = client::invoke_ok("registry", Some("list"), &[])?;
     let text = String::from_utf8_lossy(&stdout);
     let rows: Vec<Row> = parse(&text)
@@ -90,7 +90,7 @@ pub fn run(args: &RegistryListArgs) -> Result<ExitCode> {
         .collect();
 
     if rows.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let out = std::io::stdout();
@@ -109,7 +109,7 @@ pub fn run(args: &RegistryListArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Parse `nix registry list` text into rows. Each non-blank line is

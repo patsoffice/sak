@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -47,7 +47,7 @@ pub struct ReferencesArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ReferencesArgs) -> Result<ExitCode> {
+pub fn run(args: &ReferencesArgs) -> Result<Outcome> {
     let flag = if args.referrers {
         "--referrers"
     } else if args.closure {
@@ -67,7 +67,7 @@ pub fn run(args: &ReferencesArgs) -> Result<ExitCode> {
     paths.dedup();
 
     if paths.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let out = std::io::stdout();
@@ -78,7 +78,7 @@ pub fn run(args: &ReferencesArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 #[cfg(test)]

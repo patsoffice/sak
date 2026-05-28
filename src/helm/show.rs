@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -81,7 +81,7 @@ pub struct ShowArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ShowArgs) -> Result<ExitCode> {
+pub fn run(args: &ShowArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     // `helm show` resolves a chart, not a cluster release — no namespace. A

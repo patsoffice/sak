@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use clap::ValueEnum;
 use serde_json::Value;
 
-use crate::output::{BoundedWriter, collapse_ws};
+use crate::output::{BoundedWriter, Outcome, collapse_ws};
 
 /// Output format shared by every `gh` list command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -186,7 +186,7 @@ pub fn emit_to_stdout(
     fields: &[String],
     format: Format,
     limit: Option<usize>,
-) -> Result<std::process::ExitCode> {
+) -> Result<Outcome> {
     finish(emit, stdout, fields, format, limit)
 }
 
@@ -197,7 +197,7 @@ pub fn emit_single_to_stdout(
     fields: &[String],
     format: Format,
     limit: Option<usize>,
-) -> Result<std::process::ExitCode> {
+) -> Result<Outcome> {
     finish(emit_single, stdout, fields, format, limit)
 }
 
@@ -208,16 +208,16 @@ fn finish(
     fields: &[String],
     format: Format,
     limit: Option<usize>,
-) -> Result<std::process::ExitCode> {
+) -> Result<Outcome> {
     let out = std::io::stdout();
     let handle = out.lock();
     let mut writer = BoundedWriter::new(handle, limit);
     let any = emit_fn(&mut writer, stdout, fields, format)?;
     writer.flush()?;
     Ok(if any {
-        std::process::ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        std::process::ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -39,7 +39,7 @@ pub struct RepoListArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &RepoListArgs) -> Result<ExitCode> {
+pub fn run(args: &RepoListArgs) -> Result<Outcome> {
     // `helm repo list` reads the local repositories.yaml — no cluster or
     // namespace involved, so the connection is the ambient default.
     let stdout = client::invoke_ok("repo", Some("list"), &["--output", "json"], Conn::default())?;

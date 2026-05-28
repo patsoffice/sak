@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
@@ -80,7 +80,7 @@ pub struct GetArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &GetArgs) -> Result<ExitCode> {
+pub fn run(args: &GetArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let conn = Conn {
@@ -90,7 +90,7 @@ pub fn run(args: &GetArgs) -> Result<ExitCode> {
     // A missing release is "no results" (exit 1); the chokepoint maps helm's
     // not-found stderr to Ok(None).
     let Some(stdout) = client::invoke_found("get", None, &argv_refs, conn)? else {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     };
     emit_text_to_stdout(&stdout, args.limit)
 }

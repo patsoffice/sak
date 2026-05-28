@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::Args;
@@ -58,7 +58,7 @@ pub struct DependencyListArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &DependencyListArgs) -> Result<ExitCode> {
+pub fn run(args: &DependencyListArgs) -> Result<Outcome> {
     // `helm dependency list` reads local chart files only — no cluster.
     let stdout = client::invoke_ok("dependency", Some("list"), &[&args.chart], Conn::default())?;
     let text = String::from_utf8_lossy(&stdout);
@@ -72,9 +72,9 @@ pub fn run(args: &DependencyListArgs) -> Result<ExitCode> {
     };
     writer.flush()?;
     Ok(if any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

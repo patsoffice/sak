@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -66,7 +66,7 @@ impl Row {
     }
 }
 
-pub fn run(args: &ProfileListArgs) -> Result<ExitCode> {
+pub fn run(args: &ProfileListArgs) -> Result<Outcome> {
     let mut argv = vec!["--json"];
     if let Some(profile) = &args.profile {
         argv.push("--profile");
@@ -81,7 +81,7 @@ pub fn run(args: &ProfileListArgs) -> Result<ExitCode> {
 
     // Empty profile is "no results" for both formats — consistent exit 1.
     if rows.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
 
     let out = std::io::stdout();
@@ -106,7 +106,7 @@ pub fn run(args: &ProfileListArgs) -> Result<ExitCode> {
         }
     }
     writer.flush()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Project `nix profile list --json` into rows. Handles both schema shapes:

@@ -1,5 +1,5 @@
+use crate::output::Outcome;
 use std::io;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -72,7 +72,7 @@ pub struct ApiArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ApiArgs) -> Result<ExitCode> {
+pub fn run(args: &ApiArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let bytes = client::invoke_ok("api", None, &argv_refs)?;
@@ -83,7 +83,7 @@ pub fn run(args: &ApiArgs) -> Result<ExitCode> {
 
     let text = String::from_utf8_lossy(&bytes);
     if text.is_empty() {
-        return Ok(ExitCode::from(1));
+        return Ok(Outcome::NotFound);
     }
     for line in text.split_inclusive('\n') {
         // split_inclusive keeps the trailing '\n'; write_line re-adds one if
@@ -95,7 +95,7 @@ pub fn run(args: &ApiArgs) -> Result<ExitCode> {
     }
     writer.flush()?;
 
-    Ok(ExitCode::SUCCESS)
+    Ok(Outcome::Found)
 }
 
 /// Assemble the `gh api` passthrough arg vector. The endpoint leads; every flag

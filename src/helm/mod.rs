@@ -34,7 +34,7 @@ pub mod show;
 pub mod status;
 pub mod template;
 
-use std::process::ExitCode;
+use crate::output::Outcome;
 
 use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
@@ -56,7 +56,7 @@ pub enum HelmCommand {
     Search(search::SearchArgs),
 }
 
-pub fn run(cmd: &HelmCommand) -> Result<ExitCode> {
+pub fn run(cmd: &HelmCommand) -> Result<Outcome> {
     match cmd {
         HelmCommand::List(args) => list::run(args),
         HelmCommand::Status(args) => status::run(args),
@@ -105,7 +105,7 @@ pub fn emit_to_stdout(
     limit: Option<usize>,
     json_empty_marker: &str,
     tsv: impl FnOnce(&mut BoundedWriter<'_>, &[u8]) -> Result<bool>,
-) -> Result<ExitCode> {
+) -> Result<Outcome> {
     let out = std::io::stdout();
     let mut writer = BoundedWriter::new(out.lock(), limit);
     let any = match format {
@@ -114,9 +114,9 @@ pub fn emit_to_stdout(
     };
     writer.flush()?;
     Ok(if any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 
@@ -125,15 +125,15 @@ pub fn emit_to_stdout(
 /// output is helm's native text rather than a JSON projection — there is no
 /// TSV/JSON choice, so this is a thin wrapper over [`stream_verbatim`] with an
 /// empty marker of `""` (only truly empty output is "no results").
-pub fn emit_text_to_stdout(stdout: &[u8], limit: Option<usize>) -> Result<ExitCode> {
+pub fn emit_text_to_stdout(stdout: &[u8], limit: Option<usize>) -> Result<Outcome> {
     let out = std::io::stdout();
     let mut writer = BoundedWriter::new(out.lock(), limit);
     let any = stream_verbatim(&mut writer, stdout, "")?;
     writer.flush()?;
     Ok(if any {
-        ExitCode::SUCCESS
+        Outcome::Found
     } else {
-        ExitCode::from(1)
+        Outcome::NotFound
     })
 }
 

@@ -1,6 +1,6 @@
+use crate::output::Outcome;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Args;
@@ -50,7 +50,7 @@ pub struct ReadArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &ReadArgs) -> Result<ExitCode> {
+pub fn run(args: &ReadArgs) -> Result<Outcome> {
     let cfg_path = config::resolve_path(args.talosconfig.as_deref())?;
     let cfg = config::load(&cfg_path)?;
     let nodes = config::resolve_nodes(&cfg, args.node.as_deref());
@@ -69,7 +69,7 @@ pub fn run(args: &ReadArgs) -> Result<ExitCode> {
         // unchanged. --limit is documented to apply only in multi-node mode.
         let bytes = client::invoke_ok("read", &[&args.path], Some(&nodes[0]), Some(&cfg.path))?;
         io::stdout().write_all(&bytes)?;
-        return Ok(ExitCode::SUCCESS);
+        return Ok(Outcome::Found);
     }
 
     // Multi-node mode: per-node section headers, lossy UTF-8 conversion so
@@ -99,15 +99,15 @@ pub fn run(args: &ReadArgs) -> Result<ExitCode> {
             let trimmed = line.strip_suffix('\n').unwrap_or(line);
             if !writer.write_line(trimmed)? {
                 writer.flush()?;
-                return Ok(ExitCode::SUCCESS);
+                return Ok(Outcome::Found);
             }
         }
     }
 
     writer.flush()?;
     if any_success {
-        Ok(ExitCode::SUCCESS)
+        Ok(Outcome::Found)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(Outcome::NotFound)
     }
 }
