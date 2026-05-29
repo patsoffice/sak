@@ -50,9 +50,13 @@ pub struct ShowArgs {
 pub fn run(args: &ShowArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
 
-    let obj = repo
-        .revparse_single(&args.reference)
-        .with_context(|| format!("cannot resolve '{}'", args.reference))?;
+    let obj = match repo.revparse_single(&args.reference) {
+        Ok(obj) => obj,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(Outcome::NotFound),
+        Err(e) => {
+            return Err(e).with_context(|| format!("cannot resolve '{}'", args.reference));
+        }
+    };
     let commit = obj
         .peel_to_commit()
         .with_context(|| format!("'{}' is not a commit", args.reference))?;
@@ -245,6 +249,22 @@ mod tests {
         };
         let result = run(&args).unwrap();
         assert_eq!(result, Outcome::Found);
+    }
+
+    #[test]
+    fn test_show_bad_ref_is_not_found() {
+        let (_dir, repo) = crate::git::init_test_repo();
+
+        let args = ShowArgs {
+            repo: Some(repo.workdir().unwrap().to_path_buf()),
+            reference: "deadbeef".to_string(),
+            stat: false,
+            name_only: false,
+            format: None,
+            limit: None,
+        };
+        let result = run(&args).unwrap();
+        assert_eq!(result, Outcome::NotFound);
     }
 
     #[test]
