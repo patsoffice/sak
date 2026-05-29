@@ -68,6 +68,20 @@ A new sak command typically follows this checklist:
 4. Bump the version in `Cargo.toml` per the rule above.
 5. `cargo fmt && cargo clippy --all-features --all-targets && cargo test && cargo test --no-default-features` must all be clean before committing. The `--no-default-features` run now exercises the **lean-build invariant**: cargo-feature-gated rules drop entirely from `registries()` via `#[cfg(feature = "...")]` on their slot, so a slim binary never suggests a `sak k8s|docker|lxc|sqlite` command it doesn't ship. The matching `*_reads_allow_in_lean_build` tests in `src/hook/tests.rs` enforce this — keep them in sync when you add new gated-domain rules.
 
+## Testing Patterns
+
+A few patterns recur — when you write tests for a new command, reach for these first:
+
+- **Parser tests with hand-built const fixtures.** When the unit under test is a pure function over text (a parser, projector, classifier), embed a small literal `&str` fixture in the test module rather than reading from disk. Template: [src/linux/cpuinfo.rs](src/linux/cpuinfo.rs)'s `tests` module — inlined `/proc/cpuinfo` snippets exercise every branch with no I/O.
+
+- **Chokepoint grep tests via `crate::test_support::assert_no_forbidden_tokens_except`.** When a domain has a `client.rs` chokepoint (`k8s`, `lxc`, `docker`, `sqlite`, `prom`, `talos`, `helm`, `nix`, `gh`), enforce it with a single-token grep test that scans every other `*.rs` in the domain for the banned strings (the binary name, mutation methods, `Command::new(`, raw client constructors). Template: [src/nix/client.rs](src/nix/client.rs)'s `no_nix_name_tokens_outside_client_or_hook`. The helper exempts `hook.rs` so HookRule messages can reference the binary name in their static strings; doc comments / comment lines are skipped by the helper's line filter.
+
+- **Hook guard tests.** A `HookRule` with `guard: Some(fn(&[String]) -> bool)` needs an inline test pinning the guard's true/false split — the engine respects the guard but only checks args, so a regressed guard would silently change what gets blocked. Template: [src/fs/hook.rs:223](src/fs/hook.rs#L223) (`cat_guard_distinguishes_file_from_stdin`). One assertion per branch is enough.
+
+- **Hook integration tests via `blocks(...)` / `allows(...)`.** Every new `HOOK_RULES` row gets a `blocks(...)` assertion in [src/hook/tests.rs](src/hook/tests.rs) exercising the full claude-code path (tool name + subcommand → decision). For feature-gated domains (`k8s`, `lxc`, `docker`, `sqlite`, `prom`), cfg-gate the `blocks(...)` assertion behind your domain's feature *and* add a matching `allows(...)` under `#[cfg(not(feature = "..."))]` so the lean build's pass-through is asserted too — that's the lean-build invariant. See `kubectl_reads_allow_in_lean_build`, `docker_reads_allow_in_lean_build`, `lxc_reads_allow_in_lean_build`, `sqlite_reads_allow_in_lean_build` for the shape.
+
+**Anti-pattern: tests that exercise framework syntax, not behavior.** Avoid tests that only confirm clap parses a flag, or that a one-line accessor returns its argument verbatim — they're testing the language, not the code. Example to avoid: `dash_is_stdin_sentinel` at [src/json/mod.rs:162-164](src/json/mod.rs#L162-L164) (`assert!(is_stdin(Path::new("-")))` reads the same as the function body). If the test body and the function body are the same line, the test isn't earning its keep.
+
 ## Commit Style
 
 - Prefix: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`
@@ -103,7 +117,32 @@ A new sak command typically follows this checklist:
 - Read-only enforcement for `prom` mirrors the k8s/lxc/docker pattern: every `ureq::Agent` construction and every mutation method (`.post(`/`.put(`/`.patch(`/`.delete(`) must live in `src/prom/client.rs`, enforced by a grep test. Prometheus's admin write endpoints under `/api/v1/admin/tsdb/*` (enabled with `--web.enable-admin-api`) make this a real guardrail. `PromClient::get_prom` unwraps the Prometheus `{status, data, errorType?, error?}` envelope and surfaces `status=error` as `anyhow::Error`; `PromClient::get_json` returns the raw body (used by Alertmanager v2 endpoints, which are envelope-less arrays). Both map HTTP 404 to `Ok(None)` so callers can produce sak's exit code 1 for "not found", mirroring `k8s::client::get_dyn` / `lxc::client::get_json` / `docker::client::get_json`. Shared output helpers (`emit_json`, `collapse_newlines`) live in `src/prom/output.rs`; the duration parser shared by `query-range` and `histogram` lives in `src/prom/duration.rs`
 - All operations are strictly read-only — no writes, no side effects
 - Output goes to stdout, errors to stderr prefixed with `sak: error:`
-- Exit codes: 0 = results found, 1 = no results, 2 = error
+
+## Exit Codes
+
+Three values, applied consistently across every domain:
+
+- **0** — results found (the search/lookup succeeded with at least one result)
+- **1** — no results (a successful run that found nothing — empty match set, missing single resource)
+- **2** — tool error (malformed input, unreachable backend, I/O error, etc.)
+
+Exit-2 errors go to stderr with the `sak: error:` prefix that `main.rs` adds when a command returns `Err`. Exit-1 "no results" runs are silent on stderr.
+
+**Single-resource lookups: 404 → exit 1.** Every API-domain chokepoint maps "not found" to a typed `Option`/`Outcome` so callers can produce exit 1 without losing the ability to surface other failures as exit 2:
+
+- [src/k8s/client.rs](src/k8s/client.rs) `get_dyn` — apiserver 404 → `Ok(None)`
+- [src/lxc/client.rs](src/lxc/client.rs) `LxcClient::get_json` — LXD 404 → `Ok(None)`
+- [src/docker/client.rs](src/docker/client.rs) `DockerClient::get_json` — daemon 404 → `Ok(None)`
+- [src/prom/client.rs](src/prom/client.rs) `PromClient::get_prom` / `get_json` — HTTP 404 → `Ok(None)`
+- [src/helm/client.rs](src/helm/client.rs) `invoke_found` — helm `not found` stderr → `Ok(None)`. Single-release reads only (`status`/`get`/`history`); chart-resolving commands (`show`/`template`) stay exit 2 on failure — see Gotchas
+- [src/git/show.rs](src/git/show.rs) — git2 `ErrorCode::NotFound` from `revparse_single` → `Outcome::NotFound`. Only `sak git show`; `diff` and `blame` stay exit 2 on unresolvable refs — see Gotchas
+
+**Inversions.** Two commands flip 0 and 1 so they read naturally in shell conditionals:
+
+- `sak cert expiring` — exit 0 = no certs in window (healthy), exit 1 = at least one match (alert) — see Gotchas
+- `sak helm lint` — exit 0 = chart passes lint, exit 1 = chart fails — see Gotchas
+
+**Validate-style commands** (`sak json validate`, `sak config validate`, `sak csv validate`) are grep/linter-shaped, not standard-error-shaped: they print one `name: <diagnostic>` line per offending file to stderr (no `sak: error:` prefix) and return **exit 1** (a negative result — "found invalid files"). Exit 2 stays reserved for an actual tool failure. Keep new validate-style commands on the same pattern rather than routing per-file findings through `anyhow` — see Gotchas.
 
 ## Conventions
 
