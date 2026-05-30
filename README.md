@@ -16,6 +16,32 @@ Commands are organized by domain. Current domains: `fs` (filesystem), `git` (rep
 
 ## Installing
 
+### Prerequisites
+
+`sak` is a stock Cargo crate — Nix is convenient but not required. To build from source you need:
+
+- A Rust toolchain (`rustc` + `cargo`) — install via [rustup](https://rustup.rs).
+- A C compiler, `pkg-config`, and `cmake` — needed to build the bundled C sources that `libgit2-sys`, `libssh2-sys`, and (for the default `sqlite` feature) `libsqlite3-sys` vendor.
+- OpenSSL development headers — `libssh2-sys` links against system OpenSSL on Linux. The rest of sak's TLS goes through rustls, but `git2` is always on (so libssh2 is always pulled in) and so OpenSSL headers are needed even for `--no-default-features` builds.
+
+Per-platform install one-liners (everything except the Rust toolchain):
+
+| OS | Command |
+| --- | --- |
+| Debian / Ubuntu | `sudo apt-get install build-essential pkg-config cmake libssl-dev` |
+| Fedora / RHEL | `sudo dnf install gcc gcc-c++ pkgconfig cmake openssl-devel` |
+| Arch | `sudo pacman -S base-devel pkgconf cmake openssl` |
+| Alpine | `sudo apk add build-base pkgconf cmake openssl-dev` |
+| macOS | `xcode-select --install` then `brew install cmake pkg-config openssl@3` |
+
+On macOS with Homebrew OpenSSL, point `pkg-config` at it before building:
+
+```sh
+export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH-}"
+```
+
+Nix users can skip all of this — `nix develop` (or letting direnv pick up the repo's `.envrc`) drops you into a shell with the full toolchain plus the shell-out CLIs (`helm`, `kubectl`, `talosctl`, `gh`) preinstalled. See [With Nix Flakes](#with-nix-flakes) below.
+
 ### From Source
 
 ```sh
