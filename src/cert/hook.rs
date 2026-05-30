@@ -11,6 +11,7 @@ pub const HOOK_RULES: &[HookRule] = &[HookRule {
     tool: "openssl",
     subcommand: &[&["x509"]],
     guard: None,
-    message: "Use `sak cert inspect <cert>` instead of `openssl x509`. \
+    message: "Use `sak cert inspect <cert>` instead of `openssl x509` \
+         (omit <cert> to read PEM/DER from stdin, e.g. `cat cert.pem | sak cert inspect`). \
          Also: `sak cert expiring --days 30`, `sak cert from-kubeconfig`.",
 }];

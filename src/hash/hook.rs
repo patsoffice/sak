@@ -20,41 +20,42 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "openssl",
         subcommand: &[&["dgst"]],
         guard: None,
-        message: "Use `sak hash sha256|sha1|md5|blake3 <file>` instead of `openssl dgst`.",
+        message: "Use `sak hash sha256|sha1|md5|blake3 <file>` instead of `openssl dgst` \
+            (omit <file> to hash stdin).",
     },
     HookRule {
         tool: "sha256sum",
         subcommand: &[],
         guard: None,
         message: "Use `sak hash sha256 <file>` instead of `sha256sum` \
-             (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
+             (omit <file> to hash stdin; add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
     },
     HookRule {
         tool: "sha1sum",
         subcommand: &[],
         guard: None,
         message: "Use `sak hash sha1 <file>` instead of `sha1sum` \
-             (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
+             (omit <file> to hash stdin; add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
     },
     HookRule {
         tool: "md5sum",
         subcommand: &[],
         guard: None,
         message: "Use `sak hash md5 <file>` instead of `md5sum` \
-             (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
+             (omit <file> to hash stdin; add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
     },
     HookRule {
         tool: "shasum",
         subcommand: &[],
         guard: None,
         message: "Use `sak hash sha256 <file>` instead of `shasum` \
-             (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
+             (omit <file> to hash stdin; add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
     },
     HookRule {
         tool: "b3sum",
         subcommand: &[],
         guard: None,
         message: "Use `sak hash blake3 <file>` instead of `b3sum` \
-             (add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
+             (omit <file> to hash stdin; add `--verify <sumfile>` to check; other algos: sha256, sha1, md5, blake3).",
     },
 ];

@@ -12,7 +12,8 @@ use crate::hook::rule::HookRule;
 
 /// Shared `grep`/`egrep`/`fgrep` redirect message (the three are byte-identical
 /// reads, so they share one string and differ only by `tool`).
-const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep`. \
+const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep` \
+     (pass `-` as <path> to read stdin, e.g. `cmd | sak fs grep <pattern> -`). \
      Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline. \
      If you're spelunking a dump (a diff, JSON, issue text) for a fact, \
      query the source instead (br show <id>, sak json/git) rather than \
@@ -64,13 +65,15 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "rg",
         subcommand: &[],
         guard: None,
-        message: "Use `sak fs grep <pattern> <path>` instead of `rg`.",
+        message: "Use `sak fs grep <pattern> <path>` instead of `rg` \
+            (pass `-` as <path> to read stdin).",
     },
     HookRule {
         tool: "ripgrep",
         subcommand: &[],
         guard: None,
-        message: "Use `sak fs grep <pattern> <path>` instead of `ripgrep`.",
+        message: "Use `sak fs grep <pattern> <path>` instead of `ripgrep` \
+            (pass `-` as <path> to read stdin).",
     },
     // `find` emits two messages, so it gets two rules: the metadata-search rule
     // is listed first (the engine takes the first match), and the broader
@@ -107,7 +110,8 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "wc",
         subcommand: &[],
         guard: Some(reads_a_path),
-        message: "Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes).",
+        message: "Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes; \
+            omit files to read stdin).",
     },
 ];
 

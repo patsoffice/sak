@@ -10,7 +10,8 @@ pub const HOOK_RULES: &[HookRule] = &[HookRule {
     tool: "jq",
     subcommand: &[],
     guard: Some(jq_has_file),
-    message: "Use `sak json query <path> <file>` instead of `jq` for files. \
+    message: "Use `sak json query <path> <file>` instead of `jq` for files \
+         (pass `-` as <file> to read stdin, e.g. `cmd | sak json query <path> -`). \
          Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
 }];
 

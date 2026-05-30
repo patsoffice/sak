@@ -13,14 +13,16 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "yq",
         subcommand: &[],
         guard: Some(yq_has_file),
-        message: "Use `sak config query <path> <file>` instead of `yq` for files. \
+        message: "Use `sak config query <path> <file>` instead of `yq` for files \
+             (omit <file> and pass `--format yaml|toml|json|plist` to read stdin). \
              Handles TOML/YAML/JSON/plist.",
     },
     HookRule {
         tool: "tomlq",
         subcommand: &[],
         guard: Some(yq_has_file),
-        message: "Use `sak config query <path> <file>` instead of `tomlq` for files. \
+        message: "Use `sak config query <path> <file>` instead of `tomlq` for files \
+             (omit <file> and pass `--format toml|yaml|json|plist` to read stdin). \
              Handles TOML/YAML/JSON/plist.",
     },
     HookRule {
