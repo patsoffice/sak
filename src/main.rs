@@ -205,7 +205,11 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
     #[cfg(feature = "loki")]
     s.push_str(
         "
-  sak loki query '{app=\"api\"}'                Instant LogQL query (recent lines)",
+  sak loki query '{app=\"api\"}'                Instant LogQL query (recent lines)
+  sak loki query-range '{app=\"api\"}' --since 1h   Range query over the last hour
+  sak loki labels                             List all label names
+  sak loki label-values app                   Values of one label
+  sak loki series '{app=\"api\"}'               Series matching a selector",
     );
     s
 });

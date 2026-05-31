@@ -2,7 +2,7 @@
 
 SAK is a read-only operations tool designed for use by language models. The key idea: since every operation is strictly read-only with no side effects, an LLM can learn the tool via `sak --help` and then use it autonomously without requiring human approval for each invocation.
 
-Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `nix` (read-only Nix store / flake / profile inspection via the `nix` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), `linux` (parsed `/proc` system state, Linux-only — more commands arrive in follow-ups), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
+Commands are organized by domain. Current domains: `fs` (filesystem), `git` (repository), `json`, `config` (TOML, YAML, plist, JSON), `csv`, `cert` (X.509 certificate inspection), `talos` (read-only Talos Linux cluster operations via `talosctl`), `gh` (read-only GitHub operations via the `gh` CLI), `helm` (read-only Helm release / chart / repo inspection via the `helm` CLI), `nix` (read-only Nix store / flake / profile inspection via the `nix` CLI), `k8s` (read-only Kubernetes against a live cluster), `lxc` (read-only LXD/Incus against a live daemon), `docker` (read-only Docker Engine against a live daemon), `sqlite` (read-only SQLite databases), `prom` (read-only Prometheus / Alertmanager HTTP API), `loki` (read-only Grafana Loki LogQL queries), `linux` (parsed `/proc` system state, Linux-only — more commands arrive in follow-ups), and `hook` (pre-tool-use classification for LLM agent harnesses — see [Using SAK from an LLM agent](#using-sak-from-an-llm-agent)).
 
 ## Design Decisions
 
@@ -11,8 +11,8 @@ Commands are organized by domain. Current domains: `fs` (filesystem), `git` (rep
 - **LLM-optimized output** — No ANSI colors, no spinners, no interactive prompts. Deterministic sort order. Line numbers on by default. Every subcommand includes `--help` examples.
 - **Bounded output** — All output flows through `BoundedWriter`, which enforces `--limit` and emits a truncation notice to stderr. This prevents LLMs from drowning in unbounded results.
 - **Single binary** — One crate, no workspace. Keeps compilation fast and deployment simple.
-- **Minimal dependencies** — Runtime dependencies: `clap`, `globset`, `walkdir`, `regex`, `anyhow`, `git2`, `serde`, `serde_json`, `toml`, `serde_yaml`, `plist`. Optional domains add their own clients on top: `k8s` brings `kube` + `k8s-openapi` + `tokio` + `http`; `lxc` and `docker` share a `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio` unix-socket stack; `sqlite` brings `rusqlite` with the bundled libsqlite3; `prom` brings `ureq` with rustls (synchronous — pulls no tokio).
-- **Opt-out heavy domains** — `k8s`, `lxc`, `docker`, `sqlite`, and `prom` are all part of the default feature set so `cargo install sak` ships every domain, but any of them can be disabled (independently or together) with `--no-default-features` for a leaner build that drops the corresponding clients / generated code / bundled libraries / async runtime. See [Build features](#build-features) below.
+- **Minimal dependencies** — Runtime dependencies: `clap`, `globset`, `walkdir`, `regex`, `anyhow`, `git2`, `serde`, `serde_json`, `toml`, `serde_yaml`, `plist`. Optional domains add their own clients on top: `k8s` brings `kube` + `k8s-openapi` + `tokio` + `http`; `lxc` and `docker` share a `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio` unix-socket stack; `sqlite` brings `rusqlite` with the bundled libsqlite3; `prom` and `loki` share `ureq` with rustls (synchronous — pulls no tokio).
+- **Opt-out heavy domains** — `k8s`, `lxc`, `docker`, `sqlite`, `prom`, and `loki` are all part of the default feature set so `cargo install sak` ships every domain, but any of them can be disabled (independently or together) with `--no-default-features` for a leaner build that drops the corresponding clients / generated code / bundled libraries / async runtime. See [Build features](#build-features) below.
 
 ## Installing
 
@@ -45,7 +45,7 @@ Nix users can skip all of this — `nix develop` (or letting direnv pick up the 
 ### From Source
 
 ```sh
-# Default build — includes every domain (k8s, lxc, docker, sqlite, prom)
+# Default build — includes every domain (k8s, lxc, docker, sqlite, prom, loki)
 cargo install --path .
 
 # Lean build — drops every optional domain and its dependencies
@@ -55,7 +55,7 @@ cargo install --path . --no-default-features
 ### From a Local Build
 
 ```sh
-cargo build --release                       # default (k8s + lxc + docker + sqlite + prom)
+cargo build --release                       # default (k8s + lxc + docker + sqlite + prom + loki)
 cargo build --release --no-default-features # lean build (no optional domains)
 cp target/release/sak /usr/local/bin/
 ```
@@ -71,14 +71,16 @@ cp target/release/sak /usr/local/bin/
 | `docker` | yes | The `docker` domain for read-only access to a live Docker Engine over a unix socket. Shares the same hyper stack as `lxc`. |
 | `sqlite` | yes | The `sqlite` domain for peeking inside `.db` files read-only. Pulls in `rusqlite` with the `bundled` libsqlite3 (compiled from source — no system `libsqlite3` dependency at runtime, but adds C compile time on the first build). |
 | `prom` | yes | The `prom` domain for read-only Prometheus and Alertmanager HTTP API operations. Pulls in `ureq` with a small rustls stack. Unlike the other optional domains it stays synchronous — `ureq` is blocking and each command is one HTTP round trip, so enabling `prom` alone does not bring `tokio` into the binary. |
+| `loki` | yes | The `loki` domain for read-only Grafana Loki LogQL queries — the log-side counterpart to `prom`. Shares prom's `ureq` + rustls stack (no new crates when both are on) and is likewise synchronous (no `tokio`). |
 
 The default-on domains together roughly triple the release binary size and cold link time vs the lean build. Users who don't need them can opt out:
 
 ```sh
-cargo build --release --no-default-features                                  # lean: no k8s, lxc, docker, sqlite, or prom
+cargo build --release --no-default-features                                  # lean: no k8s, lxc, docker, sqlite, prom, or loki
 cargo build --release --no-default-features --features k8s                   # lean + k8s
 cargo build --release --no-default-features --features sqlite                # lean + sqlite
 cargo build --release --no-default-features --features prom                  # lean + prom (no tokio)
+cargo build --release --no-default-features --features loki                  # lean + loki (no tokio)
 cargo build --release --no-default-features --features lxc,docker            # lean + container daemons
 cargo build --release --all-features                                         # everything (same as default today)
 ```
@@ -131,6 +133,7 @@ sak lxc --help            # default-on; --no-default-features removes it
 sak docker --help         # default-on; --no-default-features removes it
 sak sqlite --help         # default-on; --no-default-features removes it
 sak prom --help           # default-on; --no-default-features removes it
+sak loki --help           # default-on; --no-default-features removes it
 sak hook --help
 
 # Discover options and see examples for a specific command
@@ -214,15 +217,15 @@ The rule set lives in `src/hook/claude_code.rs` with an inline test suite that p
 
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)
 
-The hook above catches most CLI-shaped mistakes, but it can't redirect things that have no canonical CLI — Prometheus and Alertmanager are the big ones (`sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences` vs. ad-hoc `curl + jq` against the HTTP API). It also won't *teach* the agent the underlying habit — when the agent reaches for `sed -n '10,20p'`, the hook stays silent, and the agent thinks it solved the problem. A project instruction file fills both gaps. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
+The hook above catches most CLI-shaped mistakes, but it can't redirect things that have no canonical CLI — Prometheus / Alertmanager and Grafana Loki are the big ones (`sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences` and `sak loki query|query-range|labels|label-values|series` vs. ad-hoc `curl + jq` against the HTTP API). It also won't *teach* the agent the underlying habit — when the agent reaches for `sed -n '10,20p'`, the hook stays silent, and the agent thinks it solved the problem. A project instruction file fills both gaps. In Claude Code that's `CLAUDE.md` at the repo root (other harnesses use `AGENTS.md` or similar). Drop a section like this near the top:
 
 ```markdown
 ## Use sak as your tool
 
 When you need to inspect the filesystem, repo, JSON/TOML/YAML/plist,
 a live Kubernetes cluster, an LXD/Incus or Docker daemon, a SQLite
-database, or a Prometheus / Alertmanager endpoint, **prefer
-`sak <domain> <command>` over shell equivalents**:
+database, a Prometheus / Alertmanager endpoint, or a Grafana Loki
+endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 
 - `sak fs glob '<pattern>'...` instead of `ls`, `find`, or `**` shell globs (pass multiple patterns to OR-match, e.g. `sak fs glob flake.nix shell.nix .`)
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `sed -n` (or `sak fs head`/`sak fs tail` for the first/last N lines)
@@ -249,6 +252,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API
+- `sak loki query|query-range|labels|label-values|series` instead of `curl + jq` against a Grafana Loki LogQL API
 - `sak linux cpuinfo|meminfo|mounts|loadavg|uptime|sysctl|process|network` instead of `awk`-ing `/proc/cpuinfo`, `/proc/meminfo`, the mount table, `/proc/loadavg`, `/proc/uptime`, `sysctl -a`, `/proc/<pid>`, or `/proc/net/*` (Linux-only)
 
 Discover flags with `sak <domain> <command> --help`. If you want a sak
@@ -311,7 +315,7 @@ Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `ku
 | `http` | Raw `GET` request construction for `sak k8s schema` (behind the `k8s` feature) |
 | `hyper` / `hyperlocal` / `hyper-util` / `http-body-util` | Unix-socket HTTP stack for the `lxc` and `docker` domains |
 | `rusqlite` (bundled) | SQLite engine, compiled from source (behind the `sqlite` feature) |
-| `ureq` | Blocking HTTP + TLS (rustls) client for the `prom` domain — separate from the hyper stack since `prom` targets remote endpoints, not unix sockets |
+| `ureq` | Blocking HTTP + TLS (rustls) client for the `prom` and `loki` domains — separate from the hyper stack since both target remote endpoints, not unix sockets |
 
 Dev dependencies: `criterion` (benchmarks), `tempfile` (test fixtures).
 
