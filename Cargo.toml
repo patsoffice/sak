@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.19.3"
+version = "0.20.0"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -29,7 +29,7 @@ path = "src/main.rs"
 #     cargo build --release --no-default-features --features docker
 #     cargo build --release --no-default-features --features sqlite
 #     cargo build --release --no-default-features --features prom
-default = ["k8s", "lxc", "docker", "sqlite", "prom"]
+default = ["k8s", "lxc", "docker", "sqlite", "prom", "loki"]
 k8s = ["dep:kube", "dep:k8s-openapi", "dep:tokio", "dep:http"]
 # `lxc` talks to the LXD/Incus REST API over a unix domain socket via raw
 # hyper + hyperlocal. Read-only enforcement is convention + a chokepoint grep
@@ -68,6 +68,13 @@ sqlite = ["dep:rusqlite"]
 # in a small rustls stack. Read-only enforcement is convention + a chokepoint
 # grep test in src/prom/client.rs mirroring the k8s/lxc/docker pattern.
 prom = ["dep:ureq"]
+# `loki` talks to a Grafana Loki HTTP API over TCP+TLS using `ureq` (blocking)
+# with rustls — the log-side counterpart to `prom`. It shares prom's `ureq`
+# dependency, so enabling it on top of a build that already has `prom` adds no
+# new crates; on its own it pulls the same small rustls stack and stays
+# synchronous (no tokio). Read-only enforcement is convention + a chokepoint
+# grep test in src/loki/client.rs mirroring the prom pattern.
+loki = ["dep:ureq"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }

@@ -3,7 +3,7 @@ mod config;
 mod csv;
 #[cfg(feature = "docker")]
 mod docker;
-#[cfg(any(feature = "docker", feature = "prom"))]
+#[cfg(any(feature = "docker", feature = "prom", feature = "loki"))]
 mod duration;
 mod fs;
 mod gh;
@@ -15,6 +15,8 @@ mod json;
 #[cfg(feature = "k8s")]
 mod k8s;
 mod linux;
+#[cfg(feature = "loki")]
+mod loki;
 #[cfg(feature = "lxc")]
 mod lxc;
 mod nix;
@@ -47,6 +49,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
             feature = "docker",
             feature = "sqlite",
             feature = "prom",
+            feature = "loki",
             target_os = "linux"
         )),
         allow(unused_mut)
@@ -199,6 +202,11 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak prom am alerts                          Alertmanager active alerts
   sak prom am silences                        Alertmanager active silences",
     );
+    #[cfg(feature = "loki")]
+    s.push_str(
+        "
+  sak loki query '{app=\"api\"}'                Instant LogQL query (recent lines)",
+    );
     s
 });
 
@@ -275,6 +283,10 @@ enum Command {
     #[cfg(feature = "prom")]
     #[command(subcommand)]
     Prom(prom::PromCommand),
+    /// Grafana Loki HTTP API operations — LogQL queries (read-only)
+    #[cfg(feature = "loki")]
+    #[command(subcommand)]
+    Loki(loki::LokiCommand),
     /// Linux /proc system-state inspection (read-only, Linux-only)
     #[cfg(target_os = "linux")]
     #[command(subcommand)]
@@ -309,6 +321,8 @@ fn main() -> ExitCode {
         Command::Sqlite(cmd) => sqlite::run(cmd),
         #[cfg(feature = "prom")]
         Command::Prom(cmd) => prom::run(cmd),
+        #[cfg(feature = "loki")]
+        Command::Loki(cmd) => loki::run(cmd),
         #[cfg(target_os = "linux")]
         Command::Linux(cmd) => linux::run(cmd),
         Command::Hook(cmd) => hook::run(cmd),
