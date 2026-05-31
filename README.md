@@ -245,7 +245,7 @@ database, or a Prometheus / Alertmanager endpoint, **prefer
 - `sak nix flake-show` / `sak nix store-info` / `sak nix eval` / `sak nix registry-list` / `sak nix profile-list` / `sak nix references` / `sak nix derivation-show` / `sak nix path-info` / `sak nix flake-metadata` instead of `nix flake show` / `nix store info`/`ping` / `nix eval` (pure evals only) / `nix registry list` / `nix profile list` / `nix-store --query --references`/`--referrers`/`--requisites` / `nix derivation show` / `nix path-info` / `nix-store --query --info`/`-S` / `nix flake metadata`/`info`
 - `sak k8s get|images|env|schema` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
-- `sak docker list|info|config|images` instead of `docker` reads
+- `sak docker list|info|config|images|logs` instead of `docker` reads
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API

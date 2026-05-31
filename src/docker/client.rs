@@ -48,6 +48,23 @@ impl DockerClient {
     /// ability to surface other errors as exit code 2 (mirrors the k8s and
     /// lxc domain pattern).
     pub async fn get_json(&self, path: &str) -> Result<Option<serde_json::Value>> {
+        let Some(body) = self.get_bytes(path).await? else {
+            return Ok(None);
+        };
+        let value: serde_json::Value = serde_json::from_slice(&body)
+            .with_context(|| format!("parsing JSON response for {path}"))?;
+        Ok(Some(value))
+    }
+
+    /// Issue a `GET` against a Docker Engine API path and return the raw
+    /// response body bytes, unparsed.
+    ///
+    /// This is the chokepoint used for endpoints whose bodies are not JSON —
+    /// notably `/containers/<id>/logs`, which returns either a raw byte stream
+    /// (TTY containers) or Docker's 8-byte-header multiplexed framing. Like
+    /// [`Self::get_json`], a 404 maps to `Ok(None)` so callers can produce the
+    /// sak-standard exit code 1 for "not found".
+    pub async fn get_bytes(&self, path: &str) -> Result<Option<Bytes>> {
         let uri: hyper::Uri = Uri::new(&self.socket, path).into();
         let req = Request::builder()
             .method("GET")
@@ -81,9 +98,7 @@ impl DockerClient {
             bail!("Docker daemon returned HTTP {status} for GET {path}: {snippet}");
         }
 
-        let value: serde_json::Value = serde_json::from_slice(&body)
-            .with_context(|| format!("parsing JSON response for {path}"))?;
-        Ok(Some(value))
+        Ok(Some(body))
     }
 }
 

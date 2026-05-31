@@ -23,7 +23,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak nix flake-show` / `sak nix store-info` / `sak nix eval` / `sak nix registry-list` / `sak nix profile-list` / `sak nix references` / `sak nix derivation-show` / `sak nix path-info` / `sak nix flake-metadata` instead of `nix flake show` / `nix store info`/`ping` / `nix eval` / `nix registry list` / `nix profile list` / `nix-store --query --references`/`--referrers`/`--requisites` / `nix derivation show` / `nix path-info` / `nix flake metadata`/`info`
 - `sak k8s get|images|env|schema` instead of `kubectl` read ops
 - `sak lxc list|info|config|images` instead of `lxc` read ops
-- `sak docker list|info|config|images` instead of `docker` read ops
+- `sak docker list|info|config|images|logs` instead of `docker` read ops
 - `sak sqlite tables|schema|query|info` instead of `sqlite3` read ops
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences` instead of `curl + jq + base64` against a Prometheus or Alertmanager API
 

@@ -3,6 +3,8 @@ mod config;
 mod csv;
 #[cfg(feature = "docker")]
 mod docker;
+#[cfg(any(feature = "docker", feature = "prom"))]
+mod duration;
 mod fs;
 mod gh;
 mod git;
@@ -165,7 +167,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
         "
   sak docker list                             List containers
   sak docker images                           List images
-  sak docker info my-container                Full metadata for a container",
+  sak docker info my-container                Full metadata for a container
+  sak docker logs my-container                Fetch a container's logs",
     );
     #[cfg(feature = "sqlite")]
     s.push_str(

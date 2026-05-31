@@ -25,6 +25,7 @@ pub mod hook;
 pub mod images;
 pub mod info;
 pub mod list;
+pub mod logs;
 
 use crate::output::Outcome;
 
@@ -42,6 +43,8 @@ pub enum DockerCommand {
     Info(info::InfoArgs),
     /// Show the configuration subset of a container
     Config(config::ConfigArgs),
+    /// Fetch logs from a container
+    Logs(logs::LogsArgs),
 }
 
 /// Dispatch a `sak docker` subcommand.
@@ -59,5 +62,6 @@ async fn dispatch(cmd: &DockerCommand) -> Result<Outcome> {
         DockerCommand::Images(args) => images::run(args).await,
         DockerCommand::Info(args) => info::run(args).await,
         DockerCommand::Config(args) => config::run(args).await,
+        DockerCommand::Logs(args) => logs::run(args).await,
     }
 }

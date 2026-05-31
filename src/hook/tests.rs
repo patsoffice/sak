@@ -194,6 +194,7 @@ fn docker_reads_block() {
     assert!(blocks("docker ps"));
     assert!(blocks("docker images"));
     assert!(blocks("docker inspect foo"));
+    assert!(blocks("docker logs foo"));
 }
 
 #[cfg(not(feature = "docker"))]
@@ -202,6 +203,7 @@ fn docker_reads_allow_in_lean_build() {
     assert!(allows("docker ps"));
     assert!(allows("docker images"));
     assert!(allows("docker inspect foo"));
+    assert!(allows("docker logs foo"));
 }
 
 #[test]
@@ -210,8 +212,6 @@ fn docker_writes_allow() {
     assert!(allows("docker build ."));
     assert!(allows("docker exec -it foo sh"));
     assert!(allows("docker rm foo"));
-    // Not yet shadowed.
-    assert!(allows("docker logs foo"));
     assert!(allows("docker stats"));
 }
 
