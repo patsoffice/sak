@@ -22,6 +22,7 @@
 pub mod client;
 pub mod common_args;
 pub mod query;
+pub mod range;
 pub mod runner;
 
 use crate::output::Outcome;
@@ -34,11 +35,14 @@ use clap::Subcommand;
 pub enum LokiCommand {
     /// Run an instant LogQL query
     Query(query::QueryArgs),
+    /// Run a range LogQL query
+    QueryRange(range::RangeArgs),
 }
 
 /// Dispatch a `sak loki` subcommand. Synchronous — no tokio runtime.
 pub fn run(cmd: &LokiCommand) -> Result<Outcome> {
     match cmd {
         LokiCommand::Query(args) => query::run(args),
+        LokiCommand::QueryRange(args) => range::run(args),
     }
 }
