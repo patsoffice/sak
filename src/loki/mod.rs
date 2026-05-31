@@ -21,6 +21,8 @@
 
 pub mod client;
 pub mod common_args;
+pub mod label_values;
+pub mod labels;
 pub mod query;
 pub mod range;
 pub mod runner;
@@ -37,6 +39,10 @@ pub enum LokiCommand {
     Query(query::QueryArgs),
     /// Run a range LogQL query
     QueryRange(range::RangeArgs),
+    /// List all label names
+    Labels(labels::LabelsArgs),
+    /// List values for one label
+    LabelValues(label_values::LabelValuesArgs),
 }
 
 /// Dispatch a `sak loki` subcommand. Synchronous — no tokio runtime.
@@ -44,5 +50,7 @@ pub fn run(cmd: &LokiCommand) -> Result<Outcome> {
     match cmd {
         LokiCommand::Query(args) => query::run(args),
         LokiCommand::QueryRange(args) => range::run(args),
+        LokiCommand::Labels(args) => labels::run(args),
+        LokiCommand::LabelValues(args) => label_values::run(args),
     }
 }
