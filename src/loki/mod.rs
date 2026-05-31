@@ -26,6 +26,7 @@ pub mod labels;
 pub mod query;
 pub mod range;
 pub mod runner;
+pub mod series;
 
 use crate::output::Outcome;
 
@@ -43,6 +44,8 @@ pub enum LokiCommand {
     Labels(labels::LabelsArgs),
     /// List values for one label
     LabelValues(label_values::LabelValuesArgs),
+    /// List series matching a label selector
+    Series(series::SeriesArgs),
 }
 
 /// Dispatch a `sak loki` subcommand. Synchronous — no tokio runtime.
@@ -52,5 +55,6 @@ pub fn run(cmd: &LokiCommand) -> Result<Outcome> {
         LokiCommand::QueryRange(args) => range::run(args),
         LokiCommand::Labels(args) => labels::run(args),
         LokiCommand::LabelValues(args) => label_values::run(args),
+        LokiCommand::Series(args) => series::run(args),
     }
 }
