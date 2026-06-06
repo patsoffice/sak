@@ -1,12 +1,12 @@
 use crate::output::Outcome;
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Args;
 use serde_json::Value;
 
-use crate::config::{Format, detect_format, parse_one};
+use crate::config::{Format, read_config_value};
 
 #[derive(Args)]
 #[command(
@@ -14,8 +14,9 @@ use crate::config::{Format, detect_format, parse_one};
     long_about = "Convert a structured config document between TOML, YAML, plist, and JSON.\n\n\
         Source format is auto-detected from each file's extension or set explicitly with \
         `--from`. Target format is required and given with `--to`. Output goes to stdout; \
-        source files are never touched. Reads from stdin if no files are given \
-        (requires `--from`). When multiple files are given, each is converted in turn and \
+        source files are never touched. Reads from stdin if no files are given, or for any \
+        file argument of `-` (requires `--from`, since piped input has no extension to detect). \
+        When multiple files are given, each is converted in turn and \
         the outputs are concatenated, with `---` separators inserted between YAML documents \
         so the combined output remains parseable as multi-document YAML.\n\n\
         All formats round-trip through `serde_json::Value`, which is intentionally lossy at \
@@ -31,10 +32,11 @@ Examples:
   sak config convert --to toml config.yaml > config.toml
   sak config convert --to json Info.plist           Binary plist -> JSON
   cat a.yaml | sak config convert --from yaml --to json
+  cat a.yaml | sak config convert --from yaml --to json -   '-' is the stdin alias
   sak config convert --to yaml --from json a.json"
 )]
 pub struct ConvertArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Target format
@@ -62,23 +64,11 @@ pub fn run(args: &ConvertArgs) -> Result<Outcome> {
     let pretty_json = !args.compact;
 
     if args.files.is_empty() {
-        let fmt = args
-            .from
-            .context("--from is required when reading from stdin")?;
-        let mut buf = Vec::new();
-        io::stdin()
-            .read_to_end(&mut buf)
-            .context("error reading stdin")?;
-        let value =
-            parse_one(fmt, &buf).map_err(|e| anyhow::anyhow!("invalid {} on stdin: {}", fmt, e))?;
+        let (_name, value) = read_config_value(Path::new("-"), args.from)?;
         emit(&value, args.to, pretty_json, &mut handle)?;
     } else {
         for (i, path) in args.files.iter().enumerate() {
-            let fmt = detect_format(path, args.from)?;
-            let bytes =
-                std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
-            let value = parse_one(fmt, &bytes)
-                .map_err(|e| anyhow::anyhow!("invalid {}: {}: {}", fmt, path.display(), e))?;
+            let (_name, value) = read_config_value(path, args.from)?;
             if i > 0 && args.to == Format::Yaml {
                 handle.write_all(b"---\n")?;
             }
@@ -132,6 +122,7 @@ fn emit<W: Write>(value: &Value, target: Format, pretty_json: bool, w: &mut W) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::parse_one;
     fn write_tmp(name: &str, content: &[u8]) -> (tempfile::TempDir, PathBuf) {
         use std::io::Write as _;
         let dir = tempfile::tempdir().unwrap();

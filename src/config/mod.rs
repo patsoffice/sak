@@ -178,30 +178,53 @@ pub fn parse_one(format: Format, content: &[u8]) -> std::result::Result<Value, P
     }
 }
 
-/// Read inputs from files (or stdin), auto-detecting format per file unless
-/// `format` overrides it. Stdin requires an explicit format.
-pub fn read_config_inputs(
-    files: &[PathBuf],
-    format: Option<Format>,
-) -> Result<Vec<(String, Value)>> {
-    let mut out = Vec::new();
-    if files.is_empty() {
-        let fmt = format.context("--format is required when reading from stdin")?;
+/// True if a file argument is the conventional "-" stdin sentinel (cat, jq,
+/// grep, ...). A path of "-" reads stdin; because piped input has no extension
+/// to sniff, an explicit format is required just like the bare-stdin case.
+pub(crate) fn is_stdin(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+/// Read and parse a single config source. A path of "-" reads stdin (named
+/// `<stdin>`) and requires an explicit `format` because piped input has no
+/// extension to detect; a real path auto-detects format from its extension
+/// unless `format` overrides it. Shared chokepoint for `read_config_inputs`,
+/// `diff`, and `convert`.
+pub fn read_config_value(path: &Path, format: Option<Format>) -> Result<(String, Value)> {
+    if is_stdin(path) {
+        let fmt = format.context(
+            "a format is required when reading from stdin (the '-' alias has no extension to detect)",
+        )?;
         let mut buf = Vec::new();
         io::stdin()
             .read_to_end(&mut buf)
             .context("error reading stdin")?;
         let value =
             parse_one(fmt, &buf).map_err(|e| anyhow::anyhow!("invalid {} on stdin: {}", fmt, e))?;
-        out.push(("<stdin>".to_string(), value));
+        Ok(("<stdin>".to_string(), value))
+    } else {
+        let fmt = detect_format(path, format)?;
+        let bytes =
+            std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
+        let value = parse_one(fmt, &bytes)
+            .map_err(|e| anyhow::anyhow!("invalid {}: {}: {}", fmt, path.display(), e))?;
+        Ok((path.display().to_string(), value))
+    }
+}
+
+/// Read inputs from files (or stdin), auto-detecting format per file unless
+/// `format` overrides it. Stdin (no files, or a `-` argument) requires an
+/// explicit format.
+pub fn read_config_inputs(
+    files: &[PathBuf],
+    format: Option<Format>,
+) -> Result<Vec<(String, Value)>> {
+    let mut out = Vec::new();
+    if files.is_empty() {
+        out.push(read_config_value(Path::new("-"), format)?);
     } else {
         for path in files {
-            let fmt = detect_format(path, format)?;
-            let bytes =
-                std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
-            let value = parse_one(fmt, &bytes)
-                .map_err(|e| anyhow::anyhow!("invalid {}: {}: {}", fmt, path.display(), e))?;
-            out.push((path.display().to_string(), value));
+            out.push(read_config_value(path, format)?);
         }
     }
     Ok(out)
@@ -318,5 +341,38 @@ mod tests {
         let err = parse_one(Format::Json, b"{\"a\":").unwrap_err();
         assert!(err.line.is_some());
         assert!(err.col.is_some());
+    }
+
+    #[test]
+    fn dash_is_stdin_sentinel() {
+        assert!(is_stdin(Path::new("-")));
+    }
+
+    #[test]
+    fn ordinary_paths_are_not_stdin() {
+        assert!(!is_stdin(Path::new("a.toml")));
+        assert!(!is_stdin(Path::new("./-")));
+        assert!(!is_stdin(Path::new("-.toml")));
+        assert!(!is_stdin(Path::new("--")));
+    }
+
+    #[test]
+    fn read_config_value_reads_named_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.toml");
+        let mut f = std::fs::File::create(&p).unwrap();
+        writeln!(f, "name = \"alice\"").unwrap();
+        let (name, value) = read_config_value(&p, None).unwrap();
+        assert_eq!(name, p.display().to_string());
+        assert_eq!(value["name"], "alice");
+    }
+
+    #[test]
+    fn read_config_value_dash_requires_format() {
+        // "-" routes to stdin, which has no extension — without --format this is
+        // an error, not an attempt to open a file literally named "-".
+        let err = read_config_value(Path::new("-"), None).unwrap_err();
+        assert!(err.to_string().contains("format is required"));
     }
 }

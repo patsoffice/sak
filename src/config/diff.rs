@@ -2,11 +2,11 @@ use crate::output::Outcome;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
 use serde_json::Value;
 
-use crate::config::{Format, detect_format, parse_one};
+use crate::config::Format;
 use crate::output::BoundedWriter;
 use crate::value::{diff, format_diff_entry};
 
@@ -36,6 +36,7 @@ Examples:
   sak config diff old.toml new.toml
   sak config diff config.yaml config.toml       Cross-format diff
   sak config diff a.yaml b.yml --limit 20
+  cat new.toml | sak config diff old.toml - --format-b toml   '-' reads stdin
   sak config diff dev.toml prod.toml && echo identical"
 )]
 pub struct DiffArgs {
@@ -58,10 +59,7 @@ pub struct DiffArgs {
 }
 
 fn load(path: &Path, override_: Option<Format>) -> Result<Value> {
-    let fmt = detect_format(path, override_)?;
-    let bytes = std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
-    parse_one(fmt, &bytes)
-        .map_err(|e| anyhow::anyhow!("invalid {}: {}: {}", fmt, path.display(), e))
+    crate::config::read_config_value(path, override_).map(|(_name, value)| value)
 }
 
 pub fn run(args: &DiffArgs) -> Result<Outcome> {
