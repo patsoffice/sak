@@ -905,6 +905,84 @@ fn absolute_path_caught() {
     assert!(blocks("/bin/cat /etc/passwd"));
 }
 
+// ── shell composition: wrappers, substitution, subshells ──────
+
+#[test]
+fn shell_dash_c_wrapper_catches() {
+    assert!(blocks("sh -c 'cat README.md'"));
+    assert!(blocks("bash -c \"grep foo bar\""));
+    assert!(blocks("zsh -c 'git status'"));
+    assert!(blocks("/bin/sh -c 'cat /etc/passwd'"));
+    // Flag bundles that include `c`.
+    assert!(blocks("bash -lc 'cat README.md'"));
+}
+
+#[test]
+fn shell_without_dash_c_allows() {
+    // Running a script file or interactive shell is not an inline read.
+    assert!(allows("bash script.sh"));
+    assert!(allows("sh deploy.sh arg1 arg2"));
+}
+
+#[test]
+fn command_substitution_catches() {
+    assert!(blocks("echo $(cat README.md)"));
+    assert!(blocks("echo `cat README.md`"));
+    assert!(blocks("VAR=$(git log --oneline) echo done"));
+    // Substitution still expands inside double quotes.
+    assert!(blocks("echo \"recent: $(git log -n1)\""));
+}
+
+#[test]
+fn single_quotes_block_substitution() {
+    // Single-quoted text is literal — no recursion, nothing to catch.
+    assert!(allows("echo '$(cat README.md)'"));
+    assert!(allows("echo '`git status`'"));
+}
+
+#[test]
+fn subshell_and_group_catch() {
+    assert!(blocks("( cat README.md )"));
+    assert!(blocks("( echo hi && grep foo bar )"));
+    assert!(blocks("{ cat README.md; }"));
+}
+
+#[test]
+fn command_prefix_wrappers_catch() {
+    assert!(blocks("sudo cat /etc/shadow"));
+    assert!(blocks("env FOO=bar grep secret /etc/passwd"));
+    assert!(blocks("xargs grep foo"));
+    assert!(blocks("xargs -n 1 cat"));
+    assert!(blocks("timeout 5 cat README.md"));
+    assert!(blocks("timeout -s KILL 5 git log"));
+    assert!(blocks("nice -n 10 grep foo bar"));
+    assert!(blocks("nohup cat README.md"));
+}
+
+#[test]
+fn find_exec_catches_inner_read() {
+    assert!(blocks("find . -type f -exec grep foo {} +"));
+    assert!(blocks("find . -execdir cat {} ;"));
+    // A pure name/metadata search is still caught by find's own rules.
+    assert!(blocks("find . -name '*.rs'"));
+}
+
+#[test]
+fn nested_composition_catches() {
+    // Wrapper around a substitution around a read.
+    assert!(blocks("sudo sh -c 'echo $(cat /etc/shadow)'"));
+    assert!(blocks("xargs sh -c 'grep foo bar'"));
+}
+
+#[test]
+fn composition_around_non_targets_allows() {
+    // Wrappers and substitutions around non-redirected commands pass through.
+    assert!(allows("sh -c 'cargo build'"));
+    assert!(allows("echo $(date)"));
+    assert!(allows("timeout 5 make test"));
+    assert!(allows("sudo systemctl restart nginx"));
+}
+
 // ── empty / weird input ───────────────────────────────────────
 
 #[test]
