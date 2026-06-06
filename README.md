@@ -193,8 +193,8 @@ Every operation is read-only, so blanket-allowing `sak` is safe — there is no 
 That's the whole hook. `sak hook claude-code` reads Claude Code's `PreToolUse` JSON payload from stdin, splits the about-to-run command on shell separators (`|`, `||`, `&&`, `;`, `&` — quote-aware), and for each piece checks the command name against an intent-aware rule set:
 
 - **Read vs. write** — `git status`/`diff`/`log`/`show`/`blame`/`shortlog` block; `git commit`/`push`/`add`/`fetch`/`pull`/`checkout`/`rebase`/`merge`/`reset` pass through. `git branch`/`tag`/`remote` block only for listing forms; modifying forms (`-d`/`-D`/`-m`/`-c`/add/set-url) pass.
-- **stdin vs. file** — `jq .name pkg.json` blocks (file arg); `echo … | jq .` passes (stdin). Same logic for `yq`, `tomlq`. `cat`/`head`/`tail` allow heredocs and stdin-only forms.
-- **Recursive vs. non-recursive grep** — `grep -r foo .`, `grep foo file.txt` and `rg foo` block; `echo … | grep foo` passes.
+- **stdin and file both redirect** — `jq .name pkg.json` (file arg) *and* `echo … | jq .` (stdin) both block, since `sak json query` reads stdin via `-`; only a bare `jq` (no filter) passes. Same logic for `yq`, `tomlq`, and `wc` (`echo … | wc -l` blocks too — `sak fs wc` reads stdin when files are omitted). `cat`/`head`/`tail` still allow heredocs and bare stdin-only forms.
+- **grep** — `grep -r foo .`, `grep foo file.txt`, `echo … | grep foo`, and `rg foo` all block (`sak fs grep` reads stdin via `-`); only `grep --help`/`--version` (no pattern) pass.
 - **Search vs. write find** — `find . -name *.rs` blocks; `find . -delete`/`-exec`/`-ok` passes.
 - **Read vs. write sqlite** — `.tables`/`.schema`/`.dump`/`SELECT` blocks; `INSERT`/`CREATE` passes.
 

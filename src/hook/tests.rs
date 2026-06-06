@@ -681,10 +681,11 @@ fn wc_with_file_blocks() {
 }
 
 #[test]
-fn wc_stdin_allows() {
-    // Piped stdin reads stdin; nothing to redirect.
-    assert!(allows("echo hi | wc -l"));
-    assert!(allows("wc"));
+fn wc_stdin_blocks() {
+    // sak fs wc reads stdin when files are omitted, so piped/bare wc redirects
+    // too (sak-llm-3hu5).
+    assert!(blocks("echo hi | wc -l"));
+    assert!(blocks("wc"));
 }
 
 #[test]
@@ -702,9 +703,19 @@ fn grep_pattern_and_file_blocks() {
 }
 
 #[test]
-fn grep_stdin_allows() {
-    assert!(allows("echo hi | grep h"));
-    assert!(allows("grep foo"));
+fn grep_stdin_blocks() {
+    // sak fs grep reads stdin via `-`, so piped/stdin grep redirects too
+    // (sak-llm-3hu5).
+    assert!(blocks("echo hi | grep h"));
+    assert!(blocks("grep foo"));
+    assert!(blocks("grep -i foo"));
+}
+
+#[test]
+fn grep_no_pattern_allows() {
+    // No positional pattern — nothing to redirect.
+    assert!(allows("grep --help"));
+    assert!(allows("grep --version"));
 }
 
 #[test]
@@ -757,9 +768,11 @@ fn jq_file_blocks() {
 }
 
 #[test]
-fn jq_stdin_allows() {
-    assert!(allows("echo foo | jq ."));
-    assert!(allows("jq ."));
+fn jq_stdin_blocks() {
+    // sak json query reads stdin via `-`, so piped/stdin jq redirects too
+    // (sak-llm-3hu5).
+    assert!(blocks("echo foo | jq ."));
+    assert!(blocks("jq ."));
 }
 
 #[test]
@@ -769,8 +782,11 @@ fn yq_file_blocks() {
 }
 
 #[test]
-fn yq_stdin_allows() {
-    assert!(allows("echo foo | yq ."));
+fn yq_stdin_blocks() {
+    // sak config query reads stdin when <file> is omitted, so piped yq
+    // redirects too (sak-llm-3hu5).
+    assert!(blocks("echo foo | yq ."));
+    assert!(blocks("tomlq ."));
 }
 
 #[test]

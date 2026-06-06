@@ -43,19 +43,19 @@ pub const HOOK_RULES: &[HookRule] = &[
     HookRule {
         tool: "grep",
         subcommand: &[],
-        guard: Some(grep_reads_files),
+        guard: Some(grep_reads),
         message: GREP_MSG,
     },
     HookRule {
         tool: "egrep",
         subcommand: &[],
-        guard: Some(grep_reads_files),
+        guard: Some(grep_reads),
         message: GREP_MSG,
     },
     HookRule {
         tool: "fgrep",
         subcommand: &[],
-        guard: Some(grep_reads_files),
+        guard: Some(grep_reads),
         message: GREP_MSG,
     },
     // `rg`/`ripgrep` are always reads (no stdin-vs-file ambiguity worth the
@@ -106,12 +106,16 @@ pub const HOOK_RULES: &[HookRule] = &[
         guard: Some(reads_a_path),
         message: "Use `sak fs stat <path...>` instead of `stat` (--format json).",
     },
+    // `wc` is always a read (no write mode) and `sak fs wc` reads stdin when
+    // files are omitted, so every invocation redirects — the piped
+    // `cmd | wc -l` form maps to `cmd | sak fs wc --lines`, not just the
+    // file-argument form. Hence `guard: None` rather than a path guard.
     HookRule {
         tool: "wc",
         subcommand: &[],
-        guard: Some(reads_a_path),
+        guard: None,
         message: "Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes; \
-            omit files to read stdin).",
+            omit files to read stdin, e.g. `cmd | sak fs wc --lines`).",
     },
 ];
 
@@ -166,19 +170,13 @@ fn headtail_file_args(args: &[String]) -> Vec<&str> {
     files
 }
 
-/// `grep` reading files: a recursive flag (`-r`/`-R`/`--recursive`, including
-/// bundled short flags like `-rn`) or two-or-more positionals (pattern + path).
-/// A single positional (`grep foo`) or piped stdin reads stdin — allowed.
-fn grep_reads_files(args: &[String]) -> bool {
-    let recursive = args.iter().any(|a| {
-        a == "-r"
-            || a == "-R"
-            || a == "--recursive"
-            || (a.starts_with('-') && !a.starts_with("--") && a.contains('r'))
-            || (a.starts_with('-') && !a.starts_with("--") && a.contains('R'))
-    });
-    let positionals = args.iter().filter(|a| !a.starts_with('-')).count();
-    recursive || positionals >= 2
+/// `grep` is always a read — it has no write mode. It reads a file when given a
+/// path positional and reads stdin otherwise (`cmd | grep foo`, `grep foo`),
+/// and `sak fs grep` handles both (`-` for stdin), so any invocation carrying a
+/// pattern positional redirects. The lone non-reads — `grep --help`/`--version`
+/// and a bare `grep` — have no positional, so they pass through.
+fn grep_reads(args: &[String]) -> bool {
+    args.iter().any(|a| !a.starts_with('-'))
 }
 
 /// Write actions that take `find` out of read-only territory — never redirected.
@@ -209,8 +207,9 @@ fn find_searches(args: &[String]) -> bool {
     !find_is_write(args)
 }
 
-/// `stat`/`wc` given a path: both are usage errors with no positional (bare
-/// `stat`) or read stdin (piped `wc`), so they only redirect with a path arg.
+/// `stat` given a path: bare `stat` is a usage error and `stat` has no stdin
+/// mode, so it only redirects with a path positional. (`wc`, which *does* read
+/// stdin, no longer shares this guard — it redirects unconditionally.)
 fn reads_a_path(args: &[String]) -> bool {
     args.iter().any(|a| !a.starts_with('-'))
 }
@@ -248,15 +247,17 @@ mod tests {
     }
 
     #[test]
-    fn grep_guard_recursive_or_multifile() {
-        assert!(grep_reads_files(&a(&["-r", "foo", "."])));
-        assert!(grep_reads_files(&a(&["-R", "foo", "."])));
-        assert!(grep_reads_files(&a(&["--recursive", "foo", "."])));
-        assert!(grep_reads_files(&a(&["-rn", "foo", "."])));
-        assert!(grep_reads_files(&a(&["foo", "file.txt"])));
-        // Single positional / stdin pipe is allowed.
-        assert!(!grep_reads_files(&a(&["foo"])));
-        assert!(!grep_reads_files(&a(&["-i", "foo"])));
+    fn grep_guard_fires_on_any_pattern() {
+        // File reads (the original cases) still fire.
+        assert!(grep_reads(&a(&["-r", "foo", "."])));
+        assert!(grep_reads(&a(&["-rn", "foo", "."])));
+        assert!(grep_reads(&a(&["foo", "file.txt"])));
+        // Stdin reads now fire too — sak handles them via `-`.
+        assert!(grep_reads(&a(&["foo"])));
+        assert!(grep_reads(&a(&["-i", "foo"])));
+        // No positional (bare grep / `--help`) has nothing to redirect.
+        assert!(!grep_reads(&a(&[])));
+        assert!(!grep_reads(&a(&["--help"])));
     }
 
     #[test]
