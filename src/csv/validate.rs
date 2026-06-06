@@ -1,6 +1,6 @@
 use crate::output::Outcome;
 use std::io::{self, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -15,7 +15,8 @@ use super::headers::parse_delimiter;
     long_about = "Check CSV files for structural problems and report errors.\n\n\
         Detects: invalid UTF-8, unclosed quotes, malformed records. With \
         --strict, also rejects rows whose column count differs from the \
-        header. Reads from stdin when no files are given. Exits 0 if every \
+        header. Reads from stdin when no files are given, or for a file \
+        argument of `-`. Exits 0 if every \
         input parsed cleanly, exits 1 if any error was reported. Errors go \
         to stderr as `<source>:<line>: <message>` — stdout is reserved for \
         the per-file `<source>: valid` summary unless --quiet is set.",
@@ -26,10 +27,11 @@ Examples:
   sak csv validate --strict data.csv            Also reject mismatched col counts
   sak csv validate --quiet data.csv             Exit code only
   cat data.csv | sak csv validate               Validate piped input
+  cat data.csv | sak csv validate -             '-' is the stdin alias
   sak csv validate -d $'\\t' data.tsv            Tab-delimited input"
 )]
 pub struct ValidateArgs {
-    /// Input CSV files (reads stdin if omitted)
+    /// Input CSV files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Field delimiter (must be a single byte; default: ',')
@@ -95,12 +97,11 @@ pub fn run(args: &ValidateArgs) -> Result<Outcome> {
     let mut any_invalid = false;
 
     if args.files.is_empty() {
-        let stdin = io::stdin();
-        let reader = stdin.lock();
-        let errors = validate_one("<stdin>", reader, delim, args.strict);
+        let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
+        let errors = validate_one(&name, reader, delim, args.strict);
         if errors.is_empty() {
             if !args.quiet {
-                writer.write_line("<stdin>: valid")?;
+                writer.write_line(&format!("{}: valid", name))?;
             }
         } else {
             any_invalid = true;
@@ -112,18 +113,26 @@ pub fn run(args: &ValidateArgs) -> Result<Outcome> {
         }
     } else {
         for path in &args.files {
-            let name = path.display().to_string();
-            let file = match std::fs::File::open(path) {
-                Ok(f) => f,
-                Err(e) => {
-                    any_invalid = true;
-                    if !args.quiet {
-                        eprintln!("{}: cannot read: {}", name, e);
+            // A "-" argument reads stdin and can't fail to open; a real path
+            // that won't open is a validation *failure* (exit 1), emitted as a
+            // per-file diagnostic, not a tool error.
+            let (name, reader): (String, Box<dyn std::io::BufRead>) = if crate::csv::is_stdin(path)
+            {
+                crate::csv::open_reader(path)?
+            } else {
+                let name = path.display().to_string();
+                match std::fs::File::open(path) {
+                    Ok(f) => (name, Box::new(BufReader::new(f))),
+                    Err(e) => {
+                        any_invalid = true;
+                        if !args.quiet {
+                            eprintln!("{}: cannot read: {}", name, e);
+                        }
+                        continue;
                     }
-                    continue;
                 }
             };
-            let errors = validate_one(&name, BufReader::new(file), delim, args.strict);
+            let errors = validate_one(&name, reader, delim, args.strict);
             if errors.is_empty() {
                 if !args.quiet && !writer.write_line(&format!("{}: valid", name))? {
                     break;

@@ -1,6 +1,6 @@
 use crate::output::Outcome;
-use std::io::{self, BufReader, Read};
-use std::path::PathBuf;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
@@ -18,7 +18,8 @@ use super::headers::parse_delimiter;
         row (the default), columns can be referenced by name or by 1-based \
         index; with --no-header, only indices are valid. Multiple --filter \
         and --filter-regex flags compose with AND semantics. Reads stdin \
-        when no files are given; with multiple files, the header is written \
+        when no files are given, or for a file argument of `-`; with multiple \
+        files, the header is written \
         once from the first file and subsequent files' headers are skipped.\n\n\
         Exit code follows the standard convention: 0 if any row matched, 1 if \
         none did (the output header alone does not count as a match), 2 on \
@@ -31,10 +32,11 @@ Examples:
   sak csv query --filter-regex 'host=^web' log.csv Regex filter
   sak csv query --no-header -c 1,2 raw.csv         No header; index-only refs
   sak csv query -d ';' -c name data.csv            Semicolon delimiter
-  cat data.csv | sak csv query -c name             Read from stdin"
+  cat data.csv | sak csv query -c name             Read from stdin
+  cat data.csv | sak csv query -c name -            '-' is the stdin alias"
 )]
 pub struct QueryArgs {
-    /// Input CSV files (reads stdin if omitted)
+    /// Input CSV files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Comma-separated column names or 1-based indices to select (default: all)
@@ -280,10 +282,9 @@ pub fn run(args: &QueryArgs) -> Result<Outcome> {
     let mut found_any = false;
 
     if args.files.is_empty() {
-        let stdin = io::stdin();
-        let reader = stdin.lock();
+        let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
         process_source(
-            "<stdin>",
+            &name,
             reader,
             delim,
             args,
@@ -293,11 +294,10 @@ pub fn run(args: &QueryArgs) -> Result<Outcome> {
         )?;
     } else {
         for path in &args.files {
-            let file = std::fs::File::open(path)
-                .with_context(|| format!("cannot open: {}", path.display()))?;
+            let (name, reader) = crate::csv::open_reader(path)?;
             let cont = process_source(
-                &path.display().to_string(),
-                BufReader::new(file),
+                &name,
+                reader,
                 delim,
                 args,
                 &mut writer,

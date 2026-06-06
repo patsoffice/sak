@@ -1,6 +1,6 @@
 use crate::output::Outcome;
-use std::io::{self, BufReader, Read};
-use std::path::PathBuf;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -12,7 +12,8 @@ use crate::output::BoundedWriter;
     about = "List CSV column headers",
     long_about = "List CSV column names and their 1-based indices, one per line.\n\n\
         Output is `index<TAB>name` (or `index<TAB>name<TAB>type` with --types). \
-        Reads from stdin when no files are given. With multiple files, each \
+        Reads from stdin when no files are given, or for a file argument of `-`. \
+        With multiple files, each \
         file's headers are preceded by a `# <path>` decoration line.",
     after_help = "\
 Examples:
@@ -20,10 +21,11 @@ Examples:
   sak csv headers --types data.csv                Include inferred column types
   sak csv headers -d ';' data.csv                 Use ';' as the delimiter
   sak csv headers --types --sample 500 data.csv   Infer types from 500 rows
-  cat data.csv | sak csv headers                  Read from stdin"
+  cat data.csv | sak csv headers                  Read from stdin
+  cat data.csv | sak csv headers -                '-' is the stdin alias"
 )]
 pub struct HeadersArgs {
-    /// Input CSV files (reads stdin if omitted)
+    /// Input CSV files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Field delimiter (must be a single byte; default: ',')
@@ -177,22 +179,13 @@ pub fn run(args: &HeadersArgs) -> Result<Outcome> {
     let mut writer = BoundedWriter::new(handle, args.limit);
 
     if args.files.is_empty() {
-        let stdin = io::stdin();
-        let reader = stdin.lock();
-        process_reader("<stdin>", reader, delim, args, &mut writer, false)?;
+        let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
+        process_reader(&name, reader, delim, args, &mut writer, false)?;
     } else {
         let multiple = args.files.len() > 1;
         for path in &args.files {
-            let file = std::fs::File::open(path)
-                .with_context(|| format!("cannot open: {}", path.display()))?;
-            let cont = process_reader(
-                &path.display().to_string(),
-                BufReader::new(file),
-                delim,
-                args,
-                &mut writer,
-                multiple,
-            )?;
+            let (name, reader) = crate::csv::open_reader(path)?;
+            let cont = process_reader(&name, reader, delim, args, &mut writer, multiple)?;
             if !cont {
                 break;
             }

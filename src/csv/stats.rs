@@ -1,6 +1,6 @@
 use crate::output::Outcome;
-use std::io::{self, BufReader, Read};
-use std::path::PathBuf;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -21,17 +21,18 @@ use super::headers::{InferredType, infer_cell, parse_delimiter};
         for numeric columns (integer or float); non-numeric columns get \
         `-` placeholders. With --sample, only the first N data rows are \
         scanned — useful for large files. Reads stdin when no files are \
-        given.",
+        given, or for a file argument of `-`.",
     after_help = "\
 Examples:
   sak csv stats data.csv                    Full-table stats
   sak csv stats --sample 1000 huge.csv      Stats from first 1000 rows
   sak csv stats -c age,salary data.csv      Per-column block limited to two cols
   sak csv stats -d ';' data.csv             Semicolon delimiter
-  cat data.csv | sak csv stats              Read from stdin"
+  cat data.csv | sak csv stats              Read from stdin
+  cat data.csv | sak csv stats -            '-' is the stdin alias"
 )]
 pub struct StatsArgs {
-    /// Input CSV files (reads stdin if omitted; multiple files not supported)
+    /// Input CSV files (reads stdin if omitted or for a `-` arg; one file max)
     pub files: Vec<PathBuf>,
 
     /// Comma-separated column names or 1-based indices to include in the
@@ -230,21 +231,13 @@ pub fn run(args: &StatsArgs) -> Result<Outcome> {
     }
     let delim = parse_delimiter(&args.delimiter)?;
 
-    let (headers, stats, rows) = if args.files.is_empty() {
-        let stdin = io::stdin();
-        compute_stats("<stdin>", stdin.lock(), delim, args.no_header, args.sample)?
-    } else {
-        let path = &args.files[0];
-        let file = std::fs::File::open(path)
-            .with_context(|| format!("cannot open: {}", path.display()))?;
-        compute_stats(
-            &path.display().to_string(),
-            BufReader::new(file),
-            delim,
-            args.no_header,
-            args.sample,
-        )?
-    };
+    let path = args
+        .files
+        .first()
+        .map(PathBuf::as_path)
+        .unwrap_or(Path::new("-"));
+    let (name, reader) = crate::csv::open_reader(path)?;
+    let (headers, stats, rows) = compute_stats(&name, reader, delim, args.no_header, args.sample)?;
 
     let selection: Vec<usize> = match &args.columns {
         Some(spec) => resolve_selection(spec, &headers)?,
@@ -283,6 +276,7 @@ pub fn run(args: &StatsArgs) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::BufReader;
 
     fn write(tmp: &std::path::Path, name: &str, body: &str) -> PathBuf {
         let p = tmp.join(name);
