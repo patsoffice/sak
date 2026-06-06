@@ -227,6 +227,7 @@ const BUILTINS: &[Builtin] = &[
     Builtin {
         aliases: &[
             "crd",
+            "crds",
             "customresourcedefinition",
             "customresourcedefinitions",
         ],
@@ -254,11 +255,95 @@ pub fn lookup_builtin(name: &str) -> Option<GroupVersionKind> {
     None
 }
 
+/// A parsed `get <kind>` selector. Supports three spellings, all
+/// case-insensitive on the name and group:
+///
+/// - **bare**: `pods`, `Driver`, `cephcluster` — matched against a resource's
+///   kind or plural with no group/version constraint.
+/// - **name.group**: `drivers.csi.ceph.io`, `cephcluster.ceph.rook.io` — the
+///   first `.` separates the resource name from its API group (group names
+///   always contain a dot, so this split is unambiguous for real groups).
+/// - **full apiVersion/kind**: `csi.ceph.io/v1/Driver`, `apps/v1/Deployment`,
+///   `v1/Pod` — the last `/` segment is the name; everything before is the
+///   apiVersion (`group/version`, or a bare `version` for the core group).
+///
+/// The `name.group` and full forms let callers disambiguate CRDs whose plural
+/// or kind collides across groups, which a bare name cannot.
+struct KindQuery {
+    /// Name to match against a resource's kind or plural (case-insensitive).
+    name: String,
+    /// Optional API group constraint (case-insensitive). `Some("")` pins the
+    /// core group; `None` leaves the group unconstrained.
+    group: Option<String>,
+    /// Optional version constraint (case-insensitive).
+    version: Option<String>,
+}
+
+impl KindQuery {
+    /// Parse a user-supplied kind string into a structured query. Never fails —
+    /// an unrecognizable shape simply becomes a bare-name query that won't match
+    /// anything during discovery.
+    fn parse(input: &str) -> Self {
+        if let Some((api_version, name)) = input.rsplit_once('/') {
+            // Full form: <apiVersion>/<kind>. apiVersion is group/version, or a
+            // bare version for the core group.
+            let (group, version) = match api_version.rsplit_once('/') {
+                Some((g, v)) => (g.to_string(), v.to_string()),
+                None => (String::new(), api_version.to_string()),
+            };
+            KindQuery {
+                name: name.to_string(),
+                group: Some(group),
+                version: Some(version),
+            }
+        } else if let Some((name, group)) = input.split_once('.') {
+            // name.group — the first dot separates the resource name from its
+            // (dotted) group.
+            KindQuery {
+                name: name.to_string(),
+                group: Some(group.to_string()),
+                version: None,
+            }
+        } else {
+            KindQuery {
+                name: input.to_string(),
+                group: None,
+                version: None,
+            }
+        }
+    }
+
+    /// Does this query select the given discovered resource?
+    fn matches(&self, ar: &ApiResource) -> bool {
+        if !(ar.kind.eq_ignore_ascii_case(&self.name) || ar.plural.eq_ignore_ascii_case(&self.name))
+        {
+            return false;
+        }
+        if let Some(group) = &self.group
+            && !ar.group.eq_ignore_ascii_case(group)
+        {
+            return false;
+        }
+        if let Some(version) = &self.version
+            && !ar.version.eq_ignore_ascii_case(version)
+        {
+            return false;
+        }
+        true
+    }
+}
+
 /// Resolve a user-supplied kind string to an `ApiResource` and its capabilities
 /// (scope, verbs, ...) against the live cluster, using the fast-path table when
 /// possible.
+///
+/// Beyond the builtin shortnames, the slow path accepts CRDs (and any other
+/// discoverable resource) by bare name (`drivers`), `name.group`
+/// (`drivers.csi.ceph.io`), or full `apiVersion/kind` (`csi.ceph.io/v1/Driver`)
+/// — see [`KindQuery`].
 pub async fn resolve(client: &kube::Client, kind: &str) -> Result<(ApiResource, ApiCapabilities)> {
-    // Fast path: hardcoded shortname → GVK → single-GVK lookup.
+    // Fast path: hardcoded shortname → GVK → single-GVK lookup. Only bare
+    // builtin spellings hit this; qualified forms fall through to discovery.
     if let Some(gvk) = lookup_builtin(kind) {
         let pair = kube::discovery::oneshot::pinned_kind(client, &gvk)
             .await
@@ -266,14 +351,16 @@ pub async fn resolve(client: &kube::Client, kind: &str) -> Result<(ApiResource, 
         return Ok(pair);
     }
 
-    // Slow path: full discovery, then linear search by kind/plural.
+    // Slow path: full discovery, then linear search honoring any group/version
+    // constraint parsed from a qualified name.
+    let query = KindQuery::parse(kind);
     let discovery = kube::Discovery::new(client.clone())
         .run()
         .await
         .context("failed to run cluster discovery")?;
     for group in discovery.groups() {
         for (ar, caps) in group.recommended_resources() {
-            if ar.kind.eq_ignore_ascii_case(kind) || ar.plural.eq_ignore_ascii_case(kind) {
+            if query.matches(&ar) {
                 return Ok((ar, caps));
             }
         }
@@ -344,6 +431,87 @@ mod tests {
     fn unknown_kind_returns_none() {
         assert!(lookup_builtin("widget").is_none());
         assert!(lookup_builtin("").is_none());
+    }
+
+    fn ar(group: &str, version: &str, kind: &str, plural: &str) -> ApiResource {
+        ApiResource {
+            group: group.to_string(),
+            version: version.to_string(),
+            api_version: if group.is_empty() {
+                version.to_string()
+            } else {
+                format!("{group}/{version}")
+            },
+            kind: kind.to_string(),
+            plural: plural.to_string(),
+        }
+    }
+
+    #[test]
+    fn parse_bare_name_leaves_group_and_version_unconstrained() {
+        let q = KindQuery::parse("drivers");
+        assert_eq!(q.name, "drivers");
+        assert_eq!(q.group, None);
+        assert_eq!(q.version, None);
+    }
+
+    #[test]
+    fn parse_name_dot_group_splits_on_first_dot() {
+        // The group itself contains dots — only the first dot separates name.
+        let q = KindQuery::parse("drivers.csi.ceph.io");
+        assert_eq!(q.name, "drivers");
+        assert_eq!(q.group.as_deref(), Some("csi.ceph.io"));
+        assert_eq!(q.version, None);
+    }
+
+    #[test]
+    fn parse_full_grouped_api_version() {
+        let q = KindQuery::parse("csi.ceph.io/v1/Driver");
+        assert_eq!(q.name, "Driver");
+        assert_eq!(q.group.as_deref(), Some("csi.ceph.io"));
+        assert_eq!(q.version.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn parse_full_core_api_version_has_empty_group() {
+        let q = KindQuery::parse("v1/Pod");
+        assert_eq!(q.name, "Pod");
+        assert_eq!(q.group.as_deref(), Some(""));
+        assert_eq!(q.version.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn matches_crd_by_plural_and_group() {
+        let driver = ar("csi.ceph.io", "v1", "Driver", "drivers");
+        // name.group resolves the CRD.
+        assert!(KindQuery::parse("drivers.csi.ceph.io").matches(&driver));
+        // bare plural also matches (no group constraint).
+        assert!(KindQuery::parse("drivers").matches(&driver));
+        // singular/kind, case-insensitively.
+        assert!(KindQuery::parse("driver").matches(&driver));
+        // full apiVersion/kind.
+        assert!(KindQuery::parse("csi.ceph.io/v1/Driver").matches(&driver));
+    }
+
+    #[test]
+    fn matches_cephcluster_singular_kind_case_insensitively() {
+        let cc = ar("ceph.rook.io", "v1", "CephCluster", "cephclusters");
+        assert!(KindQuery::parse("cephcluster.ceph.rook.io").matches(&cc));
+        assert!(KindQuery::parse("cephcluster").matches(&cc));
+    }
+
+    #[test]
+    fn group_constraint_rejects_wrong_group() {
+        let driver = ar("csi.ceph.io", "v1", "Driver", "drivers");
+        // A same-named resource in a different group must not match.
+        assert!(!KindQuery::parse("drivers.other.example.com").matches(&driver));
+        assert!(!KindQuery::parse("other.example.com/v1/Driver").matches(&driver));
+    }
+
+    #[test]
+    fn version_constraint_rejects_wrong_version() {
+        let driver = ar("csi.ceph.io", "v1", "Driver", "drivers");
+        assert!(!KindQuery::parse("csi.ceph.io/v1beta1/Driver").matches(&driver));
     }
 
     #[test]

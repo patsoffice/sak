@@ -26,6 +26,10 @@ use crate::value::{format_value, resolve_expression};
         `svc`, ...) or as full kind names (`Pod`, `Deployment`, ...). Common \
         builtins resolve via a hardcoded fast-path table; anything else falls \
         back to live cluster discovery (multi-second on big clusters).\n\n\
+        Custom resources (CRDs) resolve through discovery by bare name \
+        (`drivers`), `name.group` (`drivers.csi.ceph.io`), or full \
+        `apiVersion/kind` (`csi.ceph.io/v1/Driver`). Use the qualified forms to \
+        disambiguate a plural or kind that collides across groups.\n\n\
         Output:\n\n  \
         - List mode: NDJSON, one resource per line, sorted by (namespace, name).\n  \
         - Get mode: pretty-printed JSON for the single resource.\n  \
@@ -47,7 +51,10 @@ Examples:
                                                   Extract one field from one resource
   sak k8s get pods -A --path .metadata.name       Names of all pods, one per line
   sak k8s get pods -l app=nginx                   Filter by label selector
-  sak k8s get pods --field-selector status.phase=Running"
+  sak k8s get pods --field-selector status.phase=Running
+  sak k8s get drivers.csi.ceph.io -A              List a CRD by name.group
+  sak k8s get cephcluster.ceph.rook.io -A         CRD by singular name.group
+  sak k8s get csi.ceph.io/v1/Driver -A            CRD by full apiVersion/kind"
 )]
 pub struct GetArgs {
     /// Resource kind (e.g. `pod`, `deployment`, `Lease`)
