@@ -79,19 +79,12 @@ pub fn run(args: &FromYamlArgs) -> Result<Outcome> {
         );
     }
 
-    let bytes = if args.file.as_os_str() == "-" {
-        let mut buf = Vec::new();
-        std::io::Read::read_to_end(&mut std::io::stdin(), &mut buf)?;
-        buf
-    } else {
-        std::fs::read(&args.file)
-            .with_context(|| format!("cannot read: {}", args.file.display()))?
-    };
-    let document: Value = serde_yaml::from_slice(&bytes)
-        .with_context(|| format!("invalid YAML: {}", args.file.display()))?;
+    let (name, bytes) = crate::cert::read_path_bytes(&args.file)?;
+    let document: Value =
+        serde_yaml::from_slice(&bytes).with_context(|| format!("invalid YAML: {}", name))?;
 
     let extracted = extract_string_at_path(&document, &args.path)?;
-    let source = format!("{}#{}", args.file.display(), args.path);
+    let source = format!("{}#{}", name, args.path);
 
     let infos = certs_from_string(&source, &extracted)?;
 

@@ -19,7 +19,7 @@ pub mod inspect;
 
 use crate::output::Outcome;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -90,34 +90,56 @@ pub const FIELD_NAMES: &[&str] = &[
     "context",
 ];
 
-/// Read inputs from files (or stdin), auto-detect their encoding, and return
-/// a flat list of `(source-name, der-bytes)` pairs. The `source-name` is the
-/// file path (or `<stdin>`); callers number multi-cert sources with the
-/// returned slice index.
-pub fn read_cert_inputs(files: &[PathBuf]) -> Result<Vec<(String, Vec<u8>)>> {
-    let mut out = Vec::new();
-    if files.is_empty() {
+/// True if a file argument is the conventional "-" stdin sentinel (cat, jq,
+/// grep, ...). A path of "-" reads stdin; the cert domain auto-detects encoding
+/// so no format hint is needed.
+pub(crate) fn is_stdin(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+/// Read raw bytes from a path, reading stdin (named `<stdin>`) when the argument
+/// is the "-" sentinel. Byte-oriented (not the string read the json domain uses)
+/// because cert inputs may be raw DER, which is not valid UTF-8.
+pub(crate) fn read_path_bytes(path: &Path) -> Result<(String, Vec<u8>)> {
+    if is_stdin(path) {
         let mut buf = Vec::new();
         io::stdin()
             .read_to_end(&mut buf)
             .context("error reading stdin")?;
-        let ders =
-            extract_ders(&buf).map_err(|e| anyhow!("no certificate found in <stdin>: {}", e))?;
-        for der in ders {
-            out.push(("<stdin>".to_string(), der));
-        }
+        Ok(("<stdin>".to_string(), buf))
+    } else {
+        let bytes =
+            std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
+        Ok((path.display().to_string(), bytes))
+    }
+}
+
+/// Read inputs from files (or stdin), auto-detect their encoding, and return
+/// a flat list of `(source-name, der-bytes)` pairs. The `source-name` is the
+/// file path (or `<stdin>`); a file argument of `-` reads stdin. Callers number
+/// multi-cert sources with the returned slice index.
+pub fn read_cert_inputs(files: &[PathBuf]) -> Result<Vec<(String, Vec<u8>)>> {
+    let mut out = Vec::new();
+    if files.is_empty() {
+        read_one_cert_source(Path::new("-"), &mut out)?;
     } else {
         for path in files {
-            let bytes =
-                std::fs::read(path).with_context(|| format!("cannot read: {}", path.display()))?;
-            let ders = extract_ders(&bytes)
-                .map_err(|e| anyhow!("no certificate found in {}: {}", path.display(), e))?;
-            for der in ders {
-                out.push((path.display().to_string(), der));
-            }
+            read_one_cert_source(path, &mut out)?;
         }
     }
     Ok(out)
+}
+
+/// Read one path-or-stdin source, extract every DER it contains, and append a
+/// `(source-name, der)` pair per cert to `out`.
+fn read_one_cert_source(path: &Path, out: &mut Vec<(String, Vec<u8>)>) -> Result<()> {
+    let (name, bytes) = read_path_bytes(path)?;
+    let ders =
+        extract_ders(&bytes).map_err(|e| anyhow!("no certificate found in {}: {}", name, e))?;
+    for der in ders {
+        out.push((name.clone(), der));
+    }
+    Ok(())
 }
 
 /// Auto-detect the encoding of `bytes` and return one DER blob per certificate.
@@ -457,6 +479,39 @@ mod tests {
     fn extract_garbage_errors() {
         let err = extract_ders(b"not a certificate at all").unwrap_err();
         assert!(err.to_string().contains("not PEM"));
+    }
+
+    #[test]
+    fn dash_is_stdin_sentinel() {
+        assert!(is_stdin(Path::new("-")));
+    }
+
+    #[test]
+    fn ordinary_paths_are_not_stdin() {
+        assert!(!is_stdin(Path::new("cert.pem")));
+        assert!(!is_stdin(Path::new("./-")));
+        assert!(!is_stdin(Path::new("-.pem")));
+        assert!(!is_stdin(Path::new("--")));
+    }
+
+    #[test]
+    fn read_path_bytes_reads_named_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("cert.pem");
+        std::fs::write(&p, TEST_PEM).unwrap();
+        let (name, bytes) = read_path_bytes(&p).unwrap();
+        assert_eq!(name, p.display().to_string());
+        assert_eq!(bytes, TEST_PEM.as_bytes());
+    }
+
+    #[test]
+    fn read_cert_inputs_named_pem_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("cert.pem");
+        std::fs::write(&p, TEST_PEM).unwrap();
+        let inputs = read_cert_inputs(std::slice::from_ref(&p)).unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].0, p.display().to_string());
     }
 
     #[test]

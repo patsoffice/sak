@@ -17,7 +17,8 @@ use crate::output::BoundedWriter;
     long_about = "Inspect one or more X.509 certificates and print their fields.\n\n\
         Inputs may be PEM (single cert or bundle), raw DER, or base64-wrapped \
         PEM (the shape Kubernetes uses for `client-certificate-data` etc.). \
-        Reads from stdin if no files are given. Default output is one \
+        Reads from stdin if no files are given, or for a file argument of `-`. \
+        Default output is one \
         `key<TAB>value` line per field, with a blank line between certs — \
         grep-friendly and stable. Use --json for an array, --tsv for a header \
         row plus tab-separated rows, or --field <name> to print a single \
@@ -29,10 +30,11 @@ Examples:
   sak cert inspect --tsv chain.pem                    TSV with header row
   sak cert inspect --field not_after cert.pem         Just the expiry date
   cat cert.pem | sak cert inspect                     Read PEM from stdin
+  cat cert.pem | sak cert inspect -                   '-' is the stdin alias
   cat cert.der | sak cert inspect                     DER also works"
 )]
 pub struct InspectArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Output format (default: kv)

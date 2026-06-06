@@ -11,7 +11,8 @@ use crate::cert::{CertInfo, FIELD_NAMES, OutputFormat, inspect, parse_cert, read
     about = "List certificates expiring within a window",
     long_about = "List certificates whose `notAfter` is less than --days from now.\n\n\
         Same input handling as `sak cert inspect` — PEM, DER, base64-wrapped \
-        PEM, single cert or bundle, files or stdin. Already-expired certs \
+        PEM, single cert or bundle, files or stdin (a `-` file argument also \
+        reads stdin). Already-expired certs \
         always match (their days_remaining is negative).\n\n\
         Exit code is inverted from `sak cert inspect` for shell ergonomics:\n\
         \n  • Exit 0 — no certs match (everything is healthy)\n  • Exit 1 — at \
@@ -29,7 +30,7 @@ Examples:
   done"
 )]
 pub struct ExpiringArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted, or for a `-` argument)
     pub files: Vec<PathBuf>,
 
     /// Match certs with fewer than N days until notAfter

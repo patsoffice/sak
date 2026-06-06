@@ -24,10 +24,11 @@ Examples:
   sak cert from-kubeconfig ~/.kube/config --ca        Add cluster CA certs
   sak cert from-kubeconfig --user admin kubeconfig    Filter to one user
   sak cert from-kubeconfig --field not_after kc.yaml  Just expiry dates
-  sak cert from-kubeconfig --json kubeconfig          JSON for tooling"
+  sak cert from-kubeconfig --json kubeconfig          JSON for tooling
+  cat ~/.kube/config | sak cert from-kubeconfig -     '-' reads stdin"
 )]
 pub struct FromKubeconfigArgs {
-    /// Kubeconfig YAML file
+    /// Kubeconfig YAML file (use `-` for stdin)
     pub file: PathBuf,
 
     /// Filter to a specific user name (and, with --ca, cluster name)
@@ -78,12 +79,10 @@ pub fn run(args: &FromKubeconfigArgs) -> Result<Outcome> {
         );
     }
 
-    let bytes = std::fs::read(&args.file)
-        .with_context(|| format!("cannot read: {}", args.file.display()))?;
-    let kubeconfig: Value = serde_yaml::from_slice(&bytes)
-        .with_context(|| format!("invalid YAML: {}", args.file.display()))?;
+    let (source, bytes) = crate::cert::read_path_bytes(&args.file)?;
+    let kubeconfig: Value =
+        serde_yaml::from_slice(&bytes).with_context(|| format!("invalid YAML: {}", source))?;
 
-    let source = args.file.display().to_string();
     let infos = extract_kubeconfig_certs(&source, &kubeconfig, args.user.as_deref(), args.ca)?;
 
     if infos.is_empty() {
