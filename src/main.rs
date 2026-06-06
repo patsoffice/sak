@@ -102,6 +102,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak gh api repos/cli/cli                    GET a GitHub REST/GraphQL endpoint
   sak gh pr-list --state open                 List pull requests as TSV
   sak gh pr-view 123                          Show one PR's metadata (JSON/TSV)
+  sak gh pr-diff 123 --name-only              Show a PR's diff or changed files
   sak gh issue-list --search 'crash on boot'  Free-text search issues as TSV
   sak gh issue-view 123                       Show one issue's metadata (JSON/TSV)
   sak gh run-list --workflow ci.yml           List CI workflow runs as TSV

@@ -293,6 +293,13 @@ fn gh_pr_view_blocks() {
 }
 
 #[test]
+fn gh_pr_diff_blocks() {
+    assert!(blocks("gh pr diff 13468"));
+    assert!(blocks("gh pr diff 13468 --name-only"));
+    assert!(blocks("gh pr diff 13468 --repo cli/cli"));
+}
+
+#[test]
 fn gh_issue_list_blocks() {
     assert!(blocks("gh issue list"));
     assert!(blocks("gh issue list --state all --assignee octocat"));

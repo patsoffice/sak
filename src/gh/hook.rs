@@ -39,6 +39,12 @@ pub const HOOK_RULES: &[HookRule] = &[
     },
     HookRule {
         tool: "gh",
+        subcommand: &[&["pr", "diff"]],
+        guard: None,
+        message: "Use `sak gh pr-diff <pr>` instead of `gh pr diff` (unified diff or --name-only).",
+    },
+    HookRule {
+        tool: "gh",
         subcommand: &[&["issue", "list"]],
         guard: None,
         message: "Use `sak gh issue-list` instead of `gh issue list` (TSV/JSON, --fields forwarded).",

@@ -32,6 +32,7 @@ pub mod client;
 pub mod hook;
 pub mod issue_list;
 pub mod issue_view;
+pub mod pr_diff;
 pub mod pr_list;
 pub mod pr_view;
 pub mod release_list;
@@ -52,6 +53,7 @@ pub enum GhCommand {
     Api(api::ApiArgs),
     PrList(pr_list::PrListArgs),
     PrView(pr_view::PrViewArgs),
+    PrDiff(pr_diff::PrDiffArgs),
     IssueList(issue_list::IssueListArgs),
     IssueView(issue_view::IssueViewArgs),
     RunList(run_list::RunListArgs),
@@ -67,6 +69,7 @@ pub fn run(cmd: &GhCommand) -> Result<Outcome> {
         GhCommand::Api(args) => api::run(args),
         GhCommand::PrList(args) => pr_list::run(args),
         GhCommand::PrView(args) => pr_view::run(args),
+        GhCommand::PrDiff(args) => pr_diff::run(args),
         GhCommand::IssueList(args) => issue_list::run(args),
         GhCommand::IssueView(args) => issue_view::run(args),
         GhCommand::RunList(args) => run_list::run(args),
