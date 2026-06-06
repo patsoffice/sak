@@ -34,6 +34,7 @@ pub mod kinds;
 pub mod logs;
 pub mod not_ready;
 pub mod pending;
+pub mod podtable;
 pub mod restarts;
 pub mod schema;
 

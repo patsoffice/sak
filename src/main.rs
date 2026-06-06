@@ -148,6 +148,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s contexts                            List kubeconfig contexts
   sak k8s kinds                               List group/version/kinds
   sak k8s get pods -n kube-system             List resources of a kind
+  sak k8s get pods -A -o wide                  Pod table (NAME/READY/STATUS/NODE/AGE)
   sak k8s images deployment/foo               Container images on a workload
   sak k8s schema deployment.apps/v1           OpenAPI v3 schema for a kind
   sak k8s restarts -A                         Pod containers with restarts
