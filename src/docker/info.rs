@@ -15,7 +15,7 @@ use anyhow::Result;
 use clap::Args;
 
 use crate::docker::client::DockerClient;
-use crate::output::rendered_or_not_found;
+use crate::output::outcome_from_option;
 
 #[derive(Args)]
 #[command(
@@ -47,7 +47,7 @@ pub struct InfoArgs {
 pub async fn run(args: &InfoArgs) -> Result<Outcome> {
     let client = DockerClient::connect()?;
     let path = format!("/containers/{}/json", args.name);
-    rendered_or_not_found(client.get_json(&path).await?, |metadata| {
+    outcome_from_option(client.get_json(&path).await?, |metadata| {
         crate::output::emit_json(&metadata, args.limit)?;
         Ok(())
     })

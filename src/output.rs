@@ -49,14 +49,16 @@ impl Outcome {
 /// caller writing a `match` ladder around `Ok(Some(_))` / `Ok(None)`.
 ///
 /// The closure is synchronous, so this fits the sync-render-after-async-fetch
-/// shape (lxc/docker info). Commands whose render body is also async — e.g.
-/// `sak k8s describe`, which interleaves `write_*_section(...).await?` calls
-/// — keep the explicit `let Some(...) = ... else { return ... }` pattern.
+/// shape (lxc/docker info, prom). Commands whose render body is also async —
+/// e.g. `sak k8s describe`, which interleaves `write_*_section(...).await?`
+/// calls — keep the explicit `let Some(...) = ... else { return ... }` pattern.
 ///
-/// Gated to the features that adopt it so lean builds don't carry it (and
-/// don't trip the dead-code lint).
-#[cfg(any(feature = "lxc", feature = "docker"))]
-pub fn rendered_or_not_found<T>(
+/// Always on (no cfg gate) so sync API domains like `prom` and future call
+/// sites can adopt it without dragging in a docker/lxc cargo feature. The
+/// `allow(dead_code)` covers the lean `--no-default-features` build, where no
+/// adopting domain is compiled in.
+#[allow(dead_code)]
+pub fn outcome_from_option<T>(
     value: Option<T>,
     render: impl FnOnce(T) -> anyhow::Result<()>,
 ) -> anyhow::Result<Outcome> {

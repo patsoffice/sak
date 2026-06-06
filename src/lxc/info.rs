@@ -15,7 +15,7 @@ use anyhow::Result;
 use clap::Args;
 
 use crate::lxc::client::LxcClient;
-use crate::output::rendered_or_not_found;
+use crate::output::outcome_from_option;
 
 #[derive(Args)]
 #[command(
@@ -53,7 +53,7 @@ pub async fn run(args: &InfoArgs) -> Result<Outcome> {
         Some(p) => format!("/1.0/instances/{}?project={p}", args.name),
         None => format!("/1.0/instances/{}", args.name),
     };
-    rendered_or_not_found(client.get_json_recursive(&path, 1).await?, |metadata| {
+    outcome_from_option(client.get_json_recursive(&path, 1).await?, |metadata| {
         crate::output::emit_json(&metadata, args.limit)?;
         Ok(())
     })
