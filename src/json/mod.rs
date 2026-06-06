@@ -9,6 +9,7 @@ pub mod paths;
 pub mod query;
 pub mod schema;
 pub mod select;
+pub mod table;
 pub mod type_;
 pub mod validate;
 
@@ -31,6 +32,7 @@ pub enum JsonCommand {
     Paths(paths::PathsArgs),
     Schema(schema::SchemaArgs),
     Select(select::SelectArgs),
+    Table(table::TableArgs),
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
     Diff(diff::DiffArgs),
@@ -47,6 +49,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Paths(args) => paths::run(args),
         JsonCommand::Schema(args) => schema::run(args),
         JsonCommand::Select(args) => select::run(args),
+        JsonCommand::Table(args) => table::run(args),
         JsonCommand::Type(args) => type_::run(args),
         JsonCommand::Validate(args) => validate::run(args),
         JsonCommand::Diff(args) => diff::run(args),

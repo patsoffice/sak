@@ -75,6 +75,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json query .name data.json              Extract a JSON value
   sak json keys --types data.json             List keys with value types
   sak json select .name,.age data.json        Project a subset of fields
+  sak json table .issues -f id,title in.json  Array of objects -> TSV rows
   sak json flatten data.json                  Flatten to path<TAB>value
   sak json paths data.json                    List leaf paths (no values)
   sak json diff a.json b.json                 Structural diff of two JSON files
