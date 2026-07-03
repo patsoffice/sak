@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
+use super::is_stdin;
 use super::read::{ReadArgs, run as read_run};
 
 #[derive(Args)]
@@ -14,16 +15,18 @@ use super::read::{ReadArgs, run as read_run};
         An ergonomic shorthand for `sak fs read <file> -n 1-N`: line numbers are \
         on by default (disable with --no-line-numbers). Pass --bytes to emit the \
         first N bytes raw instead of whole lines — useful for peeking at binary \
-        headers (the byte output is written verbatim, with no line numbers).",
+        headers (the byte output is written verbatim, with no line numbers). Pass \
+        '-' as the file to read from stdin (matches cat/grep).",
     after_help = "\
 Examples:
   sak fs head src/main.rs                  First 10 lines
   sak fs head src/main.rs 25               First 25 lines
   sak fs head --no-line-numbers file.txt   First 10 lines, no line numbers
-  sak fs head --bytes 64 image.png         First 64 bytes (raw)"
+  sak fs head --bytes 64 image.png         First 64 bytes (raw)
+  some-cmd | sak fs head -                 First 10 lines of piped stdin"
 )]
 pub struct HeadArgs {
-    /// Path to the file to read
+    /// Path to the file to read ('-' reads stdin)
     pub file: PathBuf,
 
     /// Number of lines to show (default 10)
@@ -41,7 +44,13 @@ pub struct HeadArgs {
 
 pub fn run(args: &HeadArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
-        return head_bytes(&args.file, n);
+        return if is_stdin(&args.file) {
+            head_bytes(io::stdin().lock(), n)
+        } else {
+            let f = std::fs::File::open(&args.file)
+                .with_context(|| format!("cannot open: {}", args.file.display()))?;
+            head_bytes(f, n)
+        };
     }
     let n = args.lines.unwrap_or(10);
     // Delegate the line path to `read` so head stays a thin, consistent wrapper.
@@ -55,14 +64,14 @@ pub fn run(args: &HeadArgs) -> Result<Outcome> {
     read_run(&read_args)
 }
 
-/// Write the first `n` bytes of `file` raw to stdout (byte-faithful).
-fn head_bytes(file: &PathBuf, n: usize) -> Result<Outcome> {
-    let f =
-        std::fs::File::open(file).with_context(|| format!("cannot open: {}", file.display()))?;
+/// Write the first `n` bytes of `reader` raw to stdout (byte-faithful).
+/// Never buffers more than `n` bytes, so it is safe on unbounded stdin.
+fn head_bytes<R: Read>(reader: R, n: usize) -> Result<Outcome> {
     let mut buf = Vec::with_capacity(n.min(64 * 1024));
-    f.take(n as u64)
+    reader
+        .take(n as u64)
         .read_to_end(&mut buf)
-        .with_context(|| format!("error reading: {}", file.display()))?;
+        .context("error reading input")?;
     if buf.is_empty() {
         return Ok(Outcome::NotFound);
     }
@@ -109,6 +118,14 @@ mod tests {
             no_line_numbers: false,
         };
         assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    #[test]
+    fn head_bytes_reader_path() {
+        // head_bytes is generic over Read; the stdin path feeds it a StdinLock.
+        // A byte-slice reader exercises the same code without a real pipe.
+        assert_eq!(head_bytes(&b"abcdefghij"[..], 4).unwrap(), Outcome::Found);
+        assert_eq!(head_bytes(&b""[..], 4).unwrap(), Outcome::NotFound);
     }
 
     #[test]

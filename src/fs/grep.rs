@@ -8,6 +8,7 @@ use globset::Glob;
 use regex::Regex;
 use walkdir::WalkDir;
 
+use super::STDIN_LABEL;
 use crate::output::{BoundedWriter, is_binary, line_number_width, relative_path};
 
 #[derive(Args)]
@@ -217,9 +218,6 @@ struct LineMatch {
     is_context: bool,
     is_separator: bool,
 }
-
-/// Display label used for matches read from stdin (matches grep/ripgrep).
-const STDIN_LABEL: &str = "(standard input)";
 
 fn search_file_lines(
     path: &PathBuf,

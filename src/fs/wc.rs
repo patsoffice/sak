@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 
+use super::{STDIN_LABEL, is_stdin};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -15,7 +16,8 @@ use crate::output::BoundedWriter;
         definitions: lines are newline characters, words are whitespace-separated \
         runs, bytes are the raw byte length). With more than one file, a `total` \
         row is appended. With no files, counts standard input and omits the \
-        filename column.\n\n\
+        filename column; a file argument of '-' also reads standard input \
+        (matches cat/grep) and is labelled `(standard input)`.\n\n\
         Pass any of --lines/--words/--bytes to restrict the output to those \
         columns (in that fixed order); with none given, all three are shown.",
     after_help = "\
@@ -23,10 +25,11 @@ Examples:
   sak fs wc src/main.rs                    Lines, words, bytes of one file
   sak fs wc src/*.rs                        Per-file counts plus a total row
   sak fs wc --lines src/main.rs            Line count only
-  cat file | sak fs wc                      Count standard input"
+  cat file | sak fs wc                      Count standard input
+  cat file | sak fs wc -                    '-' is the stdin alias"
 )]
 pub struct WcArgs {
-    /// Files to count (reads standard input when none are given)
+    /// Files to count (reads stdin when none are given, or for a '-' argument)
     pub files: Vec<PathBuf>,
 
     /// Show the line count
@@ -118,17 +121,31 @@ pub fn run(args: &WcArgs) -> Result<Outcome> {
     let mut total = Counts::default();
     let mut any_error = false;
     for file in &args.files {
-        let data = match std::fs::read(file) {
-            Ok(d) => d,
-            Err(e) => {
-                eprintln!("sak: error: cannot read {}: {e}", file.display());
-                any_error = true;
-                continue;
+        // A file arg of "-" reads stdin (cat/grep convention); it is labelled
+        // like grep's stdin so multi-file rows keep an aligned filename column.
+        let (data, name) = if is_stdin(file) {
+            let mut buf = Vec::new();
+            match io::stdin().read_to_end(&mut buf) {
+                Ok(_) => (buf, STDIN_LABEL.to_string()),
+                Err(e) => {
+                    eprintln!("sak: error: cannot read stdin: {e}");
+                    any_error = true;
+                    continue;
+                }
+            }
+        } else {
+            match std::fs::read(file) {
+                Ok(d) => (d, file.display().to_string()),
+                Err(e) => {
+                    eprintln!("sak: error: cannot read {}: {e}", file.display());
+                    any_error = true;
+                    continue;
+                }
             }
         };
         let c = count(&data);
         total.add(&c);
-        if !writer.write_line(&row(&c, Some(&file.display().to_string()), sel))? {
+        if !writer.write_line(&row(&c, Some(&name), sel))? {
             break;
         }
     }

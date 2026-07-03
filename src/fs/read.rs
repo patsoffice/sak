@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
+use super::is_stdin;
 use crate::output::{BoundedWriter, format_line_number, line_number_width};
 
 #[derive(Args)]
@@ -13,17 +14,19 @@ use crate::output::{BoundedWriter, format_line_number, line_number_width};
     about = "Read file contents with line numbers",
     long_about = "Read file contents with line numbers.\n\n\
         Displays the contents of a file with line numbers for easy reference. \
-        Supports reading specific line ranges and limiting output length.",
+        Supports reading specific line ranges and limiting output length. Pass \
+        '-' as the file to read from stdin (matches cat/grep).",
     after_help = "\
 Examples:
   sak fs read src/main.rs                  Read entire file (up to 2000 lines)
   sak fs read src/main.rs -n 1-50          Read lines 1 through 50
   sak fs read src/main.rs -n 100-          Read from line 100 to end
   sak fs read src/main.rs -n -20           Read last 20 lines
-  sak fs read src/main.rs --offset 10 --limit 5   Skip 10 lines, show 5"
+  sak fs read src/main.rs --offset 10 --limit 5   Skip 10 lines, show 5
+  some-cmd | sak fs read -                 Read piped stdin"
 )]
 pub struct ReadArgs {
-    /// Path to the file to read
+    /// Path to the file to read ('-' reads stdin)
     pub file: PathBuf,
 
     /// Line range to read (e.g., "1-50", "100-", "-20")
@@ -70,9 +73,14 @@ fn parse_line_range(spec: &str) -> Result<(Option<usize>, Option<usize>)> {
 }
 
 pub fn run(args: &ReadArgs) -> Result<Outcome> {
-    let file =
-        File::open(&args.file).with_context(|| format!("cannot open: {}", args.file.display()))?;
-    let reader = BufReader::new(file);
+    // A file arg of "-" reads stdin (cat/grep convention); anything else is a path.
+    let reader: Box<dyn BufRead> = if is_stdin(&args.file) {
+        Box::new(io::stdin().lock())
+    } else {
+        let file = File::open(&args.file)
+            .with_context(|| format!("cannot open: {}", args.file.display()))?;
+        Box::new(BufReader::new(file))
+    };
 
     // Determine what lines to output
     let lines: Vec<(usize, String)> = if let Some(ref spec) = args.lines {

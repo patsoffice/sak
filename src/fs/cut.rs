@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use regex::Regex;
 
+use super::is_stdin;
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -13,7 +14,8 @@ use crate::output::BoundedWriter;
     about = "Extract fields from delimited text",
     long_about = "Extract fields from delimited text.\n\n\
         Splits each line by a delimiter and outputs selected fields. \
-        Reads from stdin if no files are given. Default delimiter is whitespace.",
+        Reads from stdin if no files are given, or for any file argument of '-' \
+        (matches cat/grep). Default delimiter is whitespace.",
     after_help = "\
 Examples:
   echo 'alice 30 nyc' | sak fs cut -f 1,3           Extract fields 1 and 3
@@ -21,10 +23,11 @@ Examples:
   sak fs cut -d ',' -f 2-4 data.csv                 Extract field range
   echo 'a:b:c:d:e' | sak fs cut -d: --max-fields 3  Split into 3: 'a', 'b', 'c:d:e'
   sak fs cut -f 2 --filter '1=error' log.txt        Field 2 where field 1 is 'error'
-  cat data.tsv | sak fs cut --header -f name,age    Select by column name"
+  cat data.tsv | sak fs cut --header -f name,age    Select by column name
+  cat data.tsv | sak fs cut -f 1 -                  '-' is the stdin alias"
 )]
 pub struct CutArgs {
-    /// Input files (reads stdin if omitted)
+    /// Input files (reads stdin if omitted, or for a '-' argument)
     pub files: Vec<PathBuf>,
 
     /// Field delimiter (default: split on whitespace runs)
@@ -393,9 +396,14 @@ pub fn run(args: &CutArgs) -> Result<Outcome> {
         )?;
     } else {
         for file_path in &args.files {
-            let file = std::fs::File::open(file_path)
-                .with_context(|| format!("cannot open: {}", file_path.display()))?;
-            let reader = BufReader::new(file);
+            // A file arg of "-" reads stdin (cat/grep convention).
+            let reader: Box<dyn BufRead> = if is_stdin(file_path) {
+                Box::new(io::stdin().lock())
+            } else {
+                let file = std::fs::File::open(file_path)
+                    .with_context(|| format!("cannot open: {}", file_path.display()))?;
+                Box::new(BufReader::new(file))
+            };
             let cont = process_lines(
                 reader,
                 args,

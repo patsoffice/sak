@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
+use super::is_stdin;
 use super::read::{ReadArgs, run as read_run};
 
 #[derive(Args)]
@@ -15,16 +16,18 @@ use super::read::{ReadArgs, run as read_run};
         on by default and reflect the lines' real positions in the file (disable \
         with --no-line-numbers). Pass --bytes to emit the last N bytes raw \
         instead of whole lines (the byte output is written verbatim, with no \
-        line numbers).",
+        line numbers). Pass '-' as the file to read from stdin (matches \
+        cat/grep); stdin can't be seeked, so it is read fully into memory.",
     after_help = "\
 Examples:
   sak fs tail logfile.txt                  Last 10 lines
   sak fs tail logfile.txt 50               Last 50 lines
   sak fs tail --no-line-numbers file.txt   Last 10 lines, no line numbers
-  sak fs tail --bytes 256 capture.bin      Last 256 bytes (raw)"
+  sak fs tail --bytes 256 capture.bin      Last 256 bytes (raw)
+  some-cmd | sak fs tail -                 Last 10 lines of piped stdin"
 )]
 pub struct TailArgs {
-    /// Path to the file to read
+    /// Path to the file to read ('-' reads stdin)
     pub file: PathBuf,
 
     /// Number of lines to show (default 10)
@@ -42,7 +45,11 @@ pub struct TailArgs {
 
 pub fn run(args: &TailArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
-        return tail_bytes(&args.file, n);
+        return if is_stdin(&args.file) {
+            tail_bytes_stdin(n)
+        } else {
+            tail_bytes(&args.file, n)
+        };
     }
     let n = args.lines.unwrap_or(10);
     // Delegate the line path to `read`'s last-N handling so tail stays a thin,
@@ -77,6 +84,31 @@ fn tail_bytes(file: &PathBuf, n: usize) -> Result<Outcome> {
     let stdout = io::stdout();
     stdout.lock().write_all(&buf)?;
     Ok(Outcome::Found)
+}
+
+/// Write the last `n` bytes of stdin raw to stdout (byte-faithful). Stdin can't
+/// be seeked, so the whole stream is read into memory before the last `n` bytes
+/// are sliced off — the same tradeoff `tail`/`sed` make on a pipe.
+fn tail_bytes_stdin(n: usize) -> Result<Outcome> {
+    let mut buf = Vec::new();
+    io::stdin()
+        .lock()
+        .read_to_end(&mut buf)
+        .context("error reading input")?;
+    let tail = last_bytes(&buf, n);
+    if tail.is_empty() {
+        return Ok(Outcome::NotFound);
+    }
+    let stdout = io::stdout();
+    stdout.lock().write_all(tail)?;
+    Ok(Outcome::Found)
+}
+
+/// The last `n` bytes of `buf`, clamped to the whole buffer when `n` exceeds
+/// its length. Mirrors the file path's `min(len)` clamp for the un-seekable
+/// stdin case.
+fn last_bytes(buf: &[u8], n: usize) -> &[u8] {
+    &buf[buf.len().saturating_sub(n)..]
 }
 
 #[cfg(test)]
@@ -131,6 +163,14 @@ mod tests {
             no_line_numbers: false,
         };
         assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    #[test]
+    fn last_bytes_takes_tail_and_clamps() {
+        // The stdin byte path slices the last n bytes, clamping when n > len.
+        assert_eq!(last_bytes(b"abcdefghij", 3), b"hij");
+        assert_eq!(last_bytes(b"abc", 10), b"abc");
+        assert_eq!(last_bytes(b"", 5), b"");
     }
 
     #[test]

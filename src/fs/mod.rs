@@ -53,6 +53,17 @@ pub fn run(cmd: &FsCommand) -> Result<Outcome> {
     }
 }
 
+/// True if a file argument is the conventional "-" stdin sentinel (cat, grep,
+/// ripgrep, ...). `read`, `head`, `tail`, `cut`, and `wc` route a `-` path to
+/// stdin; `grep` already honors the same sentinel inline.
+pub(crate) fn is_stdin(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+/// Display label used for input read from stdin (matches grep/ripgrep). Shared
+/// by `grep` and `wc` so stdin is named identically across `fs` commands.
+pub(crate) const STDIN_LABEL: &str = "(standard input)";
+
 /// Directories pruned from every recursive walk unless `--hidden` is set
 /// (which only un-prunes the dotfile entries, never the junk dirs).
 pub(crate) const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".venv"];
