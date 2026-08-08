@@ -157,16 +157,11 @@ pub fn emit(
             } else {
                 infos
             };
+            // No stderr notice here: `limit` can only be `Some` when the
+            // caller passed `--limit`, and a cut they asked for isn't news.
+            // See `output::truncation_notice`.
             let pretty = serde_json::to_string_pretty(truncated)?;
             writer.write_decoration(&pretty)?;
-            if let Some(n) = limit
-                && infos.len() > n
-            {
-                eprintln!(
-                    "sak: output truncated at {} certs (use --limit to adjust)",
-                    n
-                );
-            }
         }
     }
 

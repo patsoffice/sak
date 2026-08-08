@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use clap::Args;
 
 use super::client;
-use crate::output::BoundedWriter;
+use crate::output::{BoundedWriter, Limit};
 
 #[derive(Args)]
 #[command(
@@ -68,7 +68,7 @@ pub fn run(args: &CountArgs) -> Result<Outcome> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, None);
+    let mut writer = BoundedWriter::new(handle, Limit::None);
     writer.write_line(count)?;
     writer.flush()?;
 

@@ -58,7 +58,9 @@ pub fn run(args: &HeadArgs) -> Result<Outcome> {
         file: args.file.clone(),
         lines: Some(format!("1-{n}")),
         no_line_numbers: args.no_line_numbers,
-        limit: n,
+        // Explicit (not `read`'s built-in cap), so hitting it is silent —
+        // `head` truncating to n lines is the whole point of the command.
+        limit: Some(n),
         offset: 0,
     };
     read_run(&read_args)

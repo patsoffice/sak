@@ -7,7 +7,12 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 use super::is_stdin;
-use crate::output::{BoundedWriter, format_line_number, line_number_width};
+use crate::output::{BoundedWriter, Limit, format_line_number, line_number_width};
+
+/// Lines emitted when the caller doesn't pass `--limit`. Big enough to cover
+/// most source files whole, small enough that reading a huge log by accident
+/// stays cheap.
+const DEFAULT_LIMIT: usize = 2000;
 
 #[derive(Args)]
 #[command(
@@ -37,9 +42,12 @@ pub struct ReadArgs {
     #[arg(long = "no-line-numbers")]
     pub no_line_numbers: bool,
 
-    /// Maximum number of lines to output
-    #[arg(long, default_value = "2000")]
-    pub limit: usize,
+    /// Maximum number of lines to output [default: 2000]
+    // Left as `Option` rather than given a clap `default_value` so the writer
+    // can tell a caller-chosen cap (silent truncation) from the built-in one
+    // (truncation announced on stderr) — see `crate::output::Limit`.
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
 
     /// Number of lines to skip from the start (0-based)
     #[arg(long, default_value = "0")]
@@ -156,7 +164,14 @@ pub fn run(args: &ReadArgs) -> Result<Outcome> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, Some(args.limit));
+    // A caller who never passed `--limit` can still be truncated by the
+    // built-in cap, so that case announces itself on stderr; an explicit
+    // `--limit N` is exactly what was asked for and truncates silently.
+    let limit = args
+        .limit
+        .map(Limit::Explicit)
+        .unwrap_or(Limit::Default(DEFAULT_LIMIT));
+    let mut writer = BoundedWriter::new(handle, limit);
 
     for (line_num, content) in &lines {
         let output = if args.no_line_numbers {
@@ -247,7 +262,7 @@ mod tests {
             file: file_path,
             lines: Some("3-5".to_string()),
             no_line_numbers: true,
-            limit: 2000,
+            limit: None,
             offset: 0,
         };
         let exit = run(&args).unwrap();
@@ -270,7 +285,7 @@ mod tests {
             file: file_path,
             lines: Some("-3".to_string()),
             no_line_numbers: true,
-            limit: 2000,
+            limit: None,
             offset: 0,
         };
         let exit = run(&args).unwrap();

@@ -337,9 +337,57 @@ fn main() -> ExitCode {
 
     match result {
         Ok(outcome) => outcome.exit_code(),
+        // A downstream reader closing the pipe (`sak fs grep … | sak fs head -`)
+        // is the normal end of a pipeline, not a failure. Rust masks SIGPIPE, so
+        // the write comes back as an `io::Error` instead of killing the process;
+        // swallow it and exit clean rather than printing "Broken pipe" as an
+        // error. Reporting it would train callers to ignore `sak: error:` lines,
+        // which is worse than losing the (already-unreadable) tail of output.
+        Err(e) if is_broken_pipe(&e) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("sak: error: {:#}", e);
             ExitCode::from(2)
         }
+    }
+}
+
+/// True when anything in `e`'s cause chain is an [`io::ErrorKind::BrokenPipe`].
+///
+/// Checks the whole chain because write failures reach `main` wrapped in
+/// `anyhow` context (`.context("error writing output")`) as often as they reach
+/// it bare.
+fn is_broken_pipe(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Context;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn broken_pipe_detected_bare_and_through_context() {
+        let bare = anyhow::Error::from(Error::new(ErrorKind::BrokenPipe, "Broken pipe"));
+        assert!(is_broken_pipe(&bare));
+
+        // Commands routinely add context before the error reaches main.
+        let wrapped = Err::<(), _>(Error::new(ErrorKind::BrokenPipe, "Broken pipe"))
+            .context("error writing output")
+            .context("sak fs grep")
+            .unwrap_err();
+        assert!(is_broken_pipe(&wrapped));
+    }
+
+    #[test]
+    fn other_io_errors_are_still_errors() {
+        let missing = anyhow::Error::from(Error::new(ErrorKind::NotFound, "no such file"))
+            .context("reading Cargo.toml");
+        assert!(!is_broken_pipe(&missing));
+        assert!(!is_broken_pipe(&anyhow::anyhow!("invalid JSON")));
     }
 }

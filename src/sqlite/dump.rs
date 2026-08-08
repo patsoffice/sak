@@ -8,7 +8,7 @@ use clap::Args;
 use super::client;
 use super::count::quote_ident;
 use super::query::{OutputFormat, row_to_json_line, row_to_tsv_line};
-use crate::output::BoundedWriter;
+use crate::output::{BoundedWriter, Limit};
 
 /// Default row cap when `--limit` is omitted — small so an accidental
 /// `dump` on a huge table stays cheap; raise it explicitly with `--limit`.
@@ -112,7 +112,9 @@ pub fn run(args: &DumpArgs) -> Result<Outcome> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, None);
+    // `--limit` is applied by the SQL `LIMIT` clause above, so the writer
+    // itself is unbounded — the row set it sees is already the capped one.
+    let mut writer = BoundedWriter::new(handle, Limit::None);
 
     if args.format == OutputFormat::Tsv {
         writer.write_decoration(&columns.join("\t"))?;

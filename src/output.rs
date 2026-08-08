@@ -71,20 +71,78 @@ pub fn outcome_from_option<T>(
     }
 }
 
-/// A writer that writes to stdout and tracks lines written, stopping at a configurable limit.
-/// When the limit is reached, it writes a truncation notice to stderr.
+/// How a [`BoundedWriter`]'s output cap was chosen. Controls whether hitting
+/// the cap is announced on stderr — see [`truncation_notice`].
+///
+/// Nearly every command's `--limit` is an `Option<usize>` that is `None` unless
+/// the caller passes the flag, so those call sites convert straight from
+/// `Option<usize>` via [`From`]. Commands whose limit has a built-in default
+/// (`sak fs read`'s 2000 lines) must name [`Limit::Default`] explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Limit {
+    /// No cap — write everything.
+    None,
+    /// The caller asked for this cap with `--limit N`.
+    Explicit(usize),
+    /// The cap is a command's built-in default; the caller never chose it.
+    Default(usize),
+}
+
+impl Limit {
+    /// The number of countable lines allowed, or `None` when unbounded.
+    fn max_lines(self) -> Option<usize> {
+        match self {
+            Limit::None => None,
+            Limit::Explicit(n) | Limit::Default(n) => Some(n),
+        }
+    }
+}
+
+impl From<Option<usize>> for Limit {
+    fn from(limit: Option<usize>) -> Self {
+        match limit {
+            Some(n) => Limit::Explicit(n),
+            None => Limit::None,
+        }
+    }
+}
+
+/// The stderr note to emit the first time output hits `limit`, or `None` when
+/// truncation needs no announcement.
+///
+/// A caller who passed `--limit N` got exactly the cut they asked for, so the
+/// note is pure noise — and a `sak:` line on stderr in an otherwise-successful
+/// run reads like a failure, which trains callers to ignore the `sak:` lines
+/// that *do* matter (sak-llm-cli-exit-codes-p209). A cap that came from a
+/// command's built-in default is not the caller's choice, so silently handing
+/// back a partial answer would be worse than the noise — that case still
+/// announces itself, and says how to raise the cap.
+///
+/// Truncation is never an error either way: the run still exits 0.
+fn truncation_notice(limit: Limit) -> Option<String> {
+    match limit {
+        Limit::Default(n) => Some(format!(
+            "sak: output truncated at {n} results (default limit — pass --limit to raise it)"
+        )),
+        Limit::Explicit(_) | Limit::None => None,
+    }
+}
+
+/// A writer that writes to stdout and tracks lines written, stopping at a
+/// configurable [`Limit`]. Reaching a *default* limit writes a notice to
+/// stderr; reaching a caller-supplied one is silent.
 pub struct BoundedWriter<'a> {
     inner: StdoutLock<'a>,
-    limit: Option<usize>,
+    limit: Limit,
     lines_written: usize,
     truncated: bool,
 }
 
 impl<'a> BoundedWriter<'a> {
-    pub fn new(inner: StdoutLock<'a>, limit: Option<usize>) -> Self {
+    pub fn new(inner: StdoutLock<'a>, limit: impl Into<Limit>) -> Self {
         Self {
             inner,
-            limit,
+            limit: limit.into(),
             lines_written: 0,
             truncated: false,
         }
@@ -93,15 +151,14 @@ impl<'a> BoundedWriter<'a> {
     /// Write a single line (including newline). Returns Ok(true) if the line
     /// was written, Ok(false) if the limit has been reached.
     pub fn write_line(&mut self, line: &str) -> io::Result<bool> {
-        if let Some(limit) = self.limit
+        if let Some(limit) = self.limit.max_lines()
             && self.lines_written >= limit
         {
             if !self.truncated {
                 self.truncated = true;
-                eprintln!(
-                    "sak: output truncated at {} results (use --limit to adjust)",
-                    limit
-                );
+                if let Some(notice) = truncation_notice(self.limit) {
+                    eprintln!("{notice}");
+                }
             }
             return Ok(false);
         }
@@ -281,6 +338,25 @@ mod tests {
         assert_eq!(collapse_newlines("no newlines here"), "no newlines here");
         // tabs are deliberately preserved by the newline-only variant
         assert_eq!(collapse_newlines("a\tb"), "a\tb");
+    }
+
+    #[test]
+    fn truncation_is_announced_only_for_default_limits() {
+        // A cap the caller asked for is not news; a built-in one is, and the
+        // notice has to say how to raise it.
+        assert_eq!(truncation_notice(Limit::Explicit(10)), None);
+        assert_eq!(truncation_notice(Limit::None), None);
+        let notice = truncation_notice(Limit::Default(2000)).expect("default limit announces");
+        assert!(notice.contains("2000"), "{notice}");
+        assert!(notice.contains("--limit"), "{notice}");
+        // Must not read as a failure — callers key off the `sak: error:` prefix.
+        assert!(!notice.contains("error"), "{notice}");
+    }
+
+    #[test]
+    fn bare_option_limits_are_treated_as_caller_supplied() {
+        assert_eq!(Limit::from(Some(5)), Limit::Explicit(5));
+        assert_eq!(Limit::from(None), Limit::None);
     }
 
     #[test]

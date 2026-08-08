@@ -132,6 +132,11 @@ Three values, applied consistently across every domain:
 
 Exit-2 errors go to stderr with the `sak: error:` prefix that `main.rs` adds when a command returns `Err`. Exit-1 "no results" runs are silent on stderr.
 
+**Two non-failures never become exit 2.** Both make a successful command look broken in a pipeline, so both are handled centrally:
+
+- **Truncation** — hitting `--limit` is the requested behavior, so it stays exit 0. See [src/output.rs](src/output.rs) `truncation_notice`.
+- **Broken pipe** — a downstream reader closing the pipe is the normal end of a pipeline. `main.rs`'s `is_broken_pipe` walks the `anyhow` cause chain and exits 0 silently instead of printing `sak: error: Broken pipe`.
+
 **Single-resource lookups: 404 → exit 1.** Every API-domain chokepoint maps "not found" to a typed `Option`/`Outcome` so callers can produce exit 1 without losing the ability to surface other failures as exit 2:
 
 - [src/k8s/client.rs](src/k8s/client.rs) `get_dyn` — apiserver 404 → `Ok(None)`
@@ -154,7 +159,7 @@ Exit-2 errors go to stderr with the `sak: error:` prefix that `main.rs` adds whe
 - **CLI**: clap derive API with `wrap_help` — every subcommand has `long_about` and `after_help` with examples
 - **Output**: no ANSI colors, no spinners, no interactive output — LLMs are the audience
 - **Line numbers**: right-aligned, tab-separated (via `format_line_number()` in `output.rs`)
-- **BoundedWriter**: all output goes through `BoundedWriter` in `output.rs` — it enforces `--limit` and writes truncation notices to stderr
+- **BoundedWriter**: all output goes through `BoundedWriter` in `output.rs` — it enforces `--limit` and writes truncation notices to stderr. The cap is an `output::Limit` (`None` / `Explicit(n)` / `Default(n)`); `Option<usize>` converts in via `From`, so a command whose `--limit` is a plain `Option<usize>` needs no change. Only a `Limit::Default` cap announces truncation
 - **Directory skipping**: `.git`, `target`, `node_modules`, `__pycache__`, `.venv` are skipped by default; use `--hidden` to include dotfiles
 - **Directory pruning**: use `walkdir`'s `filter_entry()` to prune, not `continue` (which doesn't prevent descent); always check `e.depth() > 0` to avoid filtering the root
 - **Deterministic output**: sort by name by default — LLMs need reproducible results
@@ -206,6 +211,8 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - `nix develop -c …` prints `warning: Git tree '…' is dirty` to **stderr** whenever the working tree has uncommitted changes (i.e. almost always mid-task). Strip it with `2>/dev/null` (the warning is on stderr; real output is on stdout). Do **not** pipe through `grep -v dirty` to filter it — the agent hook blocks `grep`, so you'll just bounce off the guardrail. More generally: when you only want a tool's stdout, redirect stderr; don't reach for a shell filter that the hook will reject
 - When you need a fact that lives in a structured store (issues in `br`, JSON/diff data, repo state), query the store directly (`br show <id>`, `sak json`, `sak git`) instead of reverse-engineering it from a raw `git diff` or a piped-and-filtered shell pipeline. The structured path is shorter and doesn't fight the hook
 - `BoundedWriter` is hardcoded to `StdoutLock` — not generic; this is intentional (all output must go to stdout)
+- Truncation announces itself **only** when the cap came from a command's built-in default, not from the caller. `BoundedWriter::new` takes an `impl Into<output::Limit>`, and `Option<usize>` (what nearly every `--limit` flag is) converts to `Limit::Explicit` / `Limit::None` — both silent. Today only `sak fs read` has a built-in cap (2000 lines), so its `limit` is an `Option<usize>` with the default applied in code as `Limit::Default(DEFAULT_LIMIT)` rather than a clap `default_value`; that's what preserves the caller-chose-it distinction. If you give a new command a defaulted `--limit`, follow that shape — a clap `default_value` erases the distinction and makes every truncation look like the caller's own choice. Either way, truncation is exit 0, never an error
+- Broken pipe on stdout is swallowed in `main` (exit 0, nothing on stderr), so a command's `?` on a failed write still reaches `main` — don't add per-command EPIPE handling. The check is a cause-chain walk, so `.context(...)`-wrapped write errors are still recognized; it does mean an EPIPE from *any* source in a run (not just stdout) exits 0, which is acceptable because sak never writes to a subprocess's stdin
 - `--heading` and `--line-number` on grep default to `true` via `default_value = "true"` — they're on unless explicitly disabled
 - Cut's `--max-fields` uses `splitn` semantics — splits into at most N fields, remainder stays in the last field
 - Cut reads stdin when no files are given — enable piping from other sak commands

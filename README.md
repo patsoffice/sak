@@ -9,7 +9,7 @@ Commands are organized by domain. Current domains: `fs` (filesystem), `git` (rep
 - **Two-level subcommands** — `sak <domain> <operation>` keeps the top level clean and allows future domains without clutter.
 - **Read-only only** — No writes, no side effects. This is the core contract that makes the tool safe for autonomous LLM use.
 - **LLM-optimized output** — No ANSI colors, no spinners, no interactive prompts. Deterministic sort order. Line numbers on by default. Every subcommand includes `--help` examples.
-- **Bounded output** — All output flows through `BoundedWriter`, which enforces `--limit` and emits a truncation notice to stderr. This prevents LLMs from drowning in unbounded results.
+- **Bounded output** — All output flows through `BoundedWriter`, which enforces `--limit` and emits a truncation notice to stderr when the cap was sak's own default rather than the caller's. This prevents LLMs from drowning in unbounded results.
 - **Single binary** — One crate, no workspace. Keeps compilation fast and deployment simple.
 - **Minimal dependencies** — Runtime dependencies: `clap`, `globset`, `walkdir`, `regex`, `anyhow`, `git2`, `serde`, `serde_json`, `toml`, `serde_yaml`, `plist`. Optional domains add their own clients on top: `k8s` brings `kube` + `k8s-openapi` + `tokio` + `http`; `lxc` and `docker` share a `hyper` + `hyperlocal` + `hyper-util` + `http-body-util` + `tokio` unix-socket stack; `sqlite` brings `rusqlite` with the bundled libsqlite3; `prom` and `loki` share `ureq` with rustls (synchronous — pulls no tokio).
 - **Opt-out heavy domains** — `k8s`, `lxc`, `docker`, `sqlite`, `prom`, and `loki` are all part of the default feature set so `cargo install sak` ships every domain, but any of them can be disabled (independently or together) with `--no-default-features` for a leaner build that drops the corresponding clients / generated code / bundled libraries / async runtime. See [Build features](#build-features) below.
@@ -295,6 +295,8 @@ Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `ku
 - **stdout** — Results only. Clean, parseable, no decoration.
 - **stderr** — Errors (prefixed `sak: error:`) and truncation notices.
 - **Exit codes** — `0` = results found, `1` = no results, `2` = error.
+- **Truncation is not an error** — hitting `--limit` still exits `0`. An explicit `--limit N` truncates silently (you asked for the cut); only a command's *built-in* cap (e.g. `sak fs read`'s 2000 lines) announces itself on stderr.
+- **Broken pipe is not an error** — a downstream reader closing the pipe (`sak fs grep … | head -5`) exits `0` with nothing on stderr.
 - **Line numbers** — Right-aligned, tab-separated (e.g., `42\tcontent`).
 - **Deterministic** — Results sorted by name by default for reproducibility.
 - **Skipped directories** — `.git`, `target`, `node_modules`, `__pycache__`, `.venv` are excluded by default. Use `--hidden` to include dotfiles.
