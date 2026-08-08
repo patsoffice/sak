@@ -3,8 +3,8 @@
 //! Reads the Claude Code `PreToolUse` JSON payload from stdin and decides
 //! whether the about-to-run Bash command should be redirected to a `sak`
 //! equivalent. Exits 0 to allow, exits 2 with a stderr message to block.
-//! Set `SAK_HOOK_BYPASS=1` in the Bash command's environment to disable the
-//! hook for one call.
+//! Prefix the Bash command with `SAK_HOOK_BYPASS=1` (or export it in the hook
+//! process's own environment) to disable the hook for one call.
 //!
 //! Configure in `~/.claude/settings.json`:
 //!
@@ -44,8 +44,12 @@ use super::rule::{self, HookRule};
         read can't hide behind a pipeline, a substitution (`$(…)` / backticks), \
         a subshell or brace group, a `sh -c '…'` script, a wrapper prefix \
         (sudo/env/xargs/timeout/nice/…), or a `find … -exec …` clause.\n\n\
-        Set SAK_HOOK_BYPASS=1 in the Bash command's environment to disable the \
-        hook for one call.",
+        Prefix the Bash command with SAK_HOOK_BYPASS=1 to disable the hook for \
+        one call. The marker is honored wherever it appears as an env \
+        assignment (leading the command, after `env`/`sudo`, inside `sh -c`), \
+        and it disables the hook for the whole command — including later \
+        pipeline segments, which shell scoping would not cover. Exporting \
+        SAK_HOOK_BYPASS=1 into the hook process's own environment works too.",
     after_help = "\
 Configure in ~/.claude/settings.json:
 
@@ -63,7 +67,8 @@ Configure in ~/.claude/settings.json:
 Examples:
   sak hook claude-code                   Read JSON payload from stdin (normal use)
   sak hook claude-code --check 'git log' Test a command directly (no stdin)
-  SAK_HOOK_BYPASS=1 git status           One-shot escape hatch"
+  SAK_HOOK_BYPASS=1 git status           One-shot escape hatch
+  SAK_HOOK_BYPASS=1 git log | wc -l      Escape hatch covers the whole pipeline"
 )]
 pub struct ClaudeCodeArgs {
     /// Classify this command string directly instead of reading stdin.
@@ -96,7 +101,7 @@ struct ToolInput {
 // mapping. The alternative would have been a fourth Outcome variant just
 // for hook, which we explicitly didn't add.
 pub fn run(args: &ClaudeCodeArgs) -> Result<Outcome> {
-    if std::env::var("SAK_HOOK_BYPASS").as_deref() == Ok("1") {
+    if std::env::var("SAK_HOOK_BYPASS").is_ok_and(|v| is_bypass_value(&v)) {
         return Ok(Outcome::Found);
     }
 
@@ -149,7 +154,89 @@ const MAX_DEPTH: usize = 12;
 /// level it splits on shell separators (`|`, `||`, `&&`, `;`, `&`) while
 /// respecting quotes, then evaluates each piece. First block wins.
 pub(crate) fn classify(command: &str) -> Option<String> {
+    if bypass_requested(command) {
+        return None;
+    }
     classify_depth(command, 0)
+}
+
+/// Values of `SAK_HOOK_BYPASS` that turn the hook off. Shared by the
+/// process-environment check in [`run`] and the in-command scan in
+/// [`bypass_requested`] so the two can never disagree about what "set" means.
+fn is_bypass_value(value: &str) -> bool {
+    matches!(value, "1" | "true" | "yes")
+}
+
+/// Whether the command carries an inline `SAK_HOOK_BYPASS=1` escape hatch.
+///
+/// The hook runs as its own process, so the documented `SAK_HOOK_BYPASS=1 git
+/// status` form never reaches our *environment* — the assignment is just the
+/// first token of the command string the harness hands us, and
+/// [`strip_env_assignments`] would otherwise drop it before matching. Scanning
+/// for it here is what makes the documented invocation work.
+///
+/// A marker anywhere in the command disables the hook for the **whole**
+/// command, not only the segment it prefixes. Shell scoping would confine it to
+/// one pipeline segment, which is the wrong shape for an escape hatch — the
+/// reads people need to unblock are usually pipelines like
+/// `SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l`, where the blocking rule
+/// can fire on a later segment than the one carrying the assignment.
+fn bypass_requested(command: &str) -> bool {
+    bypass_depth(command, 0)
+}
+
+fn bypass_depth(command: &str, depth: usize) -> bool {
+    if depth > MAX_DEPTH {
+        return false;
+    }
+    if extract_nested(command)
+        .iter()
+        .any(|inner| bypass_depth(inner, depth + 1))
+    {
+        return true;
+    }
+    split_pipeline(command)
+        .iter()
+        .any(|part| tokens_carry_bypass(&tokenize(part), depth))
+}
+
+/// Whether one command's tokens carry the bypass marker: as a leading
+/// `VAR=value` assignment, among a wrapper's own operands (`env
+/// SAK_HOOK_BYPASS=1 git status`), or inside a `sh -c '…'` script.
+fn tokens_carry_bypass(tokens: &[String], depth: usize) -> bool {
+    if tokens.is_empty() || depth > MAX_DEPTH {
+        return false;
+    }
+    let end = env_assignment_end(tokens);
+    if tokens[..end].iter().any(|t| is_bypass_assignment(t)) {
+        return true;
+    }
+    let rest = &tokens[end..];
+    let Some(first) = rest.first() else {
+        return false;
+    };
+    let base = basename(first);
+    if is_shell_wrapper(base) {
+        return shell_c_arg(&rest[1..]).is_some_and(|script| bypass_depth(script, depth + 1));
+    }
+    // A wrapper's own operands are where an `env`/`sudo` marker lives, and
+    // they're exactly what `strip_command_wrapper` discards on its way to the
+    // inner command — the inner command is a suffix, so what it dropped is the
+    // prefix. Recurse into the inner command too, for stacked wrappers.
+    let args = &rest[1..];
+    let Some(inner) = strip_command_wrapper(base, args) else {
+        return false;
+    };
+    let consumed = args.len() - inner.len();
+    args[..consumed].iter().any(|t| is_bypass_assignment(t))
+        || tokens_carry_bypass(&inner, depth + 1)
+}
+
+/// Whether a single `VAR=value` token is the bypass marker set to an on value.
+fn is_bypass_assignment(token: &str) -> bool {
+    token
+        .split_once('=')
+        .is_some_and(|(name, value)| name == "SAK_HOOK_BYPASS" && is_bypass_value(value))
 }
 
 fn classify_depth(command: &str, depth: usize) -> Option<String> {
@@ -347,6 +434,13 @@ fn tokenize(part: &str) -> Vec<String> {
 /// Drop leading `FOO=bar BAZ=qux` env-var assignments — they prefix the real
 /// command name in shell syntax.
 fn strip_env_assignments(tokens: Vec<String>) -> Vec<String> {
+    tokens[env_assignment_end(&tokens)..].to_vec()
+}
+
+/// Index of the first token that isn't a leading `FOO=bar` env-var assignment,
+/// i.e. where the command name starts. Shared with [`tokens_carry_bypass`],
+/// which inspects the assignments this run would discard.
+fn env_assignment_end(tokens: &[String]) -> usize {
     let mut i = 0;
     while i < tokens.len() {
         let t = &tokens[i];
@@ -364,7 +458,7 @@ fn strip_env_assignments(tokens: Vec<String>) -> Vec<String> {
         }
         i += 1;
     }
-    tokens[i..].to_vec()
+    i
 }
 
 /// Args that don't start with `-`.

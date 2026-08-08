@@ -1006,6 +1006,56 @@ fn composition_around_non_targets_allows() {
     assert!(allows("sudo systemctl restart nginx"));
 }
 
+// ── SAK_HOOK_BYPASS escape hatch ──────────────────────────────
+
+#[test]
+fn bypass_marker_allows_documented_form() {
+    // The exact invocation the rejection message tells the caller to use. The
+    // hook is its own process, so this assignment only ever reaches us as part
+    // of the command string — regressing it leaves no escape hatch at all.
+    assert!(allows("SAK_HOOK_BYPASS=1 git status --short"));
+    assert!(allows("SAK_HOOK_BYPASS=1 git diff --stat main...HEAD"));
+    assert!(allows("SAK_HOOK_BYPASS=1 cat /etc/passwd"));
+}
+
+#[test]
+fn bypass_marker_covers_whole_pipeline() {
+    // Shell scoping would confine the assignment to the first segment, but the
+    // hook blocks on any segment — so the marker has to cover all of them.
+    assert!(allows("SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l"));
+    assert!(allows("SAK_HOOK_BYPASS=1 echo hi && git status"));
+    // Trailing marker also counts — it's a marker, not a scoped assignment.
+    assert!(allows("echo hi | SAK_HOOK_BYPASS=1 grep foo"));
+}
+
+#[test]
+fn bypass_marker_survives_wrappers_and_composition() {
+    assert!(allows("env SAK_HOOK_BYPASS=1 git status"));
+    assert!(allows("env -u FOO SAK_HOOK_BYPASS=1 git status"));
+    assert!(allows("sudo SAK_HOOK_BYPASS=1 cat /etc/shadow"));
+    assert!(allows("sh -c 'SAK_HOOK_BYPASS=1 git status'"));
+    assert!(allows("sudo env SAK_HOOK_BYPASS=1 grep foo bar"));
+    assert!(allows("echo $(SAK_HOOK_BYPASS=1 cat README.md)"));
+}
+
+#[test]
+fn bypass_marker_accepts_documented_and_truthy_values() {
+    assert!(allows("SAK_HOOK_BYPASS=1 git status"));
+    assert!(allows("SAK_HOOK_BYPASS=true git status"));
+    assert!(allows("SAK_HOOK_BYPASS=yes git status"));
+}
+
+#[test]
+fn bypass_marker_requires_an_on_value() {
+    // An off/garbage value must not silently disable the hook.
+    assert!(blocks("SAK_HOOK_BYPASS=0 git status"));
+    assert!(blocks("SAK_HOOK_BYPASS= git status"));
+    assert!(blocks("SAK_HOOK_BYPASSED=1 git status"));
+    // A lookalike that isn't an env assignment: `grep` reading a file whose
+    // pattern happens to spell the marker is still a redirectable read.
+    assert!(blocks("grep SAK_HOOK_BYPASS=1 README.md"));
+}
+
 // ── empty / weird input ───────────────────────────────────────
 
 #[test]

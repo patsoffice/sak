@@ -203,8 +203,12 @@ When the rule fires, the hook exits 2 with a stderr message naming the `sak` equ
 If you really need to bypass the hook for one call, prefix your Bash invocation with `SAK_HOOK_BYPASS=1`:
 
 ```bash
-SAK_HOOK_BYPASS=1 git status   # bypass for this one call
+SAK_HOOK_BYPASS=1 git status                    # bypass for this one call
+SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l  # covers the whole pipeline
+env SAK_HOOK_BYPASS=1 git status                # `env` form works too
 ```
+
+The marker is read out of the command string itself (the hook is a separate process, so the assignment never lands in its environment), and it disables the hook for the **whole** command — including pipeline segments after the one it prefixes, which is where a blocking read usually hides. It's honored wherever it appears as an env assignment: leading the command, after an `env`/`sudo`/`xargs`/`timeout` wrapper, or inside a `sh -c '…'` script. Exporting `SAK_HOOK_BYPASS=1` into the hook process's own environment disables the hook wholesale.
 
 To debug the rule set from the shell (no stdin payload needed):
 
