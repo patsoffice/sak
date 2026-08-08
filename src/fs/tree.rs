@@ -18,13 +18,15 @@ use crate::output::BoundedWriter;
         as `glob` applies (.git, target, node_modules, __pycache__, .venv, and \
         dotfiles unless --hidden). Symlinks are shown as leaves and never \
         descended into.\n\n\
-        Use --max-depth to limit how many levels below the root are shown, \
-        --dirs-only to list directories only, and --limit to cap the number of \
-        emitted lines (the summary is omitted when output is truncated).",
+        Use --max-depth (aliases: --depth, -L, matching `tree -L`) to limit how \
+        many levels below the root are shown, --dirs-only to list directories \
+        only, and --limit to cap the number of emitted lines (the summary is \
+        omitted when output is truncated).",
     after_help = "\
 Examples:
   sak fs tree                              Tree of the current directory
   sak fs tree src                          Tree rooted at src/
+  sak fs tree -L 1                         Only the top level (alias: --depth)
   sak fs tree --max-depth 2                Only two levels below the root
   sak fs tree --dirs-only                  Directories only
   sak fs tree --hidden                     Include dotfiles"
@@ -35,7 +37,10 @@ pub struct TreeArgs {
     pub path: PathBuf,
 
     /// Maximum number of levels below the root to show
-    #[arg(long, value_name = "N")]
+    //
+    // `-L` and `--depth` are aliases for `tree(1)` muscle memory — `tree -L 2`
+    // is the spelling most people reach for first.
+    #[arg(long, short = 'L', visible_alias = "depth", value_name = "N")]
     pub max_depth: Option<usize>,
 
     /// List directories only (omit files)

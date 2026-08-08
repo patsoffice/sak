@@ -13,16 +13,24 @@ use crate::output::BoundedWriter;
     about = "Show working tree status",
     long_about = "Show working tree status — staged, unstaged, and untracked files.\n\n\
         Outputs status in a porcelain-like format with two-character status codes \
-        for index and working tree changes.",
+        for index and working tree changes.\n\n\
+        Pass paths after `--` to scope the report to a subtree, e.g. \
+        `sak git status -- src bin` — useful for checking whether a generated \
+        or vendored directory is tracked before touching it.",
     after_help = "\
 Examples:
   sak git status                    Show all changes
+  sak git status -- src             Only changes under src/
   sak git status -C /path/to/repo   Status for another repo"
 )]
 pub struct StatusArgs {
     /// Path to the git repository
     #[arg(short = 'C', long)]
     pub repo: Option<PathBuf>,
+
+    /// Restrict the status report to these paths
+    #[arg(last = true)]
+    pub paths: Vec<PathBuf>,
 
     /// Maximum output lines
     #[arg(long)]
@@ -36,6 +44,9 @@ pub fn run(args: &StatusArgs) -> Result<Outcome> {
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
         .include_ignored(false);
+    for path in &args.paths {
+        opts.pathspec(path);
+    }
 
     let statuses = repo.statuses(Some(&mut opts))?;
 
@@ -110,6 +121,7 @@ mod tests {
 
         let args = StatusArgs {
             repo: Some(repo.workdir().unwrap().to_path_buf()),
+            paths: vec![],
             limit: None,
         };
         let result = run(&args).unwrap();
@@ -123,10 +135,33 @@ mod tests {
 
         let args = StatusArgs {
             repo: Some(repo.workdir().unwrap().to_path_buf()),
+            paths: vec![],
             limit: None,
         };
         let result = run(&args).unwrap();
         assert_eq!(result, Outcome::Found);
+    }
+
+    #[test]
+    fn pathspec_scopes_the_report() {
+        let (dir, repo) = crate::git::init_test_repo();
+        fs::create_dir(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.txt"), "a").unwrap();
+        fs::write(dir.path().join("other.txt"), "b").unwrap();
+
+        let scoped = StatusArgs {
+            repo: Some(repo.workdir().unwrap().to_path_buf()),
+            paths: vec![PathBuf::from("src")],
+            limit: None,
+        };
+        assert_eq!(run(&scoped).unwrap(), Outcome::Found);
+
+        // A pathspec matching nothing is a negative result, not an error.
+        let empty = StatusArgs {
+            paths: vec![PathBuf::from("no-such-dir")],
+            ..scoped
+        };
+        assert_eq!(run(&empty).unwrap(), Outcome::NotFound);
     }
 
     #[test]

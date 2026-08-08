@@ -70,8 +70,10 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak fs tail logfile.txt 50                  Last 50 lines of a file
   sak fs wc src/*.rs                          Count lines/words/bytes
   sak git status                              Show working tree status
-  sak git log --oneline -n 10                 Recent commits
+  sak git log --oneline -n 10                 Recent commits (-1..-9 shorthand too)
+  sak git log -1 --stat                       Latest commit plus its diffstat
   sak git diff --staged                       Show staged changes
+  sak git diff main...HEAD --stat             Size a branch since its fork point
   sak git blame src/main.rs                   Line-by-line authorship
   sak json query .name data.json              Extract a JSON value
   sak json keys --types data.json             List keys with value types

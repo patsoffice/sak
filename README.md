@@ -238,11 +238,11 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 - `sak fs largest [path]` to rank the biggest files (size<TAB>path, `--human`, `--min-size`)
 - `sak fs duplicates [path]` to find byte-identical files (size-bucketed, then SHA-256 confirmed)
 - `sak fs find <path>` to filter by metadata (`--size +1M`, `--mtime -7d`, `--type f|d|l`, `--name <glob>`) — `find` with predicates, where `glob` matches by name
-- `sak fs tree [path]` to print a directory structure (`--max-depth`, `--dirs-only`, `--hidden`) instead of `tree`/`ls -R`
+- `sak fs tree [path]` to print a directory structure (`--max-depth`, also spelled `--depth`/`-L`; `--dirs-only`, `--hidden`) instead of `tree`/`ls -R`
 - `sak fs stat <path...>` for size/perms/mtime/type metadata (`--format json`) instead of `stat`
 - `sak fs head <file> [n]` / `sak fs tail <file> [n]` for the first/last N lines (or `--bytes`) instead of `head`/`tail`
 - `sak fs wc [files...]` to count lines/words/bytes (`--lines`/`--words`/`--bytes`) instead of `wc`
-- `sak git status|log|diff|blame|show` instead of read-only `git`
+- `sak git status|log|diff|blame|show` instead of read-only `git` (`log -1 --stat`, `status -- <path>`, and `diff main...HEAD` all work as they do in git)
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
