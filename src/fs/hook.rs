@@ -14,7 +14,10 @@ use crate::hook::rule::HookRule;
 /// reads, so they share one string and differ only by `tool`).
 const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep` \
      (pass `-` as <path> to read stdin, e.g. `cmd | sak fs grep <pattern> -`). \
-     Flags: -i, -l, -c, -C N, --type, --glob, -U for multiline. \
+     Flags: -i, -l, -C N, --type, --glob, -U for multiline. \
+     Counting: -c (per file) or --total (one grand total) — don't pipe the \
+     default output into a line counter. --no-heading gives bare \
+     path:line:text rows. \
      If you're spelunking a dump (a diff, JSON, issue text) for a fact, \
      query the source instead (br show <id>, sak json/git) rather than \
      grepping raw text; to drop a command's stderr noise use 2>/dev/null, \

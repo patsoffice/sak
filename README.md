@@ -233,7 +233,7 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 
 - `sak fs glob '<pattern>'...` instead of `ls`, `find`, or `**` shell globs (pass multiple patterns to OR-match, e.g. `sak fs glob flake.nix shell.nix .`)
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `sed -n` (or `sak fs head`/`sak fs tail` for the first/last N lines)
-- `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin)
+- `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin; `-c` counts per file, `--total` gives one grand total, `--no-heading` emits bare `path:line:text` rows)
 - `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
 - `sak fs largest [path]` to rank the biggest files (size<TAB>path, `--human`, `--min-size`)
 - `sak fs duplicates [path]` to find byte-identical files (size-bucketed, then SHA-256 confirmed)

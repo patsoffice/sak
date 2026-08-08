@@ -9,7 +9,7 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 use super::STDIN_LABEL;
-use crate::output::{BoundedWriter, is_binary, line_number_width, relative_path};
+use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative_path};
 
 #[derive(Args)]
 #[command(
@@ -20,7 +20,13 @@ use crate::output::{BoundedWriter, is_binary, line_number_width, relative_path};
         Pass '-' as a path to read from stdin (matches grep/ripgrep), enabling \
         pipelines like 'sak json query … | sak fs grep -'. Stdin can be mixed \
         with file/directory paths; matches from stdin are labelled \
-        '(standard input)'.",
+        '(standard input)'.\n\n\
+        Counting: '-c' prints matches per file and '--total' prints one \
+        grand total across every file searched — prefer either over counting \
+        the default output's lines, which also carries filename headings. \
+        '--no-heading' is the parse-friendly mode: one 'path:line:text' row \
+        per match, no headings and no '--' separators, so every stdout line \
+        is exactly one match.",
     after_help = "\
 Examples:
   sak fs grep 'fn main' src/                       Find 'fn main' in src/
@@ -28,6 +34,8 @@ Examples:
   sak fs grep -U 'struct \\w+\\s*\\{[^}]*\\}' .    Multiline: find struct bodies
   sak fs grep -l 'TODO' --glob '**/*.rs'           List Rust files with TODOs
   sak fs grep -c 'error' logs/                     Count matches per file
+  sak fs grep --total 'unwrap()' src/              One total across all files
+  sak fs grep --no-heading 'TODO' src/             path:line:text rows, no decoration
   sak fs grep -C 3 'panic' src/                    Show 3 lines of context
   some-cmd | sak fs grep 'pattern' -                Search piped stdin"
 )]
@@ -55,13 +63,26 @@ pub struct GrepArgs {
     #[arg(short = 'c', long = "count")]
     pub count: bool,
 
+    /// Print one grand-total match count across every file searched
+    #[arg(long, conflicts_with_all = ["count", "files_only"])]
+    pub total: bool,
+
     /// Stop after N matches per file
     #[arg(short = 'm', long = "max-count")]
     pub max_count: Option<usize>,
 
     /// Show line numbers (enabled by default)
-    #[arg(short = 'n', long = "line-number", default_value = "true")]
+    //
+    // Deliberately a bare `SetTrue` flag rather than a value-taking bool like
+    // `--heading`: `-n` is universal grep muscle memory, and giving it an
+    // optional value would turn `sak fs grep -n 'fn main' src/` into an
+    // "invalid value" error. Use `--no-line-numbers` to switch it off.
+    #[arg(short = 'n', long = "line-number", conflicts_with = "no_line_numbers")]
     pub line_number: bool,
+
+    /// Omit line numbers from output
+    #[arg(long = "no-line-numbers")]
+    pub no_line_numbers: bool,
 
     /// Lines of context around each match
     #[arg(short = 'C', long = "context")]
@@ -100,8 +121,40 @@ pub struct GrepArgs {
     pub limit: Option<usize>,
 
     /// Group matches by file (default: true)
-    #[arg(long, default_value = "true")]
+    //
+    // `num_args = 0..=1` + `default_missing_value` so every documented form
+    // parses: bare `--heading`, `--heading false`, and `--heading=false`. As a
+    // plain `SetTrue` flag (what it used to be) the value forms silently leaked
+    // `false` into `paths` and searched a file by that name — the no-heading
+    // rendering below was unreachable from the CLI entirely.
+    #[arg(
+        long,
+        action = clap::ArgAction::Set,
+        num_args = 0..=1,
+        default_value = "true",
+        default_missing_value = "true"
+    )]
     pub heading: bool,
+
+    /// Parse-friendly output: `path:line:text` rows, no filename headings and
+    /// no `--` separators, so every stdout line is exactly one match
+    #[arg(long = "no-heading")]
+    pub no_heading: bool,
+}
+
+impl GrepArgs {
+    /// Whether to group matches under a filename heading. `--no-heading` is the
+    /// ergonomic spelling of `--heading false`; either one turns grouping off.
+    fn use_heading(&self) -> bool {
+        self.heading && !self.no_heading
+    }
+
+    /// Whether to prefix each row with its line number. `-n` is accepted for
+    /// grep compatibility but numbers are already on; clap makes it mutually
+    /// exclusive with `--no-line-numbers`, so the two can't disagree.
+    fn use_line_numbers(&self) -> bool {
+        self.line_number || !self.no_line_numbers
+    }
 }
 
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".venv"];
@@ -273,12 +326,20 @@ fn search_reader_lines<R: BufRead>(
     let mut shown: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut last_shown: Option<usize> = None;
 
+    // A `--` separator marks a gap between two *context blocks*. With no
+    // context requested there are no blocks to delimit — every emitted line is
+    // a match, and the line numbers already show the gaps — so grep and
+    // ripgrep print nothing there, and so do we. Emitting them anyway is what
+    // made `sak fs grep … | sak fs wc -l` overcount (sak-llm-fs-grep-count-format-hhva).
+    let separators = before_ctx > 0 || after_ctx > 0;
+
     for &match_idx in &match_line_nums {
         let ctx_start = match_idx.saturating_sub(before_ctx);
         let ctx_end = (match_idx + after_ctx).min(lines.len() - 1);
 
         // Add separator if there's a gap
-        if let Some(last) = last_shown
+        if separators
+            && let Some(last) = last_shown
             && ctx_start > last + 1
         {
             output_lines.push(LineMatch {
@@ -418,7 +479,8 @@ fn emit_result(
     }
 
     // Regular output
-    if args.heading {
+    let line_numbers = args.use_line_numbers();
+    if args.use_heading() {
         if !*first_file {
             writer.write_decoration("")?;
         }
@@ -438,7 +500,7 @@ fn emit_result(
             if m.is_separator {
                 writer.write_decoration(&m.content)?;
             } else {
-                let prefix = if args.line_number {
+                let prefix = if line_numbers {
                     let sep = if m.is_context { "-" } else { ":" };
                     format!("{:>width$}{}{}", m.line_num, sep, m.content, width = width)
                 } else {
@@ -450,19 +512,24 @@ fn emit_result(
             }
         }
     } else {
-        // No heading: file:line:content
+        // No heading: every row carries its own path and line number, so it is
+        // self-describing and a `--` separator would add nothing — dropping it
+        // is what makes this mode safe to pipe into a line counter. Context
+        // rows use grep's `path-line-text` form so they stay distinguishable
+        // from matches (`path:line:text`).
         for m in &result.matches {
             if m.is_separator {
-                writer.write_decoration("--")?;
+                continue;
+            }
+            let line = if line_numbers {
+                let sep = if m.is_context { '-' } else { ':' };
+                format!("{}{}{}{}{}", label, sep, m.line_num, sep, m.content)
             } else {
-                let line = if args.line_number {
-                    format!("{}:{}:{}", label, m.line_num, m.content)
-                } else {
-                    format!("{}:{}", label, m.content)
-                };
-                if !writer.write_line(&line)? {
-                    return Ok(false);
-                }
+                let sep = if m.is_context { '-' } else { ':' };
+                format!("{}{}{}", label, sep, m.content)
+            };
+            if !writer.write_line(&line)? {
+                return Ok(false);
             }
         }
     }
@@ -485,9 +552,18 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut writer = BoundedWriter::new(handle, args.limit);
+    // `--total` emits exactly one line, so `--limit` (which bounds match rows)
+    // has nothing to bound — and a `--limit 0` from a wrapper script must not
+    // swallow the answer.
+    let limit = if args.total {
+        Limit::None
+    } else {
+        Limit::from(args.limit)
+    };
+    let mut writer = BoundedWriter::new(handle, limit);
     let mut any_match = false;
     let mut first_file = true;
+    let mut total = 0usize;
 
     for file_path in &files {
         let result = if args.multiline {
@@ -502,6 +578,10 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
         };
 
         any_match = true;
+        total += result.count;
+        if args.total {
+            continue;
+        }
         let rel = relative_path(&result.path, &base);
         if !emit_result(
             &result,
@@ -539,15 +619,26 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
 
         if let Some(result) = result {
             any_match = true;
-            emit_result(
-                &result,
-                STDIN_LABEL,
-                args,
-                multi_file,
-                &mut first_file,
-                &mut writer,
-            )?;
+            total += result.count;
+            if !args.total {
+                emit_result(
+                    &result,
+                    STDIN_LABEL,
+                    args,
+                    multi_file,
+                    &mut first_file,
+                    &mut writer,
+                )?;
+            }
         }
+    }
+
+    // The count *is* the answer, so print it even when it's zero — unlike a
+    // match listing, an empty one would leave the caller unable to tell "no
+    // matches" from "command produced nothing". The exit code still follows
+    // the usual convention (0 = found, 1 = none).
+    if args.total {
+        writer.write_line(&total.to_string())?;
     }
 
     writer.flush()?;
@@ -562,6 +653,49 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    /// Wrapper so we can drive `GrepArgs` through clap parsing in tests.
+    #[derive(Parser)]
+    struct GrepCli {
+        #[command(flatten)]
+        args: GrepArgs,
+    }
+
+    fn parse(argv: &[&str]) -> GrepArgs {
+        GrepCli::try_parse_from(argv).unwrap().args
+    }
+
+    #[test]
+    fn heading_can_actually_be_switched_off() {
+        // Regression: as a bare `SetTrue` flag, `--heading false` left "false"
+        // in `paths` — grep then searched a file by that name and still printed
+        // headings, making the no-heading renderer unreachable from the CLI.
+        for argv in [
+            &["grep", "pat", "src/", "--heading", "false"][..],
+            &["grep", "--heading=false", "pat", "src/"][..],
+            &["grep", "--no-heading", "pat", "src/"][..],
+        ] {
+            let args = parse(argv);
+            assert!(!args.use_heading(), "{argv:?}");
+            assert_eq!(args.paths, [PathBuf::from("src/")], "{argv:?}");
+        }
+        // ...and the default is still on.
+        assert!(parse(&["grep", "pat", "src/"]).use_heading());
+    }
+
+    #[test]
+    fn line_numbers_can_actually_be_switched_off() {
+        assert!(parse(&["grep", "pat", "src/"]).use_line_numbers());
+        let args = parse(&["grep", "pat", "src/", "--no-line-numbers"]);
+        assert!(!args.use_line_numbers());
+        assert_eq!(args.paths, [PathBuf::from("src/")]);
+        // `-n` keeps grep's bare-flag shape: the pattern must not be eaten as
+        // a value for it, which is why it is not a value-taking bool.
+        let args = parse(&["grep", "-n", "pat", "src/"]);
+        assert!(args.use_line_numbers());
+        assert_eq!(args.pattern, "pat");
+    }
 
     #[test]
     fn test_build_regex_basic() {
@@ -608,11 +742,34 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result.count, 2);
-        // 2 matches + 1 separator between non-adjacent matches
-        assert_eq!(result.matches.len(), 3);
+        // With no context requested there is nothing to separate, so the
+        // emitted rows are exactly the matches — one output line each. Callers
+        // count `sak fs grep … | sak fs wc -l` and must get the match count.
+        assert_eq!(result.matches.len(), 2);
+        assert!(result.matches.iter().all(|m| !m.is_separator));
         assert_eq!(result.matches[0].line_num, 3);
-        assert!(result.matches[1].is_separator);
-        assert_eq!(result.matches[2].line_num, 5);
+        assert_eq!(result.matches[1].line_num, 5);
+    }
+
+    #[test]
+    fn separators_return_once_context_is_requested() {
+        // The gap between two context blocks is real information, so `--` comes
+        // back as soon as -A/-B/-C is in play. Lines 3 and 9 are far enough
+        // apart that their 1-line context blocks don't touch.
+        let input = "a\nb\nMATCH\nd\ne\nf\ng\nh\nMATCH\nj\n";
+        let re = Regex::new("MATCH").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new(input),
+            &re,
+            None,
+            1,
+            1,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 2);
+        assert_eq!(result.matches.iter().filter(|m| m.is_separator).count(), 1);
     }
 
     #[test]

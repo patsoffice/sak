@@ -58,6 +58,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
         "Quick start:
   sak fs glob '**/*.rs'                       Find all Rust files (multiple patterns OR-match)
   sak fs grep 'fn main' src/                  Search for a pattern ('-' reads stdin)
+  sak fs grep --total 'unwrap()' src/         Count matches (-c for per-file counts)
   sak fs read src/main.rs -n 1-20             Read lines 1-20 of a file
   sak fs cut -d: -f 1 /etc/passwd             Extract first field
   sak fs largest -n 10 --human                Top 10 largest files by size
