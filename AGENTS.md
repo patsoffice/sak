@@ -88,9 +88,10 @@ A few patterns recur — when you write tests for a new command, reach for these
 ## Commit Style
 
 - Prefix: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`
-- Summary line under 80 chars with counts where relevant
-- Body: each logical change on its own `-` bullet
-- Summarize what was added/changed and why, not just file names
+- Summary line under 80 chars, no trailing period, no counts — e.g. `feat: fs read/head/tail/grep default to stdin`
+- Body: one `-` bullet per logical change, wrapped git-style (~72 cols), saying what and why rather than file names
+- Issue references ride on the relevant bullet (`...; closes sak-llm-bzfm`), not as separate trailers
+- Verification gets its own last bullet: `fmt/clippy/test/lean-test clean`, with pass counts when they matter (`(1170 + 783 passed)`); version bumps are named in a bullet too (`Patch bump 0.20.15 -> 0.20.16`)
 
 ## Architecture
 
@@ -260,3 +261,4 @@ Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands"
 - `sak helm lint` **inverts** the exit-code convention like `sak cert expiring`: exit 0 = chart passes lint, exit 1 = chart fails (so `if sak helm lint ./chart; then …` reads naturally), exit 2 only if helm itself errors. It uses `invoke` (not `invoke_ok`) precisely because a lint *failure* is a non-zero helm exit that must become sak's exit 1 rather than a propagated error; the discriminator is the `N chart(s) linted, M chart(s) failed` summary line (`failed_count == 0` → pass)
 - Two `helm` read verbs do **not** emit `-o json`, so their commands parse helm's human output: `dependency list` is **tab-separated** (tabwriter writes a literal `\t` between space-padded cells — split on `\t` and trim, don't try to align by column offsets), and `lint` writes `[SEVERITY] path: message` findings to **stdout** but its summary line to **stdout when passing / stderr (prefixed `Error:`) when failing** — `lint::parse_summary` scans both streams. Re-probe the real output (`helm <verb> … | cat -A`) before trusting any assumed format; the issue specs were wrong about `helm list --status` (no such flag — mapped to per-status booleans), `helm status` carrying chart/app_version (it doesn't), and `helm get values` being clean YAML (it prepends a `USER-SUPPLIED VALUES:` header unless `-o yaml`)
 - `sak helm search` columns differ by `--source`: `repo` is `name/chart_version/app_version/description`; `hub` is `url/name/chart_version/app_version/description` where the chart name comes from the nested `repository.name` (hub entries have no top-level `name`). `search repo` with no repositories configured is helm exit 1 with `no repositories configured` on stderr — `invoke_ok` surfaces that as sak **exit 2** (a real setup error), distinct from an empty `[]` match set which is exit 1
+- Sak's exit-code contract (0 found / 1 no-results / 2 tool error) holds for the built binary, but driven through `cargo run --` you also see cargo's own codes — notably **101** when the build itself fails. A 101 with a compiler error on stderr is a toolchain failure, not a sak result; keep stderr visible on first invocations instead of `2>/dev/null`-ing it away

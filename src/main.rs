@@ -265,7 +265,7 @@ enum Command {
     /// Talos Linux cluster operations (read-only, shells out to talosctl)
     #[command(subcommand)]
     Talos(talos::TalosCommand),
-    /// GitHub CLI operations (read-only, shells out to gh)
+    /// GitHub CLI operations (read-only, shells out to gh; lists emit TSV, detail views default to JSON with --format tsv for tables)
     #[command(subcommand)]
     Gh(gh::GhCommand),
     /// Helm release / chart / repo inspection (read-only, shells out to helm)

@@ -42,7 +42,8 @@ Examples:
   sak fs glob flake.nix shell.nix .        Probe for any nix dev-shell hint
   sak fs glob 'src/{main,lib}.rs'          Find specific files
   sak fs glob '**/*' --type dir            List all directories
-  sak fs glob '**/*.log' --max-depth 2     Shallow search for log files"
+  sak fs glob '**/*.log' --max-depth 2     Shallow search for log files
+  sak fs glob '*' logs/ -d 1              List a directory (ls replacement)"
 )]
 pub struct GlobArgs {
     /// Glob patterns (e.g., "**/*.rs", "src/{main,lib}.rs"). Multiple patterns
