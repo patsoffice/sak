@@ -163,7 +163,7 @@ pub(crate) fn classify(command: &str) -> Option<String> {
 /// Values of `SAK_HOOK_BYPASS` that turn the hook off. Shared by the
 /// process-environment check in [`run`] and the in-command scan in
 /// [`bypass_requested`] so the two can never disagree about what "set" means.
-fn is_bypass_value(value: &str) -> bool {
+pub(crate) fn is_bypass_value(value: &str) -> bool {
     matches!(value, "1" | "true" | "yes")
 }
 

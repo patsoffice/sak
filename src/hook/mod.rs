@@ -12,6 +12,7 @@
 //! pure command-string classification.
 
 pub mod claude_code;
+pub mod muse_code;
 pub mod rule;
 
 #[cfg(test)]
@@ -27,10 +28,14 @@ pub enum HookCommand {
     /// Pre-tool-use hook for Claude Code (claude.com/claude-code).
     #[command(name = "claude-code")]
     ClaudeCode(claude_code::ClaudeCodeArgs),
+    /// Pre-tool-use hook for Muse Code.
+    #[command(name = "muse-code")]
+    MuseCode(muse_code::MuseCodeArgs),
 }
 
 pub fn run(cmd: &HookCommand) -> Result<Outcome> {
     match cmd {
         HookCommand::ClaudeCode(args) => claude_code::run(args),
+        HookCommand::MuseCode(args) => muse_code::run(args),
     }
 }
