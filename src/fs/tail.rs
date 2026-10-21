@@ -16,19 +16,20 @@ use super::read::{ReadArgs, run as read_run};
         on by default and reflect the lines' real positions in the file (disable \
         with --no-line-numbers). Pass --bytes to emit the last N bytes raw \
         instead of whole lines (the byte output is written verbatim, with no \
-        line numbers). Pass '-' as the file to read from stdin (matches \
-        cat/grep); stdin can't be seeked, so it is read fully into memory.",
+        line numbers). Reads stdin when the file is omitted, or pass '-' \
+        explicitly (matches cat/grep); stdin can't be seeked, so it is read \
+        fully into memory.",
     after_help = "\
 Examples:
   sak fs tail logfile.txt                  Last 10 lines
   sak fs tail logfile.txt 50               Last 50 lines
   sak fs tail --no-line-numbers file.txt   Last 10 lines, no line numbers
   sak fs tail --bytes 256 capture.bin      Last 256 bytes (raw)
-  some-cmd | sak fs tail -                 Last 10 lines of piped stdin"
+  some-cmd | sak fs tail                   Last 10 lines of piped stdin"
 )]
 pub struct TailArgs {
-    /// Path to the file to read ('-' reads stdin)
-    pub file: PathBuf,
+    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
     #[arg(value_name = "N", conflicts_with = "bytes")]
@@ -45,10 +46,11 @@ pub struct TailArgs {
 
 pub fn run(args: &TailArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
-        return if is_stdin(&args.file) {
-            tail_bytes_stdin(n)
-        } else {
-            tail_bytes(&args.file, n)
+        return match args.file.as_ref() {
+            // Omitted file, or '-', reads stdin.
+            None => tail_bytes_stdin(n),
+            Some(path) if is_stdin(path) => tail_bytes_stdin(n),
+            Some(path) => tail_bytes(path, n),
         };
     }
     let n = args.lines.unwrap_or(10);
@@ -116,7 +118,23 @@ fn last_bytes(buf: &[u8], n: usize) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use std::io::Write;
+
+    /// Wrapper so we can drive `TailArgs` through clap parsing in tests.
+    #[derive(Parser)]
+    struct TailCli {
+        #[command(flatten)]
+        args: TailArgs,
+    }
+
+    #[test]
+    fn omitted_file_means_stdin() {
+        let cli = TailCli::try_parse_from(["tail"]).unwrap();
+        assert_eq!(cli.args.file, None);
+        let cli = TailCli::try_parse_from(["tail", "-"]).unwrap();
+        assert_eq!(cli.args.file, Some(PathBuf::from("-")));
+    }
 
     fn write_lines(path: &std::path::Path, n: usize) {
         let mut f = std::fs::File::create(path).unwrap();
@@ -131,7 +149,7 @@ mod tests {
         let p = dir.path().join("f.txt");
         write_lines(&p, 50);
         let args = TailArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: None,
             no_line_numbers: true,
@@ -145,7 +163,7 @@ mod tests {
         let p = dir.path().join("f.bin");
         std::fs::write(&p, b"abcdefghij").unwrap();
         let args = TailArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: Some(3),
             no_line_numbers: false,
@@ -159,7 +177,7 @@ mod tests {
         let p = dir.path().join("f.bin");
         std::fs::write(&p, b"abc").unwrap();
         let args = TailArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: Some(1000),
             no_line_numbers: false,
@@ -181,7 +199,7 @@ mod tests {
         let p = dir.path().join("empty.txt");
         std::fs::write(&p, b"").unwrap();
         let args = TailArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: Some(10),
             no_line_numbers: false,

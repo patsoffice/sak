@@ -15,19 +15,20 @@ use super::read::{ReadArgs, run as read_run};
         An ergonomic shorthand for `sak fs read <file> -n 1-N`: line numbers are \
         on by default (disable with --no-line-numbers). Pass --bytes to emit the \
         first N bytes raw instead of whole lines — useful for peeking at binary \
-        headers (the byte output is written verbatim, with no line numbers). Pass \
-        '-' as the file to read from stdin (matches cat/grep).",
+        headers (the byte output is written verbatim, with no line numbers). Reads \
+        stdin when the file is omitted, or pass '-' explicitly (matches \
+        cat/grep).",
     after_help = "\
 Examples:
   sak fs head src/main.rs                  First 10 lines
   sak fs head src/main.rs 25               First 25 lines
   sak fs head --no-line-numbers file.txt   First 10 lines, no line numbers
   sak fs head --bytes 64 image.png         First 64 bytes (raw)
-  some-cmd | sak fs head -                 First 10 lines of piped stdin"
+  some-cmd | sak fs head                   First 10 lines of piped stdin"
 )]
 pub struct HeadArgs {
-    /// Path to the file to read ('-' reads stdin)
-    pub file: PathBuf,
+    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
     #[arg(value_name = "N", conflicts_with = "bytes")]
@@ -44,12 +45,15 @@ pub struct HeadArgs {
 
 pub fn run(args: &HeadArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
-        return if is_stdin(&args.file) {
-            head_bytes(io::stdin().lock(), n)
-        } else {
-            let f = std::fs::File::open(&args.file)
-                .with_context(|| format!("cannot open: {}", args.file.display()))?;
-            head_bytes(f, n)
+        return match args.file.as_ref() {
+            // Omitted file, or '-', reads stdin.
+            None => head_bytes(io::stdin().lock(), n),
+            Some(path) if is_stdin(path) => head_bytes(io::stdin().lock(), n),
+            Some(path) => {
+                let f = std::fs::File::open(path)
+                    .with_context(|| format!("cannot open: {}", path.display()))?;
+                head_bytes(f, n)
+            }
         };
     }
     let n = args.lines.unwrap_or(10);
@@ -85,6 +89,22 @@ fn head_bytes<R: Read>(reader: R, n: usize) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    /// Wrapper so we can drive `HeadArgs` through clap parsing in tests.
+    #[derive(Parser)]
+    struct HeadCli {
+        #[command(flatten)]
+        args: HeadArgs,
+    }
+
+    #[test]
+    fn omitted_file_means_stdin() {
+        let cli = HeadCli::try_parse_from(["head"]).unwrap();
+        assert_eq!(cli.args.file, None);
+        let cli = HeadCli::try_parse_from(["head", "-"]).unwrap();
+        assert_eq!(cli.args.file, Some(PathBuf::from("-")));
+    }
     use std::io::Write;
 
     fn write_lines(path: &std::path::Path, n: usize) {
@@ -100,7 +120,7 @@ mod tests {
         let p = dir.path().join("f.txt");
         write_lines(&p, 50);
         let args = HeadArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: None,
             no_line_numbers: true,
@@ -114,7 +134,7 @@ mod tests {
         let p = dir.path().join("f.bin");
         std::fs::write(&p, b"abcdefghij").unwrap();
         let args = HeadArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: Some(4),
             no_line_numbers: false,
@@ -136,7 +156,7 @@ mod tests {
         let p = dir.path().join("empty.txt");
         std::fs::write(&p, b"").unwrap();
         let args = HeadArgs {
-            file: p,
+            file: Some(p),
             lines: None,
             bytes: None,
             no_line_numbers: true,

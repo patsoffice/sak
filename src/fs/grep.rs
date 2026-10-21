@@ -14,13 +14,15 @@ use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative
 #[derive(Args)]
 #[command(
     about = "Search file contents with regex",
-    long_about = "Search file contents using regular expressions.\n\n\
+    long_about = "Search file contents using regular expressions (Rust `regex` \
+        syntax: `\\d`, `\\w+`, `(?i)` inline flags; no look-around or \
+        backreferences).\n\n\
         Recursively searches files for lines matching the given regex pattern. \
         Supports multiline matching where . matches newlines.\n\n\
-        Pass '-' as a path to read from stdin (matches grep/ripgrep), enabling \
-        pipelines like 'sak json query … | sak fs grep -'. Stdin can be mixed \
-        with file/directory paths; matches from stdin are labelled \
-        '(standard input)'.\n\n\
+        Reads stdin when no path is given, or pass '-' explicitly (matches \
+        grep/ripgrep), enabling pipelines like 'sak json query … | sak fs \
+        grep …'. Stdin can be mixed with file/directory paths; matches from \
+        stdin are labelled '(standard input)'.\n\n\
         Counting: '-c' prints matches per file and '--total' prints one \
         grand total across every file searched — prefer either over counting \
         the default output's lines, which also carries filename headings. \
@@ -37,14 +39,13 @@ Examples:
   sak fs grep --total 'unwrap()' src/              One total across all files
   sak fs grep --no-heading 'TODO' src/             path:line:text rows, no decoration
   sak fs grep -C 3 'panic' src/                    Show 3 lines of context
-  some-cmd | sak fs grep 'pattern' -                Search piped stdin"
+  some-cmd | sak fs grep 'pattern'                  Search piped stdin (no path)"
 )]
 pub struct GrepArgs {
     /// Regex pattern to search for
     pub pattern: String,
 
-    /// Files or directories to search ('-' reads stdin)
-    #[arg(default_value = ".")]
+    /// Files or directories to search (reads stdin if omitted; '-' also reads stdin)
     pub paths: Vec<PathBuf>,
 
     /// Case-insensitive matching
@@ -541,7 +542,8 @@ fn emit_result(
 pub fn run(args: &GrepArgs) -> Result<Outcome> {
     let re = build_regex(&args.pattern, args.ignore_case, args.word, args.multiline)?;
     let files = collect_files(args)?;
-    let read_stdin = args.paths.iter().any(|p| p.as_os_str() == "-");
+    // Omitted paths, or a '-' among them, read stdin.
+    let read_stdin = args.paths.is_empty() || args.paths.iter().any(|p| p.as_os_str() == "-");
 
     let before_ctx = args.before_context.or(args.context).unwrap_or(0);
     let after_ctx = args.after_context.or(args.context).unwrap_or(0);
@@ -664,6 +666,17 @@ mod tests {
 
     fn parse(argv: &[&str]) -> GrepArgs {
         GrepCli::try_parse_from(argv).unwrap().args
+    }
+
+    #[test]
+    fn omitted_paths_mean_stdin() {
+        // No paths and no default: an empty vec signals stdin in run().
+        assert!(parse(&["grep", "pat"]).paths.is_empty());
+        assert_eq!(parse(&["grep", "pat", "-"]).paths, [PathBuf::from("-")]);
+        assert_eq!(
+            parse(&["grep", "pat", "src/"]).paths,
+            [PathBuf::from("src/")]
+        );
     }
 
     #[test]

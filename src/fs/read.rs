@@ -19,8 +19,9 @@ const DEFAULT_LIMIT: usize = 2000;
     about = "Read file contents with line numbers",
     long_about = "Read file contents with line numbers.\n\n\
         Displays the contents of a file with line numbers for easy reference. \
-        Supports reading specific line ranges and limiting output length. Pass \
-        '-' as the file to read from stdin (matches cat/grep).",
+        Supports reading specific line ranges and limiting output length. Reads \
+        stdin when the file is omitted, or pass '-' explicitly (matches \
+        cat/grep).",
     after_help = "\
 Examples:
   sak fs read src/main.rs                  Read entire file (up to 2000 lines)
@@ -28,11 +29,11 @@ Examples:
   sak fs read src/main.rs -n 100-          Read from line 100 to end
   sak fs read src/main.rs -n -20           Read last 20 lines
   sak fs read src/main.rs --offset 10 --limit 5   Skip 10 lines, show 5
-  some-cmd | sak fs read -                 Read piped stdin"
+  some-cmd | sak fs read                   Read piped stdin (file omitted)"
 )]
 pub struct ReadArgs {
-    /// Path to the file to read ('-' reads stdin)
-    pub file: PathBuf,
+    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    pub file: Option<PathBuf>,
 
     /// Line range to read (e.g., "1-50", "100-", "-20")
     #[arg(short = 'n', long = "lines", allow_hyphen_values = true)]
@@ -81,13 +82,16 @@ fn parse_line_range(spec: &str) -> Result<(Option<usize>, Option<usize>)> {
 }
 
 pub fn run(args: &ReadArgs) -> Result<Outcome> {
-    // A file arg of "-" reads stdin (cat/grep convention); anything else is a path.
-    let reader: Box<dyn BufRead> = if is_stdin(&args.file) {
-        Box::new(io::stdin().lock())
-    } else {
-        let file = File::open(&args.file)
-            .with_context(|| format!("cannot open: {}", args.file.display()))?;
-        Box::new(BufReader::new(file))
+    // An omitted file, or a file arg of "-", reads stdin (cat/grep
+    // convention); anything else is a path.
+    let reader: Box<dyn BufRead> = match args.file.as_ref() {
+        None => Box::new(io::stdin().lock()),
+        Some(path) if is_stdin(path) => Box::new(io::stdin().lock()),
+        Some(path) => {
+            let file =
+                File::open(path).with_context(|| format!("cannot open: {}", path.display()))?;
+            Box::new(BufReader::new(file))
+        }
     };
 
     // Determine what lines to output
@@ -210,6 +214,16 @@ mod tests {
     }
 
     #[test]
+    fn test_clap_omitted_file_means_stdin() {
+        let cli = ReadCli::try_parse_from(["read"]).unwrap();
+        assert_eq!(cli.args.file, None);
+        let cli = ReadCli::try_parse_from(["read", "-"]).unwrap();
+        assert_eq!(cli.args.file, Some(PathBuf::from("-")));
+        let cli = ReadCli::try_parse_from(["read", "file.txt"]).unwrap();
+        assert_eq!(cli.args.file, Some(PathBuf::from("file.txt")));
+    }
+
+    #[test]
     fn test_clap_parses_range_forms() {
         // Make sure allow_hyphen_values didn't regress the other forms.
         let cli = ReadCli::try_parse_from(["read", "file.txt", "-n", "1-50"]).unwrap();
@@ -259,7 +273,7 @@ mod tests {
         }
 
         let args = ReadArgs {
-            file: file_path,
+            file: Some(file_path),
             lines: Some("3-5".to_string()),
             no_line_numbers: true,
             limit: None,
@@ -282,7 +296,7 @@ mod tests {
         }
 
         let args = ReadArgs {
-            file: file_path,
+            file: Some(file_path),
             lines: Some("-3".to_string()),
             no_line_numbers: true,
             limit: None,
