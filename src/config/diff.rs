@@ -12,7 +12,7 @@ use crate::value::{diff, format_diff_entry};
 
 #[derive(Args)]
 #[command(
-    about = "Structurally diff two TOML/YAML/plist documents",
+    about = "Structurally diff two TOML/YAML/plist/JSON documents",
     long_about = "Compare two config documents and report added, removed, and \
         changed paths. Each file's format is auto-detected from its extension \
         independently, so a TOML file can be diffed against a YAML file when \

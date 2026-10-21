@@ -12,7 +12,7 @@ use crate::value::{ArrayMode, WalkOpts, flatten_value};
 
 #[derive(Args)]
 #[command(
-    about = "Flatten nested TOML/YAML/plist to path/value pairs",
+    about = "Flatten nested TOML/YAML/plist/JSON to path/value pairs",
     long_about = "Flatten a nested config document into one line per leaf value, \
         with each line formatted as `path<TAB>value` (matching `json flatten`).\n\n\
         Output is sorted by path for deterministic results. The path separator \

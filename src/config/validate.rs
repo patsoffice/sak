@@ -10,8 +10,8 @@ use crate::output::BoundedWriter;
 
 #[derive(Args)]
 #[command(
-    about = "Check whether files contain valid TOML, YAML, or plist",
-    long_about = "Check whether files contain valid TOML, YAML, or plist and \
+    about = "Check whether files contain valid TOML, YAML, plist, or JSON",
+    long_about = "Check whether files contain valid TOML, YAML, plist, or JSON and \
         report parse errors.\n\n\
         Format is auto-detected from the file extension or set explicitly with \
         `--format`. Reads from stdin if no files are given (requires `--format`). \

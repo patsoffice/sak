@@ -27,9 +27,10 @@
 //! that path is gated by its own read-only sub-flag allowlist in [`client`].
 //!
 //! Individual commands (`flake-show`, `flake-metadata`, `store-info`,
-//! `path-info`, `eval`, `registry-list`, `profile-list`, `derivation`,
-//! `references`, `why-depends`) land as their own child issues and wire
-//! themselves into [`NixCommand`] as they arrive.
+//! `path-info`, `eval`, `registry-list`, `profile-list`, `derivation-show`,
+//! `references`) land as their own child issues and wire themselves into
+//! [`NixCommand`] as they arrive. (`why-depends` is allowlisted in [`client`]
+//! but has no command yet — tracked by `br show sak-llm-5svf`.)
 
 pub mod client;
 pub mod derivation_show;

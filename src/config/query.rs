@@ -11,9 +11,9 @@ use crate::value::{format_value, resolve_expression};
 
 #[derive(Args)]
 #[command(
-    about = "Extract values from TOML, YAML, or plist",
+    about = "Extract values from TOML, YAML, plist, or JSON",
     long_about = "Extract values from a config file using a path expression.\n\n\
-        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist) \
+        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist, .json) \
         or may be set explicitly with `--format`. The expression may use dot notation \
         (e.g. `.server.port`) or JSON Pointer syntax (e.g. `/server/port`). \
         Reads from stdin if no files are given (requires `--format`).",

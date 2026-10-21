@@ -156,6 +156,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s get pods -n kube-system             List resources of a kind
   sak k8s get pods -A -o wide                  Pod table (NAME/READY/STATUS/NODE/AGE)
   sak k8s images deployment/foo               Container images on a workload
+  sak k8s env deployment/foo                Env vars on a pod-bearing resource
   sak k8s schema deployment.apps/v1           OpenAPI v3 schema for a kind
   sak k8s restarts -A                         Pod containers with restarts
   sak k8s failing -A                          Pods not Running or Succeeded
@@ -170,6 +171,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
         "
   sak lxc list                                List LXD/Incus instances
   sak lxc info my-ct                          Full metadata for an instance
+  sak lxc config my-ct                        Configuration subset of an instance
   sak lxc images                              List images on the daemon",
     );
     #[cfg(feature = "docker")]
@@ -178,6 +180,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak docker list                             List containers
   sak docker images                           List images
   sak docker info my-container                Full metadata for a container
+  sak docker config my-container              Configuration subset of a container
   sak docker logs my-container                Fetch a container's logs",
     );
     #[cfg(feature = "sqlite")]
@@ -187,6 +190,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak sqlite schema app.db                    Show database schema
   sak sqlite count users app.db               Count rows in a table
   sak sqlite query 'SELECT * FROM users' app.db   Run a read-only query
+  sak sqlite dump app.db users                Dump rows without hand SQL
   sak sqlite info app.db                      Database-level metadata",
     );
     #[cfg(feature = "prom")]
