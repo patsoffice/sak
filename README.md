@@ -217,6 +217,18 @@ sak hook claude-code --check 'git status'   # prints suggestion, exits 2
 sak hook claude-code --check 'git commit'   # silent, exits 0
 ```
 
+### Muse Code
+
+Muse Code speaks the same hook protocol, so `sak hook muse-code` classifies with the identical rule set and exits 2 to block / 0 to allow. It reads the `PreToolUse` payload's `tool_input.command` (Muse names the shell tool lowercase `bash`; the `matcher` is case-insensitive). Generate the configuration per tier:
+
+```bash
+sak hook muse-code --emit-config project > .muse/hooks.json  # project tier
+sak hook muse-code --emit-config user                        # merge the "hooks" block into ~/.config/muse/settings.json
+sak hook muse-code --emit-config managed                     # write to the file named by managed_hooks_path
+```
+
+All three tiers share one JSON shape. Hooks run outside the sandbox with a cleared environment, so only install commands you've read; project hooks run after you trust the folder. Start a new session to reload hook configuration.
+
 The rule set lives in `src/hook/claude_code.rs` with an inline test suite that pins every block/allow decision. When a new sak command shadows a kubectl/git/docker/lxc/talosctl/gh read that the hook doesn't yet redirect, add a case to `check_*` and a test next to the existing ones — no harness-side config changes needed.
 
 ### Tell the agent the rule directly (CLAUDE.md / AGENTS.md)

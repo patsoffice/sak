@@ -133,7 +133,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak nix derivation-show .#hello             A derivation's JSON (passthrough)
   sak nix path-info /nix/store/…-foo          Store path size/deriver/sigs as TSV
   sak nix flake-metadata                      Flake lock freshness / pin as TSV
-  sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)",
+  sak hook claude-code                        Pre-tool-use hook for Claude Code (reads stdin)
+  sak hook muse-code                          Pre-tool-use hook for Muse Code (reads stdin)",
     );
     #[cfg(target_os = "linux")]
     s.push_str(

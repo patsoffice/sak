@@ -84,8 +84,58 @@ Examples:
 pub struct MuseCodeArgs {
     /// Classify this command string directly instead of reading stdin.
     /// Intended for debugging the rule set from the shell.
-    #[arg(long, value_name = "COMMAND")]
+    #[arg(long, value_name = "COMMAND", conflicts_with = "emit_config")]
     pub check: Option<String>,
+    /// Print a paste-ready hook configuration for one tier and exit:
+    /// `project` (<project-root>/.muse/hooks.json), `user`
+    /// (~/.config/muse/settings.json `hooks` block), or `managed` (a file
+    /// named by `managed_hooks_path`). All three tiers share the same JSON
+    /// shape; only the destination differs.
+    #[arg(long, value_name = "TIER")]
+    pub emit_config: Option<ConfigTier>,
+}
+
+/// One hook-configuration tier. The JSON shape is identical for all three —
+/// verified tier by tier against `muse exec` startup validation (a malformed
+/// file warns as `MalformedConfig` naming its source; a good one loads
+/// silent) — so the tier only selects the destination hint on stderr.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ConfigTier {
+    Project,
+    User,
+    Managed,
+}
+
+impl ConfigTier {
+    /// Where the printed JSON goes. Shown on stderr so stdout stays pure
+    /// JSON, safe to redirect straight into the destination file.
+    fn hint(self) -> &'static str {
+        match self {
+            ConfigTier::Project => {
+                "Write to <project-root>/.muse/hooks.json (project hooks run after you trust the folder), then start a new session."
+            }
+            ConfigTier::User => {
+                "Merge the \"hooks\" block into ~/.config/muse/settings.json (keep \"schema_version\": 1), then start a new session."
+            }
+            ConfigTier::Managed => {
+                "Write to the file named by the `managed_hooks_path` setting (whoever controls that file controls what executes), then start a new session."
+            }
+        }
+    }
+}
+
+/// The canonical hook registration, shared byte-for-byte by every tier.
+fn hook_config_json() -> serde_json::Value {
+    serde_json::json!({
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{ "type": "command", "command": "sak hook muse-code" }]
+                }
+            ]
+        }
+    })
 }
 
 #[derive(Deserialize)]
@@ -110,6 +160,12 @@ struct ToolInput {
 // `echo probe-hello` run, and an exit-2 shim blocked it pre-execution with its
 // stderr message quoted back by the model.
 pub fn run(args: &MuseCodeArgs) -> Result<Outcome> {
+    if let Some(tier) = args.emit_config {
+        println!("{}", serde_json::to_string_pretty(&hook_config_json())?);
+        eprintln!("{}", tier.hint());
+        return Ok(Outcome::Found);
+    }
+
     if std::env::var("SAK_HOOK_BYPASS").is_ok_and(|v| is_bypass_value(&v)) {
         return Ok(Outcome::Found);
     }
@@ -226,6 +282,41 @@ mod tests {
             command_from_payload(buf),
             Some("echo probe-hello".to_string())
         );
+    }
+
+    #[test]
+    fn check_read_exits_block_and_write_exits_allow() {
+        // Pins the exit-code mapping: swapping Found/Partial would silently
+        // invert the hook. `run` prints the redirect to stderr on block.
+        let block = MuseCodeArgs {
+            check: Some("git status".to_string()),
+            emit_config: None,
+        };
+        assert!(matches!(run(&block).unwrap(), Outcome::Partial));
+        let allow = MuseCodeArgs {
+            check: Some("git commit -m x".to_string()),
+            emit_config: None,
+        };
+        assert!(matches!(run(&allow).unwrap(), Outcome::Found));
+    }
+
+    #[test]
+    fn emitted_config_is_valid_hook_registration() {
+        let v = hook_config_json();
+        assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+        assert_eq!(
+            v["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            "sak hook muse-code"
+        );
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["type"], "command");
+    }
+
+    #[test]
+    fn every_tier_points_somewhere_distinct() {
+        // The JSON is shared; the tier selects the destination hint.
+        assert_ne!(ConfigTier::Project.hint(), ConfigTier::User.hint());
+        assert_ne!(ConfigTier::Project.hint(), ConfigTier::Managed.hint());
+        assert_ne!(ConfigTier::User.hint(), ConfigTier::Managed.hint());
     }
 
     #[test]
