@@ -23,6 +23,9 @@ use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative
         grep/ripgrep), enabling pipelines like 'sak json query … | sak fs \
         grep …'. Stdin can be mixed with file/directory paths; matches from \
         stdin are labelled '(standard input)'.\n\n\
+        `-v` / `--invert-match` selects non-matching lines instead, with the \
+        usual grep semantics: counts (`-c`, `--total`) count the selected \
+        lines, and context flags apply around them.\n\n\
         Counting: '-c' prints matches per file and '--total' prints one \
         grand total across every file searched — prefer either over counting \
         the default output's lines, which also carries filename headings. \
@@ -39,7 +42,8 @@ Examples:
   sak fs grep --total 'unwrap()' src/              One total across all files
   sak fs grep --no-heading 'TODO' src/             path:line:text rows, no decoration
   sak fs grep -C 3 'panic' src/                    Show 3 lines of context
-  some-cmd | sak fs grep 'pattern'                  Search piped stdin (no path)"
+  some-cmd | sak fs grep 'pattern'                  Search piped stdin (no path)
+  sak fs grep -v 'ok\\.' results.txt               Lines NOT matching (invert)"
 )]
 pub struct GrepArgs {
     /// Regex pattern to search for
@@ -47,6 +51,10 @@ pub struct GrepArgs {
 
     /// Files or directories to search (reads stdin if omitted; '-' also reads stdin)
     pub paths: Vec<PathBuf>,
+
+    /// Select non-matching lines instead of matching ones
+    #[arg(short = 'v', long = "invert-match")]
+    pub invert: bool,
 
     /// Case-insensitive matching
     #[arg(short = 'i', long = "ignore-case")]
@@ -276,6 +284,7 @@ struct LineMatch {
 fn search_file_lines(
     path: &PathBuf,
     re: &Regex,
+    invert: bool,
     max_count: Option<usize>,
     before_ctx: usize,
     after_ctx: usize,
@@ -287,13 +296,22 @@ fn search_file_lines(
     let file =
         std::fs::File::open(path).with_context(|| format!("cannot open: {}", path.display()))?;
     let reader = BufReader::new(file);
-    search_reader_lines(reader, re, max_count, before_ctx, after_ctx, path.clone())
-        .with_context(|| format!("error reading: {}", path.display()))
+    search_reader_lines(
+        reader,
+        re,
+        invert,
+        max_count,
+        before_ctx,
+        after_ctx,
+        path.clone(),
+    )
+    .with_context(|| format!("error reading: {}", path.display()))
 }
 
 fn search_reader_lines<R: BufRead>(
     reader: R,
     re: &Regex,
+    invert: bool,
     max_count: Option<usize>,
     before_ctx: usize,
     after_ctx: usize,
@@ -304,9 +322,11 @@ fn search_reader_lines<R: BufRead>(
         .collect::<Result<Vec<_>, io::Error>>()
         .context("error reading input")?;
 
+    // With `--invert-match` the selected lines are the non-matching ones;
+    // everything downstream (counts, context, max-count) follows unchanged.
     let mut match_line_nums: Vec<usize> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        if re.is_match(line) {
+        if re.is_match(line) != invert {
             match_line_nums.push(i);
             if let Some(max) = max_count
                 && match_line_nums.len() >= max
@@ -377,6 +397,7 @@ fn search_reader_lines<R: BufRead>(
 fn search_file_multiline(
     path: &PathBuf,
     re: &Regex,
+    invert: bool,
     max_count: Option<usize>,
 ) -> Result<Option<MatchResult>> {
     if is_binary(path).unwrap_or(false) {
@@ -385,12 +406,13 @@ fn search_file_multiline(
 
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("cannot read: {}", path.display()))?;
-    search_content_multiline(&content, re, max_count, path.clone())
+    search_content_multiline(&content, re, invert, max_count, path.clone())
 }
 
 fn search_reader_multiline<R: io::Read>(
     mut reader: R,
     re: &Regex,
+    invert: bool,
     max_count: Option<usize>,
     label: PathBuf,
 ) -> Result<Option<MatchResult>> {
@@ -398,15 +420,24 @@ fn search_reader_multiline<R: io::Read>(
     reader
         .read_to_string(&mut content)
         .context("error reading input")?;
-    search_content_multiline(&content, re, max_count, label)
+    search_content_multiline(&content, re, invert, max_count, label)
 }
 
 fn search_content_multiline(
     content: &str,
     re: &Regex,
+    invert: bool,
     max_count: Option<usize>,
     label: PathBuf,
 ) -> Result<Option<MatchResult>> {
+    // With `--invert-match` there are no spans to complement — select the
+    // lines no span touches, mirroring `grep -v` line semantics. Multiline
+    // spans can cover several lines, so mark every covered line, not just
+    // each span's start.
+    if invert {
+        return search_content_multiline_inverted(content, re, max_count, label);
+    }
+
     let mut matches_found: Vec<LineMatch> = Vec::new();
     let mut count = 0;
 
@@ -450,6 +481,53 @@ fn search_content_multiline(
         return Ok(None);
     }
 
+    Ok(Some(MatchResult {
+        path: label,
+        matches: matches_found,
+        count,
+    }))
+}
+
+/// Complement of [`search_content_multiline`]: emit the lines no match span
+/// touches. Untouched lines are usually contiguous, so unlike the forward
+/// path this emits no `--` separators — every output row is a selected line.
+fn search_content_multiline_inverted(
+    content: &str,
+    re: &Regex,
+    max_count: Option<usize>,
+    label: PathBuf,
+) -> Result<Option<MatchResult>> {
+    use std::collections::HashSet;
+
+    let mut covered: HashSet<usize> = HashSet::new();
+    for mat in re.find_iter(content) {
+        let first = content[..mat.start()].matches('\n').count() + 1;
+        let last = content[..mat.end()].matches('\n').count() + 1;
+        covered.extend(first..=last);
+    }
+
+    let mut matches_found: Vec<LineMatch> = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if covered.contains(&(i + 1)) {
+            continue;
+        }
+        matches_found.push(LineMatch {
+            line_num: i + 1,
+            content: line.to_string(),
+            is_context: false,
+            is_separator: false,
+        });
+        if let Some(max) = max_count
+            && matches_found.len() >= max
+        {
+            break;
+        }
+    }
+
+    if matches_found.is_empty() {
+        return Ok(None);
+    }
+    let count = matches_found.len();
     Ok(Some(MatchResult {
         path: label,
         matches: matches_found,
@@ -569,9 +647,16 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
 
     for file_path in &files {
         let result = if args.multiline {
-            search_file_multiline(file_path, &re, args.max_count)?
+            search_file_multiline(file_path, &re, args.invert, args.max_count)?
         } else {
-            search_file_lines(file_path, &re, args.max_count, before_ctx, after_ctx)?
+            search_file_lines(
+                file_path,
+                &re,
+                args.invert,
+                args.max_count,
+                before_ctx,
+                after_ctx,
+            )?
         };
 
         let result = match result {
@@ -605,6 +690,7 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
             search_reader_multiline(
                 stdin.lock(),
                 &re,
+                args.invert,
                 args.max_count,
                 PathBuf::from(STDIN_LABEL),
             )?
@@ -612,6 +698,7 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
             search_reader_lines(
                 stdin.lock(),
                 &re,
+                args.invert,
                 args.max_count,
                 before_ctx,
                 after_ctx,
@@ -751,7 +838,7 @@ mod tests {
         }
 
         let re = Regex::new("match").unwrap();
-        let result = search_file_lines(&file_path, &re, None, 0, 0)
+        let result = search_file_lines(&file_path, &re, false, None, 0, 0)
             .unwrap()
             .unwrap();
         assert_eq!(result.count, 2);
@@ -774,6 +861,7 @@ mod tests {
         let result = search_reader_lines(
             io::Cursor::new(input),
             &re,
+            false,
             None,
             1,
             1,
@@ -800,7 +888,7 @@ mod tests {
         }
 
         let re = Regex::new("MATCH").unwrap();
-        let result = search_file_lines(&file_path, &re, None, 1, 1)
+        let result = search_file_lines(&file_path, &re, false, None, 1, 1)
             .unwrap()
             .unwrap();
         assert_eq!(result.count, 1);
@@ -828,7 +916,7 @@ mod tests {
         }
 
         let re = Regex::new(r"(?s)struct \w+\s*\{[^}]*\}").unwrap();
-        let result = search_file_multiline(&file_path, &re, None)
+        let result = search_file_multiline(&file_path, &re, false, None)
             .unwrap()
             .unwrap();
         assert_eq!(result.count, 1);
@@ -841,6 +929,7 @@ mod tests {
         let result = search_reader_lines(
             io::Cursor::new(input),
             &re,
+            false,
             None,
             0,
             0,
@@ -861,6 +950,7 @@ mod tests {
         let result = search_reader_lines(
             io::Cursor::new("nothing here\n"),
             &re,
+            false,
             None,
             0,
             0,
@@ -877,6 +967,7 @@ mod tests {
         let result = search_reader_multiline(
             io::Cursor::new(input),
             &re,
+            false,
             None,
             PathBuf::from(STDIN_LABEL),
         )
@@ -893,7 +984,101 @@ mod tests {
         std::fs::write(&file_path, b"\x00\x01\x02\x03").unwrap();
 
         let re = Regex::new("anything").unwrap();
-        let result = search_file_lines(&file_path, &re, None, 0, 0).unwrap();
+        let result = search_file_lines(&file_path, &re, false, None, 0, 0).unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn invert_selects_non_matching_lines() {
+        let input = "keep one\nmatch here\nkeep two\nanother match\nkeep three\n";
+        let re = Regex::new("match").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new(input),
+            &re,
+            true,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 3);
+        let got: Vec<_> = result
+            .matches
+            .iter()
+            .map(|m| (m.line_num, m.content.as_str()))
+            .collect();
+        assert_eq!(got, [(1, "keep one"), (3, "keep two"), (5, "keep three")]);
+    }
+
+    #[test]
+    fn invert_all_matching_is_no_results() {
+        // Every line matches, so the inverted selection is empty — exit 1,
+        // not an empty success.
+        let re = Regex::new("x").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new("x\nxx\n"),
+            &re,
+            true,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn invert_counts_selected_lines() {
+        // `-c --invert-match` counts non-matches: the composition the sibling
+        // count issue calls out.
+        let input = "ok\nFAIL\nok\n";
+        let re = Regex::new("FAIL").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new(input),
+            &re,
+            true,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 2);
+    }
+
+    #[test]
+    fn invert_multiline_emits_untouched_lines() {
+        // The span covers lines 1-3; inversion yields lines 4-5 with no `--`
+        // separators (untouched lines need no gap markers).
+        let input = "struct Foo {\n    x: i32,\n}\nafter one\nafter two\n";
+        let re = Regex::new(r"(?s)struct \w+\s*\{[^}]*\}").unwrap();
+        let result = search_reader_multiline(
+            io::Cursor::new(input),
+            &re,
+            true,
+            None,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.count, 2);
+        let got: Vec<_> = result
+            .matches
+            .iter()
+            .map(|m| (m.line_num, m.content.as_str()))
+            .collect();
+        assert_eq!(got, [(4, "after one"), (5, "after two")]);
+        assert!(result.matches.iter().all(|m| !m.is_separator));
+    }
+
+    #[test]
+    fn invert_flag_parses_short_and_long() {
+        assert!(parse(&["grep", "-v", "pat", "src/"]).invert);
+        assert!(parse(&["grep", "--invert-match", "pat", "src/"]).invert);
+        assert!(!parse(&["grep", "pat", "src/"]).invert);
     }
 }

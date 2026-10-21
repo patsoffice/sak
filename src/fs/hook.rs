@@ -14,7 +14,7 @@ use crate::hook::rule::HookRule;
 /// reads, so they share one string and differ only by `tool`).
 const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep` \
      (pass `-` as <path> to read stdin, e.g. `cmd | sak fs grep <pattern> -`). \
-     Flags: -i, -l, -C N, --type, --glob, -U for multiline. \
+     Flags: -i, -v, -l, -C N, --type, --glob, -U for multiline. \
      Counting: -c (per file) or --total (one grand total) — don't pipe the \
      default output into a line counter. --no-heading gives bare \
      path:line:text rows. \
@@ -258,6 +258,9 @@ mod tests {
         // Stdin reads now fire too — sak handles them via `-`.
         assert!(grep_reads(&a(&["foo"])));
         assert!(grep_reads(&a(&["-i", "foo"])));
+        // Inverted reads fire too — sak handles them via `-v`.
+        assert!(grep_reads(&a(&["-v", "foo", "file.txt"])));
+        assert!(grep_reads(&a(&["-v", "foo"])));
         // No positional (bare grep / `--help`) has nothing to redirect.
         assert!(!grep_reads(&a(&[])));
         assert!(!grep_reads(&a(&["--help"])));
