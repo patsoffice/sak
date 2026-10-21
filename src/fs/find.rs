@@ -33,7 +33,9 @@ pub enum FindType {
         range), or `N` (exact); N accepts K/M/G/T/P binary suffixes. --mtime \
         takes `+D` (older than), `-D` (newer than) where D is a duration like \
         `7d`/`1h`/`30m`, or `YYYY-MM-DD..YYYY-MM-DD` for a date range (start \
-        inclusive, end exclusive, UTC). The same directory pruning as `glob` \
+        inclusive, end exclusive, UTC). --newer FILE keeps entries modified \
+        more recently than FILE's own mtime (GNU find -newer). The same \
+        directory pruning as `glob` \
         applies (.git, target, node_modules, ...; dotfiles unless --hidden).",
     after_help = "\
 Examples:
@@ -42,7 +44,8 @@ Examples:
   sak fs find . --mtime -1h                Modified in the last hour
   sak fs find . --mtime +7d --type f       Files untouched for over a week
   sak fs find . --type d --name 'test*'    Directories named test*
-  sak fs find . --mtime 2026-01-01..2026-02-01   Modified in January 2026"
+  sak fs find . --mtime 2026-01-01..2026-02-01   Modified in January 2026
+  sak fs find . --newer ./last-deploy             Changed since last deploy"
 )]
 pub struct FindArgs {
     /// Directory to search
@@ -57,6 +60,10 @@ pub struct FindArgs {
     /// Mtime predicate: +7d (older), -1h (newer), or YYYY-MM-DD..YYYY-MM-DD
     #[arg(long, value_name = "EXPR", allow_hyphen_values = true)]
     pub mtime: Option<String>,
+
+    /// Entries modified more recently than FILE (GNU find -newer)
+    #[arg(long, value_name = "FILE")]
+    pub newer: Option<PathBuf>,
 
     /// Entry type: f (file), d (directory), l (symlink)
     #[arg(short = 't', long = "type")]
@@ -187,6 +194,27 @@ fn parse_duration(s: &str) -> Result<i64> {
     Ok(n * mult)
 }
 
+/// Modification time as unix seconds (0 when unknown). Shared by `--mtime`
+/// and `--newer` so both predicates read the same clock.
+fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Resolve `--newer FILE` to its full-precision mtime. An unreadable
+/// reference (or one with no mtime) is a tool error (exit 2), not an empty
+/// result. Full precision, not truncated seconds: GNU compares exact
+/// timestamps, and truncation would tie files created within the same second.
+fn reference_mtime(path: &PathBuf) -> Result<SystemTime> {
+    let meta = std::fs::metadata(path)
+        .with_context(|| format!("cannot stat reference file: {}", path.display()))?;
+    meta.modified()
+        .with_context(|| format!("reference file has no mtime: {}", path.display()))
+}
+
 /// Parse a `YYYY-MM-DD` date into unix seconds at UTC midnight.
 fn parse_date(s: &str) -> Result<i64> {
     let parts: Vec<&str> = s.split('-').collect();
@@ -227,6 +255,10 @@ pub fn run(args: &FindArgs) -> Result<Outcome> {
         .unwrap_or(0);
     let time_pred = match &args.mtime {
         Some(s) => Some(TimePred::parse(s, now).with_context(|| format!("invalid --mtime: {s}"))?),
+        None => None,
+    };
+    let newer_ref: Option<SystemTime> = match &args.newer {
+        Some(path) => Some(reference_mtime(path)?),
         None => None,
     };
     let name_matcher: Option<GlobMatcher> = match &args.name {
@@ -280,23 +312,26 @@ pub fn run(args: &FindArgs) -> Result<Outcome> {
         }
 
         // Only stat when a size/mtime predicate needs it.
-        if size_pred.is_some() || time_pred.is_some() {
+        if size_pred.is_some() || time_pred.is_some() || newer_ref.is_some() {
             let Ok(meta) = entry.metadata() else { continue };
             if let Some(sp) = &size_pred
                 && !sp.matches(meta.len())
             {
                 continue;
             }
-            if let Some(tp) = &time_pred {
-                let mtime = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
-                if !tp.matches(mtime) {
-                    continue;
-                }
+            let mtime = mtime_secs(&meta);
+            if let Some(tp) = &time_pred
+                && !tp.matches(mtime)
+            {
+                continue;
+            }
+            // `--newer` compares full timestamps (not truncated seconds), so
+            // files created within the same second still order correctly. An
+            // entry with no readable mtime can't prove itself newer.
+            if let Some(rt) = newer_ref
+                && meta.modified().is_ok_and(|m| m <= rt)
+            {
+                continue;
             }
         }
 
@@ -413,6 +448,7 @@ mod tests {
             path: dir.path().to_path_buf(),
             size: size.map(String::from),
             mtime: None,
+            newer: None,
             entry_type: ty,
             name: name.map(String::from),
             hidden: false,
@@ -432,5 +468,61 @@ mod tests {
             run(&mk(None, Some(FindType::D), Some("subdir"))).unwrap(),
             Outcome::Found
         );
+    }
+
+    #[test]
+    fn newer_cutoff_matches_reference_mtime() {
+        // Deterministic: the cutoff is the reference's own stat, no clock
+        // ordering assumptions.
+        let dir = tempfile::tempdir().unwrap();
+        let ref_path = dir.path().join("ref.txt");
+        std::fs::write(&ref_path, "ref").unwrap();
+        let meta = std::fs::metadata(&ref_path).unwrap();
+        assert_eq!(
+            reference_mtime(&ref_path).unwrap(),
+            meta.modified().unwrap()
+        );
+    }
+
+    #[test]
+    fn newer_keeps_only_strictly_newer_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("old.txt"), "old").unwrap();
+        let ref_path = dir.path().join("ref.txt");
+        std::fs::write(&ref_path, "ref").unwrap();
+        std::fs::write(dir.path().join("new.txt"), "new").unwrap();
+
+        let args = FindArgs {
+            path: dir.path().to_path_buf(),
+            size: None,
+            mtime: None,
+            newer: Some(ref_path),
+            entry_type: None,
+            name: None,
+            hidden: false,
+            follow_links: false,
+            limit: None,
+        };
+        // Sequential creates land in mtime order on any sane filesystem, so
+        // only new.txt is strictly newer than ref.txt (the reference itself
+        // is excluded — strictly, not >=).
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    #[test]
+    fn newer_unreadable_reference_is_tool_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = FindArgs {
+            path: dir.path().to_path_buf(),
+            size: None,
+            mtime: None,
+            newer: Some(dir.path().join("missing.txt")),
+            entry_type: None,
+            name: None,
+            hidden: false,
+            follow_links: false,
+            limit: None,
+        };
+        assert!(run(&args).is_err());
     }
 }
