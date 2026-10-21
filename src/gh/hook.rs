@@ -4,9 +4,9 @@
 //! that map cleanly to a two-element `subcommand` prefix. The exception is
 //! `gh api`, which redirects only its HTTP-GET reads: a non-GET `gh api` is a
 //! mutation `sak gh` deliberately can't perform, so the rule carries a
-//! [`gh_api_method_is_get`] guard lifted verbatim from the old check_gh. The
-//! same method-detection logic lives in [`crate::gh::client::check_api_method`]
-//! — keep the two in sync if `gh api`'s flag surface ever changes.
+//! [`gh_api_method_is_get`] guard. Method detection is shared with the
+//! enforcement in [`crate::gh::client::api_method`] — one implementation, so
+//! the redirect decision and the enforcement cannot disagree.
 //!
 //! Like [`crate::nix::hook`], this file is exempt from `src/gh/client.rs`'s
 //! binary-name chokepoint test: `tool: "gh"` and every redirect message
@@ -93,28 +93,15 @@ pub const HOOK_RULES: &[HookRule] = &[
     },
 ];
 
-/// Whether a `gh api` invocation is an HTTP GET — true when no `-X` /
-/// `--method` flag is present (gh's default), or its value is `GET`
-/// (case-insensitive). Accepts every gh-supported spelling: separated
-/// (`-X GET`, `--method GET`), inline (`-XGET`), or `=`-joined
-/// (`--method=GET`). Mirrors the same logic in
-/// [`crate::gh::client::check_api_method`] — keep them in sync.
+/// Whether a `gh api` invocation is an HTTP GET — delegates to the shared
+/// [`crate::gh::client::api_method`] scanner so the redirect decision uses
+/// exactly the semantics the enforcement does (scan every flag; a dangling
+/// flag is not a GET).
 fn gh_api_method_is_get(args: &[String]) -> bool {
-    let mut i = 0;
-    while i < args.len() {
-        let a = args[i].as_str();
-        let method = if a == "-X" || a == "--method" {
-            i += 1;
-            args.get(i).map(String::as_str)
-        } else {
-            a.strip_prefix("-X").or_else(|| a.strip_prefix("--method="))
-        };
-        if let Some(m) = method {
-            return m.eq_ignore_ascii_case("GET");
-        }
-        i += 1;
-    }
-    true
+    matches!(
+        crate::gh::client::api_method(args),
+        crate::gh::client::ApiMethod::Get
+    )
 }
 
 #[cfg(test)]
@@ -153,5 +140,21 @@ mod tests {
         ])));
         assert!(!gh_api_method_is_get(&a(&["api", "x", "-XPATCH"])));
         assert!(!gh_api_method_is_get(&a(&["api", "x", "--method=PUT"])));
+    }
+
+    #[test]
+    fn api_method_scans_every_flag() {
+        // Regression: the old guard returned on the FIRST flag, so `-X GET
+        // -X POST` (a POST — last wins in gh) misclassified as a read.
+        assert!(!gh_api_method_is_get(&a(&[
+            "api", "x", "-X", "GET", "-X", "POST"
+        ])));
+        // Scan-all strictness holds the other way too: any non-GET
+        // disqualifies, even followed by an explicit GET.
+        assert!(!gh_api_method_is_get(&a(&[
+            "api", "x", "-X", "POST", "-X", "GET"
+        ])));
+        // A dangling flag is malformed, not a GET.
+        assert!(!gh_api_method_is_get(&a(&["api", "x", "-X"])));
     }
 }

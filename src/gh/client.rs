@@ -160,21 +160,34 @@ fn format_allowlist() -> String {
     out.join(", ")
 }
 
-/// Reject any `gh api` invocation whose `-X` / `--method` value is not
-/// `GET` (case-insensitive). Both flag spellings accept either `-X GET`
-/// (separate arg) or `-XGET` / `--method=GET` (joined). Bare `gh api
-/// <endpoint>` is permitted because `gh`'s own default is GET.
-fn check_api_method(args: &[&str]) -> Result<()> {
+/// What a `gh api` invocation's `-X` / `--method` flags select. Shared by
+/// the [`check_api_method`] enforcement below and the hook guard
+/// (`gh_api_method_is_get` in `src/gh/hook.rs`) so the redirect decision and
+/// the enforcement can never disagree about what counts as a read.
+pub(crate) enum ApiMethod {
+    /// No flag, or every value GET (gh defaults to GET).
+    Get,
+    /// First non-GET value seen.
+    NonGet(String),
+    /// Flag with no following value.
+    Dangling(String),
+}
+
+/// Scan every `-X` / `--method` flag. Both spellings accept `-X GET`
+/// (separate arg) or `-XGET` / `--method=GET` (joined). Scans *all* flags
+/// rather than stopping at the first: `gh api x -X GET -X POST` is a POST
+/// (last wins in gh), so stopping early would misclassify a write as a read.
+pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
     let mut i = 0;
     while i < args.len() {
-        let arg = args[i];
+        let arg = args[i].as_ref();
 
         let method = if arg == "-X" || arg == "--method" {
             i += 1;
-            if i >= args.len() {
-                bail!("gh api: `{}` requires a method value", arg);
+            match args.get(i) {
+                Some(v) => Some(v.as_ref()),
+                None => return ApiMethod::Dangling(arg.to_string()),
             }
-            Some(args[i])
         } else {
             arg.strip_prefix("-X")
                 .or_else(|| arg.strip_prefix("--method="))
@@ -183,15 +196,26 @@ fn check_api_method(args: &[&str]) -> Result<()> {
         if let Some(m) = method
             && !m.eq_ignore_ascii_case("GET")
         {
-            bail!(
-                "gh api: HTTP method `{}` is not allowed — sak gh is read-only, only GET is permitted",
-                m
-            );
+            return ApiMethod::NonGet(m.to_string());
         }
 
         i += 1;
     }
-    Ok(())
+    ApiMethod::Get
+}
+
+/// Reject any `gh api` invocation whose `-X` / `--method` value is not
+/// `GET` (case-insensitive). Bare `gh api <endpoint>` is permitted because
+/// `gh`'s own default is GET.
+fn check_api_method(args: &[&str]) -> Result<()> {
+    match api_method(args) {
+        ApiMethod::Get => Ok(()),
+        ApiMethod::NonGet(m) => bail!(
+            "gh api: HTTP method `{}` is not allowed — sak gh is read-only, only GET is permitted",
+            m
+        ),
+        ApiMethod::Dangling(flag) => bail!("gh api: `{}` requires a method value", flag),
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +310,24 @@ mod tests {
                 "expected method rejection for args `{:?}`, got: {}",
                 args,
                 msg
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_mixed_method_flags() {
+        // `gh api x -X GET -X POST` is a POST (last wins in gh): the shared
+        // scanner must reject it even though the first flag says GET.
+        for args in [
+            &["repos/x/y", "-X", "GET", "-X", "POST"][..],
+            &["repos/x/y", "-X", "POST", "-X", "GET"][..],
+        ] {
+            let err = invoke("api", None, args).unwrap_err();
+            assert!(
+                err.to_string().contains("not allowed"),
+                "expected method rejection for args `{:?}`, got: {}",
+                args,
+                err
             );
         }
     }
