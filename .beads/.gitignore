@@ -3,6 +3,14 @@
 *.db-journal
 *.db-shm
 *.db-wal
+*.db-wal*
+*-fsqlite-ns-gate
+*-fsqlite-ns-use
+*.vacuum-wal-cert*
+*.fsqlite-migration-state
+
+# WAL index coordination (runtime, per-process)
+.br-wal-index-*/
 
 # Lock files
 *.lock

@@ -151,7 +151,7 @@ Every subcommand includes `long_about` descriptions and `after_help` with concre
 SAK is designed to be the canonical read-only interface for an LLM agent like [Claude Code](https://claude.com/claude-code). With two pieces of configuration in your agent's settings, sak becomes the obvious-and-only path for every read-only operation it covers (filesystem, git, json, config, X.509 certs, Talos clusters, Kubernetes, LXD/Incus, Docker, SQLite, Prometheus / Alertmanager):
 
 1. **Auto-approve sak** so the agent never has to ask permission for an individual `sak` call.
-2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, `nix`/`nix-store`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `CLAUDE.md` is the right lever for `sak prom`.)
+2. **One pre-tool hook — `sak hook claude-code`** — that classifies the about-to-run Bash command and redirects read-only `cat`/`head`/`tail`, `grep`/`rg`, `find`, `tree`, `stat`, `wc`, `jq`, `yq`/`tomlq`, `plistutil`, `openssl x509`, `git`, `kubectl`, `talosctl`, `docker`, `lxc`/`incus`, `gh`, `helm`, `nix`/`nix-store`, and `sqlite3` invocations to their `sak` equivalents. (No `prom` redirect — Prometheus has no canonical CLI to redirect from; the dogfood instruction in `AGENTS.md` is the right lever for `sak prom`.)
 
 The configuration below is for Claude Code's `~/.claude/settings.json`. The pattern adapts to any agent harness that supports per-tool permissions and pre-tool hooks.
 
@@ -268,7 +268,7 @@ This catches the cases the hooks don't, and — importantly — it also tells th
 
 ### Make the rule stick across sessions (agent memory)
 
-Project-instruction files are loaded fresh every conversation, but some agents also support a persistent per-project memory that survives across sessions. Claude Code, for example, has an auto-memory system at `~/.claude/projects/<slug>/memory/`. If your agent has something equivalent, save the same rule there as a *feedback* memory so it survives even in conversations where CLAUDE.md isn't read end-to-end. Suggested content:
+Project-instruction files are loaded fresh every conversation, but some agents also support a persistent per-project memory that survives across sessions. Claude Code, for example, has an auto-memory system at `~/.claude/projects/<slug>/memory/`. If your agent has something equivalent, save the same rule there as a *feedback* memory so it survives even in conversations where the project instruction file isn't read end-to-end. Suggested content:
 
 ```markdown
 ---
@@ -278,7 +278,7 @@ type: feedback
 ---
 
 In this repo, prefer `sak <domain> <command>` over shell equivalents
-whenever a CLI is warranted. [...same substitution table as CLAUDE.md...]
+whenever a CLI is warranted. [...same substitution table as AGENTS.md...]
 
 **Why:** the project dogfoods sak; deterministic, bounded, LLM-tuned
 output is the whole point of the tool.
@@ -288,7 +288,7 @@ fine, but when you do reach for a CLI, reach for sak. Missing command
 = add it, don't fall back to shell.
 ```
 
-Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `kubectl get`, `cat /etc/passwd`, `jq .name pkg.json`, …), CLAUDE.md teaches the rule each session, and persistent memory keeps it sticky across sessions and context compactions.
+Belt and braces: `sak hook claude-code` blocks the easy mistakes (`git log`, `kubectl get`, `cat /etc/passwd`, `jq .name pkg.json`, …), AGENTS.md teaches the rule each session, and persistent memory keeps it sticky across sessions and context compactions.
 
 ## Output Conventions
 

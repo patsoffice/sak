@@ -5,3 +5,5 @@
 # .beads/.gitignore; this catches the timestamped *.bak snapshots that
 # .beads/.br_recovery/ accumulates and which the nested file misses).
 .beads/.br_recovery/
+# br doctor per-run artifacts
+.doctor/
