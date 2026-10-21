@@ -21,7 +21,7 @@
 //! }
 //! ```
 
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
 use anyhow::Result;
 use clap::Args;
@@ -108,6 +108,15 @@ pub fn run(args: &ClaudeCodeArgs) -> Result<Outcome> {
     let command = match &args.check {
         Some(cmd) => cmd.clone(),
         None => {
+            // A bare terminal invocation would block forever waiting for EOF
+            // that never comes — and a harness always pipes, never attaches a
+            // TTY — so fail open with a hint instead of hanging.
+            if io::stdin().is_terminal() {
+                eprintln!(
+                    "sak hook claude-code reads its PreToolUse payload from stdin (or use --check <COMMAND>); nothing to check — allowing."
+                );
+                return Ok(Outcome::Found);
+            }
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
             // Empty stdin → nothing to check.
