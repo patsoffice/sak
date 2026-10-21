@@ -41,7 +41,7 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "tail",
         subcommand: &[],
         guard: Some(headtail_reads_a_file),
-        message: "Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers).",
+        message: "Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers, --follow).",
     },
     HookRule {
         tool: "grep",
@@ -107,7 +107,7 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "stat",
         subcommand: &[],
         guard: Some(reads_a_path),
-        message: "Use `sak fs stat <path...>` instead of `stat` (--format json).",
+        message: "Use `sak fs stat <path...>` instead of `stat` (--format json, --printf FMT).",
     },
     // `wc` is always a read (no write mode) and `sak fs wc` reads stdin when
     // files are omitted, so every invocation redirects — the piped
