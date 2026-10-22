@@ -4,7 +4,7 @@
 //! here. Spawning itself is the shared [`crate::local_bin::LocalBinClient`]
 //! (the tree-wide grep test confines all `Command::new(` to it); naming the
 //! `nix` binaries directly from anywhere else in the domain is forbidden,
-//! and the [`tests::no_nix_invocations_outside_client_module`] grep test
+//! and the [`tests::no_nix_name_tokens_outside_client_or_hook`] grep test
 //! enforces that on every `cargo test` run.
 //!
 //! Read-only enforcement is convention plus a verb allowlist plus the grep
@@ -213,7 +213,7 @@ mod tests {
     /// the variable-built `Command` loophole as well. The two assertions
     /// together close
     /// every realistic shell-out path for either binary.
-    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
+    const COMMAND_NEW_TOKEN: &[&str] = &[crate::test_support::COMMAND_NEW];
 
     #[test]
     fn no_nix_name_tokens_outside_client_or_hook() {
@@ -228,14 +228,13 @@ mod tests {
 
     #[test]
     fn no_command_new_in_domain() {
-        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
-        // itself (and the "nix" names). Spawning there would need a
-        // `std::process::Command` import, which no domain file has anymore.
+        // No exemption, client.rs included: the token is built with
+        // `concat!`, so this file doesn't match its own test.
         crate::test_support::assert_no_forbidden_tokens_except(
             "nix",
             COMMAND_NEW_TOKEN,
-            &["client.rs"],
-            "only src/nix/client.rs may reference the Command constructor; \
+            &[],
+            "no src/nix/ file may reference the Command constructor; \
              all spawning goes through the shared LocalBinClient",
         );
     }

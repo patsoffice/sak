@@ -16,15 +16,16 @@
 //!   shared [`LocalBinClient::run_ok`] verbatim),
 //! - extra mappings (`helm`'s not-found → `None`).
 //!
-//! Read-only enforcement: [`LocalBinClient::run`] is the only real
-//! `Command::new(` in `src/` outside integration-test harnesses (`tests/`
-//! legitimately spawns the built binary). The
-//! [`tests::no_shell_spawns_outside_shared_chokepoint`] grep test enforces
-//! this tree-wide; the four domain `client.rs` files are exempt there only
-//! for their test token literal, and each domain keeps its own binary-name
-//! test (no direct shell-out naming its binary outside its
-//! `client.rs`/`hook.rs`) plus a domain-local `Command::new(` absence test,
-//! so a new direct spawn trips at least two tests.
+//! Read-only enforcement: [`LocalBinClient::run_with_env`] holds the only
+//! real `Command::new(` in `src/` (`tests/` legitimately spawns the built
+//! binary). Two tree-wide grep tests enforce the shape:
+//! [`tests::no_shell_spawns_outside_shared_chokepoint`] confines the process
+//! constructor to this file, and
+//! [`tests::local_bin_clients_built_only_by_domain_chokepoints`] confines
+//! `LocalBinClient` construction to the four domain `client.rs` files, the
+//! only places that check a verb allowlist before spawning. Each domain also
+//! keeps its own binary-name test and a domain-wide `Command::new(` absence
+//! test (its `client.rs` included).
 
 use std::ffi::OsStr;
 use std::process::{Command, ExitStatus};
@@ -60,20 +61,7 @@ impl LocalBinClient {
     /// non-zero exit is *not* an error here — callers decide via
     /// [`Output::status`] (see [`LocalBinClient::run_ok`]).
     pub fn run<S: AsRef<OsStr>>(&self, argv: &[S]) -> Result<Output> {
-        let mut cmd = Command::new(self.bin);
-        for a in argv {
-            cmd.arg(a);
-        }
-
-        let output = cmd
-            .output()
-            .with_context(|| format!("spawning `{}` (is it installed and on PATH?)", self.bin))?;
-
-        Ok(Output {
-            stdout: output.stdout,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            status: output.status,
-        })
+        self.run_with_env(argv, &[])
     }
 
     /// Spawn `<bin> <argv...>` with extra environment variables for the
@@ -150,23 +138,34 @@ mod tests {
     /// `Command::new(` must appear nowhere under `src/` except here: every
     /// shell-out domain routes spawning through [`LocalBinClient`].
     /// Integration tests under `tests/` legitimately spawn the built binary
-    /// and shell snippets, so the scan is confined to `src/`. The four domain
-    /// `client.rs` files are exempt: each holds only its domain test's token
-    /// literal (the string the grep looks for), not a spawn — and none of
-    /// them imports `std::process::Command` anymore, so a smuggled spawn
-    /// would need an import line no reviewer would miss.
+    /// and shell snippets, so the scan is confined to `src/`. Nothing else is
+    /// exempt: the token comes from `test_support` via `concat!`, so no test
+    /// file matches its own needle.
     #[test]
     fn no_shell_spawns_outside_shared_chokepoint() {
         crate::test_support::assert_no_forbidden_tokens_outside(
+            &["local_bin.rs"],
+            &[crate::test_support::COMMAND_NEW],
+            "subprocess spawning must be confined to src/local_bin.rs (LocalBinClient)",
+        );
+    }
+
+    /// A `LocalBinClient` spawns whatever argv it's handed, so only the four
+    /// domain clients may build one: each checks its verb allowlist (and gh
+    /// its method and env guards) before calling `run`. A client built
+    /// anywhere else would be a spawner with no read-only check at all.
+    #[test]
+    fn local_bin_clients_built_only_by_domain_chokepoints() {
+        crate::test_support::assert_no_forbidden_tokens_outside(
             &[
-                "local_bin.rs",
                 "talos/client.rs",
                 "gh/client.rs",
                 "helm/client.rs",
                 "nix/client.rs",
             ],
-            &["Command::new("],
-            "subprocess spawning must be confined to src/local_bin.rs (LocalBinClient)",
+            &[crate::test_support::LOCAL_BIN_NEW],
+            "LocalBinClient may only be constructed by the talos/gh/helm/nix client.rs \
+             chokepoints, which check their verb allowlists before spawning",
         );
     }
 

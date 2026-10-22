@@ -16,11 +16,32 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The subprocess constructor, as a grep token. Built with `concat!` so the
+/// complete token never appears literally in a source file: a test that
+/// carried the literal would match itself and need an exemption, and an
+/// exempt file is one where a real spawn would go unnoticed.
+pub const COMMAND_NEW: &str = concat!("Command", "::new(");
+
+/// The shared spawner's constructor, as a grep token (same `concat!` reason
+/// as [`COMMAND_NEW`]). Only the four shell-out domain clients may build a
+/// `LocalBinClient`, because only they hold a verb allowlist to check first.
+pub const LOCAL_BIN_NEW: &str = concat!("LocalBinClient", "::new(");
+
 /// Assert that none of `forbidden` appears in any `*.rs` file under
 /// `src/<domain>/` other than `client.rs`.
 ///
 /// Thin wrapper over [`assert_no_forbidden_tokens_except`] with `client.rs` as
 /// the sole exempt file — the common case for the mutation-surface chokepoint.
+/// Every caller is a cargo-feature-gated domain, so the helper is gated on the
+/// same features: a lean build has no caller and would warn about dead code.
+#[cfg(any(
+    feature = "docker",
+    feature = "k8s",
+    feature = "loki",
+    feature = "lxc",
+    feature = "prom",
+    feature = "sqlite"
+))]
 pub fn assert_no_forbidden_tokens(domain: &str, forbidden: &[&str], summary: &str) {
     assert_no_forbidden_tokens_except(domain, forbidden, &["client.rs"], summary);
 }
@@ -67,8 +88,13 @@ pub fn assert_no_forbidden_tokens_except(
             }
             for token in forbidden {
                 if line.contains(token) {
+                    let allowed = if exempt_files.is_empty() {
+                        "anywhere in this domain".to_string()
+                    } else {
+                        format!("outside {}", exempt_files.join(", "))
+                    };
                     violations.push(format!(
-                        "{}:{}: forbidden token `{}` outside client.rs",
+                        "{}:{}: forbidden token `{}` {allowed}",
                         path.display(),
                         idx + 1,
                         token

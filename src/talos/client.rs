@@ -5,7 +5,7 @@
 //! (the tree-wide grep test confines all `Command::new(` to it); naming the
 //! `talosctl` binary directly from anywhere else in the domain is forbidden,
 //! and the
-//! [`tests::no_talosctl_invocations_outside_client_module`] grep test
+//! [`tests::no_talosctl_name_token_outside_client_or_hook`] grep test
 //! enforces it on every `cargo test` run.
 //!
 //! Read-only enforcement is convention plus a verb allowlist plus the grep
@@ -120,7 +120,7 @@ mod tests {
     /// non-talosctl `Command` be re-targeted. Spawning itself lives in
     /// the shared `LocalBinClient`, so the constructor is banned domain-wide
     /// here too — the tree-wide chokepoint test is the backstop.
-    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
+    const COMMAND_NEW_TOKEN: &[&str] = &[crate::test_support::COMMAND_NEW];
 
     #[test]
     fn no_talosctl_name_token_outside_client_or_hook() {
@@ -135,14 +135,13 @@ mod tests {
 
     #[test]
     fn no_command_new_in_domain() {
-        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
-        // itself (and the "talosctl" name). Spawning there would need a
-        // `std::process::Command` import, which no domain file has anymore.
+        // No exemption, client.rs included: the token is built with
+        // `concat!`, so this file doesn't match its own test.
         crate::test_support::assert_no_forbidden_tokens_except(
             "talos",
             COMMAND_NEW_TOKEN,
-            &["client.rs"],
-            "only src/talos/client.rs may reference the Command constructor; \
+            &[],
+            "no src/talos/ file may reference the Command constructor; \
              all spawning goes through the shared LocalBinClient",
         );
     }

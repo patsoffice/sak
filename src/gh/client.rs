@@ -2,10 +2,11 @@
 //!
 //! Every other module under `src/gh/` must call into the helpers exposed
 //! here. Spawning itself is the shared [`crate::local_bin::LocalBinClient`]
-//! (the tree-wide grep test confines all `Command::new(` to it); naming the
-//! `gh` binary directly from anywhere else in the domain is forbidden, and
-//! the [`tests::no_gh_invocations_outside_client_module`] grep test enforces
-//! that on every `cargo test` run.
+//! (tree-wide grep tests confine `Command::new(` to it and its construction
+//! to the domain chokepoints); naming the `gh` binary directly from anywhere
+//! else in the domain is forbidden, and the
+//! [`tests::no_gh_name_token_outside_client_or_hook`] grep test enforces that
+//! on every `cargo test` run.
 //!
 //! Read-only enforcement is convention plus a noun/verb allowlist plus
 //! the grep test. `gh` has a wide mutation surface (`pr create`,
@@ -14,12 +15,17 @@
 //! not on [`READ_ONLY_VERBS`]. There is no read-only flavor of `gh`
 //! itself, so the allowlist is the cheapest credible defense.
 //!
-//! The `gh api` escape hatch — the catch-all REST/GraphQL caller — gets
-//! a separate guard: it defaults to GET, but `-X / --method <verb>` can
-//! switch to any HTTP method. We accept the noun `api` only when no
-//! method flag is present, or when the method value is GET
-//! (case-insensitive). Bare `gh api <endpoint>` is GET by `gh`'s own
-//! default; `gh api … -X GET` is accepted as redundant-but-correct.
+//! The `gh api` escape hatch — the catch-all REST/GraphQL caller — gets a
+//! separate guard, [`api_method`], shared with the agent hook so the two
+//! can't disagree. gh picks the HTTP method from more than `-X`: a REST call
+//! becomes a POST as soon as `-f`/`-F`/`--input` adds a parameter, and every
+//! GraphQL call is a POST. So a REST call passes only as an explicit or
+//! implied GET (parameters need an explicit `-X GET`, which sends them as a
+//! query string), and a GraphQL call passes only when every `query` document
+//! defines nothing but `query` operations and fragments; a body sak can't
+//! inspect (`--input`, `query=@file`) is rejected. `-X` / `--method` values
+//! are checked in every spelling, pflag short clusters (`-iXPOST`) included.
+//! Extra environment for the child is limited to [`ALLOWED_ENV`].
 
 use anyhow::{Result, bail};
 
@@ -551,7 +557,7 @@ mod tests {
     /// (see the tree-wide `no_shell_spawns_outside_shared_chokepoint`
     /// test). Banning the constructor alongside the binary name closes the
     /// variable-built `Command` loophole as well as direct `gh` use.
-    const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
+    const COMMAND_NEW_TOKEN: &[&str] = &[crate::test_support::COMMAND_NEW];
 
     #[test]
     fn no_gh_name_token_outside_client_or_hook() {
@@ -566,14 +572,13 @@ mod tests {
 
     #[test]
     fn no_command_new_in_domain() {
-        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
-        // itself (and the "gh" name). Spawning there would need a
-        // `std::process::Command` import, which no domain file has anymore.
+        // No exemption, client.rs included: the token is built with
+        // `concat!`, so this file doesn't match its own test.
         crate::test_support::assert_no_forbidden_tokens_except(
             "gh",
             COMMAND_NEW_TOKEN,
-            &["client.rs"],
-            "only src/gh/client.rs may reference the Command constructor; \
+            &[],
+            "no src/gh/ file may reference the Command constructor; \
              all spawning goes through the shared LocalBinClient",
         );
     }
