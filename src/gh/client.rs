@@ -80,6 +80,26 @@ pub struct Output {
 /// parameters (`-f`/`-F`/`--input`) on a REST endpoint without an explicit
 /// `-X GET` (gh would switch to POST), are rejected.
 pub fn invoke(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Output> {
+    invoke_env(noun, verb, args, &[])
+}
+
+/// Environment variables a command may set on the `gh` child. Only
+/// `GH_REPO` (`[HOST/]OWNER/REPO` for `{owner}`/`{repo}` placeholders and
+/// repo-scoped commands): anything that changes auth or the target host stays
+/// whatever the caller's own environment says.
+const ALLOWED_ENV: &[&str] = &["GH_REPO"];
+
+/// [`invoke`] with extra environment variables for the `gh` child, limited
+/// to [`ALLOWED_ENV`]. The allowlist and method checks are identical.
+pub fn invoke_env(
+    noun: &str,
+    verb: Option<&str>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<Output> {
+    if let Some((name, _)) = env.iter().find(|(n, _)| !ALLOWED_ENV.contains(n)) {
+        bail!("gh: environment variable `{name}` is not allowed for a sak gh call");
+    }
     if !verb_allowed(noun, verb) {
         bail!(
             "gh {} is not in the read-only allowlist ({})",
@@ -100,6 +120,7 @@ pub fn invoke(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Output> {
     for a in args {
         cmd.arg(a);
     }
+    cmd.envs(env.iter().copied());
 
     let output = cmd
         .output()
@@ -118,9 +139,24 @@ pub fn invoke(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Output> {
 /// from "auth expired") should inspect `Output.stderr` themselves via
 /// [`invoke`].
 pub fn invoke_ok(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Vec<u8>> {
-    let out = invoke(noun, verb, args)?;
+    stdout_or_error(invoke(noun, verb, args)?, noun, verb)
+}
+
+/// [`invoke_ok`] with extra environment variables (see [`invoke_env`]).
+pub fn invoke_ok_env(
+    noun: &str,
+    verb: Option<&str>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<Vec<u8>> {
+    stdout_or_error(invoke_env(noun, verb, args, env)?, noun, verb)
+}
+
+/// Stdout of a finished `gh`, or its (concise) stderr as an error on a
+/// non-zero exit. Shared by [`invoke_ok`] and [`invoke_ok_env`].
+fn stdout_or_error(out: Output, noun: &str, verb: Option<&str>) -> Result<Vec<u8>> {
     if !out.status.success() {
-        let trimmed = out.stderr.trim();
+        let trimmed = concise_stderr(&out.stderr);
         let suffix = if trimmed.is_empty() {
             String::new()
         } else {
@@ -129,6 +165,19 @@ pub fn invoke_ok(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Vec<u8
         bail!("gh {} failed{}", display_pair(noun, verb), suffix);
     }
     Ok(out.stdout)
+}
+
+/// gh's stderr for an error, minus the full command help gh appends after a
+/// usage error (`unknown flag: --x`, then a blank line, then every flag and
+/// example). Only the first paragraph is kept when that help (marked by its
+/// `USAGE` heading) is present; other multi-line errors pass through whole.
+fn concise_stderr(stderr: &str) -> &str {
+    let trimmed = stderr.trim();
+    if trimmed.contains("\nUSAGE\n") {
+        trimmed.split("\n\n").next().unwrap_or(trimmed).trim()
+    } else {
+        trimmed
+    }
 }
 
 fn verb_allowed(noun: &str, verb: Option<&str>) -> bool {
@@ -783,6 +832,25 @@ mod tests {
                 "{args:?}"
             );
         }
+    }
+
+    #[test]
+    fn env_is_limited_to_the_allowlist() {
+        // Auth and host stay the caller's: only GH_REPO may be set.
+        for name in ["GH_TOKEN", "GH_HOST", "GITHUB_TOKEN", "PATH"] {
+            let err = invoke_env("api", None, &["user"], &[(name, "x")]).unwrap_err();
+            assert!(err.to_string().contains("is not allowed"), "{name}: {err}");
+        }
+    }
+
+    #[test]
+    fn concise_stderr_drops_appended_command_help() {
+        let usage = "unknown flag: --repo\n\nMakes an authenticated HTTP request.\n\n\
+                     USAGE\n  gh api <endpoint> [flags]\n\nFLAGS\n  -X, --method string\n";
+        assert_eq!(concise_stderr(usage), "unknown flag: --repo");
+        // Ordinary multi-line errors pass through whole.
+        let gql = "GraphQL: Could not resolve to a Repository\n\nSee docs.\n";
+        assert_eq!(concise_stderr(gql), gql.trim());
     }
 
     #[test]

@@ -44,7 +44,7 @@ pub struct ApiArgs {
     /// Endpoint path (e.g. `repos/cli/cli`) or `graphql`
     pub endpoint: String,
 
-    /// Repository in `owner/name` form, substituted into `{owner}`/`{repo}` placeholders
+    /// Repository in `owner/name` form for `{owner}`/`{repo}` placeholders (sent to gh as GH_REPO)
     #[arg(long, value_name = "OWNER/NAME")]
     pub repo: Option<String>,
 
@@ -80,7 +80,7 @@ pub struct ApiArgs {
 pub fn run(args: &ApiArgs) -> Result<Outcome> {
     let argv = build_argv(args);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let bytes = client::invoke_ok("api", None, &argv_refs)?;
+    let bytes = client::invoke_ok_env("api", None, &argv_refs, &build_env(args))?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -115,14 +115,23 @@ fn build_argv(args: &ApiArgs) -> Vec<String> {
     if args.endpoint != client::GRAPHQL_ENDPOINT {
         b.push("-X", "GET");
     }
-    b.push_opt("--repo", args.repo.as_deref())
-        .push_each("-H", &args.headers)
+    b.push_each("-H", &args.headers)
         .push_each("-F", &args.fields)
         .push_each("-f", &args.raw_fields)
         .push_flag_if(args.paginate, "--paginate")
         .push_opt("--jq", args.jq.as_deref())
         .push_opt("--cache", args.cache.as_deref());
     b.into_argv()
+}
+
+/// Environment for the `gh api` child. `gh api` has no `--repo` flag (it
+/// rejects one as unknown); it fills `{owner}`/`{repo}` from the current
+/// directory's repository or from `GH_REPO`, so `--repo` travels as that.
+fn build_env(args: &ApiArgs) -> Vec<(&'static str, &str)> {
+    args.repo
+        .as_deref()
+        .map(|r| vec![("GH_REPO", r)])
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -171,6 +180,17 @@ mod tests {
     }
 
     #[test]
+    fn repo_travels_as_gh_repo_not_a_flag() {
+        // Regression (sak-llm-mw02): `gh api` has no `--repo`; passing one
+        // failed every call with "unknown flag".
+        let mut args = bare("repos/{owner}/{repo}/releases");
+        args.repo = Some("cli/cli".into());
+        assert!(!build_argv(&args).iter().any(|a| a == "--repo"));
+        assert_eq!(build_env(&args), [("GH_REPO", "cli/cli")]);
+        assert!(build_env(&bare("user")).is_empty());
+    }
+
+    #[test]
     fn flags_map_to_gh_spellings() {
         let mut args = bare("repos/{owner}/{repo}/issues");
         args.repo = Some("cli/cli".into());
@@ -188,8 +208,6 @@ mod tests {
                 "repos/{owner}/{repo}/issues",
                 "-X",
                 "GET",
-                "--repo",
-                "cli/cli",
                 "-H",
                 "Accept: application/vnd.github+json",
                 "-F",
