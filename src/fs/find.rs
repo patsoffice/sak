@@ -486,11 +486,24 @@ mod tests {
 
     #[test]
     fn newer_keeps_only_strictly_newer_entries() {
+        use std::time::{Duration, SystemTime};
+
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("old.txt"), "old").unwrap();
         let ref_path = dir.path().join("ref.txt");
-        std::fs::write(&ref_path, "ref").unwrap();
-        std::fs::write(dir.path().join("new.txt"), "new").unwrap();
+        // Explicit mtimes, 10s apart: sequential creates can share a tick on
+        // coarse-clocked filesystems (CI proved it), so creation order alone
+        // is not a deterministic "strictly newer".
+        let now = SystemTime::now();
+        for (name, age) in [("old.txt", 20), ("ref.txt", 10), ("new.txt", 0)] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, name).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(now - Duration::from_secs(age))
+                .unwrap();
+        }
 
         let args = FindArgs {
             path: dir.path().to_path_buf(),
@@ -503,8 +516,7 @@ mod tests {
             follow_links: false,
             limit: None,
         };
-        // Sequential creates land in mtime order on any sane filesystem, so
-        // only new.txt is strictly newer than ref.txt (the reference itself
+        // Only new.txt is strictly newer than ref.txt (the reference itself
         // is excluded — strictly, not >=).
         assert_eq!(run(&args).unwrap(), Outcome::Found);
     }

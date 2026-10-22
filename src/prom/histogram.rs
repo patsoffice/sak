@@ -32,7 +32,7 @@ use crate::prom::client::{PromClient, resolve_endpoint};
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
 use crate::prom::output::emit_json;
-use crate::prom::query::urlencode;
+use crate::sync_http::urlencode;
 
 #[derive(Args)]
 #[command(

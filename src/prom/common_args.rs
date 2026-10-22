@@ -27,3 +27,13 @@ pub struct CommonPromArgs {
     #[arg(long)]
     pub limit: Option<usize>,
 }
+
+impl crate::sync_http::FetchArgs for CommonPromArgs {
+    fn json(&self) -> bool {
+        self.json
+    }
+
+    fn limit(&self) -> Option<usize> {
+        self.limit
+    }
+}

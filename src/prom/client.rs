@@ -1,29 +1,22 @@
-//! Sole chokepoint for HTTP access to a Prometheus or Alertmanager API.
+//! Client for HTTP access to a Prometheus or Alertmanager API.
 //!
-//! Every other module in `src/prom/` must route HTTP through the helpers
-//! exposed here. Importing `ureq::Agent`, calling `ureq::agent`, or using any
-//! non-GET method anywhere else in the domain is forbidden, and the
-//! [`tests::no_mutation_methods_outside_client_module`] grep test enforces it
-//! on every `cargo test --features prom` run.
-//!
-//! `ureq` does not provide a read-only client variant, so this convention is
-//! the only thing that keeps the domain provably free of writes. Prometheus
-//! exposes admin write endpoints under `/api/v1/admin/tsdb/*` when the server
-//! is started with `--web.enable-admin-api`, so the chokepoint is genuinely
-//! guarding something, not just decorative.
+//! All HTTP goes through the shared [`crate::sync_http::client::SyncClient`]
+//! chokepoint — every `ureq::Agent` construction and every non-GET method
+//! lives there, enforced by its own grep test. This module adds only the
+//! Prometheus response-envelope shape on top ([`PromClient::get_prom`]).
+//! The [`tests::no_mutation_methods_outside_client_module`] grep test still
+//! scans `src/prom/` so no command file can grow its own HTTP access.
 
-use std::io::Read;
-
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
-use ureq::Agent;
 
-/// A connected Prometheus / Alertmanager client. Bundles the ureq agent and
-/// the resolved base URL so callers don't have to thread both arguments
-/// through every helper.
+use crate::sync_http::SyncClient;
+
+/// A connected Prometheus / Alertmanager client. Wraps the shared blocking
+/// GET client with the Prometheus `{status, data, errorType?, error?}`
+/// envelope unwrapping.
 pub struct PromClient {
-    agent: Agent,
-    base_url: String,
+    inner: SyncClient,
 }
 
 impl PromClient {
@@ -33,13 +26,8 @@ impl PromClient {
     /// URL and the concatenated `<base><path>` still produces a well-formed
     /// absolute URL.
     pub fn new(base_url: impl Into<String>) -> Self {
-        let mut base = base_url.into();
-        while base.ends_with('/') {
-            base.pop();
-        }
         Self {
-            agent: Agent::new(),
-            base_url: base,
+            inner: SyncClient::new(base_url),
         }
     }
 
@@ -54,34 +42,8 @@ impl PromClient {
     /// directly. For Prometheus `/api/v1/*` endpoints, use
     /// [`PromClient::get_prom`], which unwraps the
     /// `{status, data, errorType?, error?}` envelope.
-    ///
-    /// The body is read via `into_reader()` rather than `into_string()`:
-    /// the latter caps at 10 MiB and `/api/v1/targets` (which carries the
-    /// full `discoveredLabels` set for every target) routinely exceeds that
-    /// on a real cluster. Input is otherwise unbounded — consistent with
-    /// the rest of sak (kube and the docker/lxc clients also buffer whole
-    /// API responses); `--limit` bounds *output*, not the response body.
     pub fn get_json(&self, path: &str) -> Result<Option<Value>> {
-        let url = format!("{}{}", self.base_url, path);
-        let response = match self.agent.get(&url).call() {
-            Ok(response) => response,
-            Err(ureq::Error::Status(404, _)) => return Ok(None),
-            Err(ureq::Error::Status(code, response)) => {
-                let body = response
-                    .into_string()
-                    .unwrap_or_else(|_| "<unreadable body>".to_string());
-                bail!("GET {url} returned HTTP {code}: {body}");
-            }
-            Err(e) => return Err(e).with_context(|| format!("GET {url}")),
-        };
-        let mut body = String::new();
-        response
-            .into_reader()
-            .read_to_string(&mut body)
-            .with_context(|| format!("reading response body for GET {url}"))?;
-        let value: Value = serde_json::from_str(&body)
-            .with_context(|| format!("parsing JSON response for GET {url}"))?;
-        Ok(Some(value))
+        self.inner.get_json(path)
     }
 
     /// Issue a `GET` against a Prometheus `/api/v1/*` endpoint, unwrap the
@@ -106,6 +68,10 @@ impl PromClient {
 /// converts `status=error` into an `anyhow::Error`. Split out from
 /// [`PromClient::get_prom`] so it's unit-testable on hand-built fixtures
 /// without standing up an HTTP server.
+///
+/// Prometheus-specific (the `errorType`/`error` in-band error shape has no
+/// Loki counterpart), so it stays in this domain rather than moving to the
+/// shared `sync_http` module.
 fn unwrap_prom_envelope(raw: &Value, path: &str) -> Result<Value> {
     let status = raw
         .get("status")
@@ -131,9 +97,7 @@ fn unwrap_prom_envelope(raw: &Value, path: &str) -> Result<Value> {
                 "Prometheus returned error for {path}: {error_type}: {error}"
             ))
         }
-        other => Err(anyhow!(
-            "Prometheus response for {path} has unknown status {other:?}"
-        )),
+        other => bail!("Prometheus response for {path} has unknown status {other:?}"),
     }
 }
 
@@ -149,41 +113,20 @@ fn unwrap_prom_envelope(raw: &Value, path: &str) -> Result<Value> {
 /// port-forward is a planned follow-up; for the foundation, URL or env var
 /// is required.
 pub fn resolve_endpoint(flag: Option<&str>, env_var: &str) -> Result<String> {
-    resolve_endpoint_inner(flag, env_var, std::env::var(env_var).ok())
-}
-
-/// Inner pure form of [`resolve_endpoint`] for unit testing — accepts the
-/// env-var value as a parameter so tests don't have to mutate process-wide
-/// env state (which is `unsafe` in Rust 2024 and racy across tests).
-fn resolve_endpoint_inner(
-    flag: Option<&str>,
-    env_var: &str,
-    env_value: Option<String>,
-) -> Result<String> {
-    if let Some(url) = flag
-        && !url.is_empty()
-    {
-        return Ok(url.to_string());
-    }
-    if let Some(url) = env_value
-        && !url.is_empty()
-    {
-        return Ok(url);
-    }
-    Err(anyhow!(
-        "no endpoint URL. Pass --url <URL> or set {env_var}. \
-         (Auto-discovery via Kubernetes service + transparent port-forward \
-         is a planned follow-up.)"
-    ))
+    crate::sync_http::resolve_endpoint_inner(flag, env_var, std::env::var(env_var).ok())
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
+    use crate::sync_http::resolve_endpoint_inner;
+
     /// Tokens that must not appear in any `src/prom/*.rs` file other than
     /// `client.rs`. The directory walk and comment-skip mechanics live in
-    /// [`crate::test_support::assert_no_forbidden_tokens`].
+    /// [`crate::test_support::assert_no_forbidden_tokens`]. The actual
+    /// `ureq` construction lives in the shared `sync_http` chokepoint; this
+    /// test keeps the prom domain from growing its own HTTP access.
     const FORBIDDEN_TOKENS: &[&str] = &[
         "ureq::Agent",
         "ureq::agent",
@@ -202,22 +145,9 @@ mod tests {
         crate::test_support::assert_no_forbidden_tokens(
             "prom",
             FORBIDDEN_TOKENS,
-            "ureq agent / mutation methods must be confined to src/prom/client.rs",
+            "ureq agent / mutation methods must be confined to the sync_http chokepoint; \
+             no src/prom/*.rs outside client.rs may touch HTTP",
         );
-    }
-
-    #[test]
-    fn new_strips_trailing_slashes() {
-        let c = super::PromClient::new("https://prom:9090/");
-        assert_eq!(c.base_url, "https://prom:9090");
-        let c = super::PromClient::new("https://prom:9090////");
-        assert_eq!(c.base_url, "https://prom:9090");
-    }
-
-    #[test]
-    fn new_preserves_no_trailing_slash() {
-        let c = super::PromClient::new("https://prom:9090");
-        assert_eq!(c.base_url, "https://prom:9090");
     }
 
     #[test]
@@ -263,7 +193,7 @@ mod tests {
 
     #[test]
     fn resolve_endpoint_prefers_flag() {
-        let resolved = super::resolve_endpoint_inner(
+        let resolved = resolve_endpoint_inner(
             Some("http://flag:9090"),
             "PROMETHEUS_URL",
             Some("http://env:9090".to_string()),
@@ -274,18 +204,15 @@ mod tests {
 
     #[test]
     fn resolve_endpoint_falls_back_to_env() {
-        let resolved = super::resolve_endpoint_inner(
-            None,
-            "PROMETHEUS_URL",
-            Some("http://env:9090".to_string()),
-        )
-        .unwrap();
+        let resolved =
+            resolve_endpoint_inner(None, "PROMETHEUS_URL", Some("http://env:9090".to_string()))
+                .unwrap();
         assert_eq!(resolved, "http://env:9090");
     }
 
     #[test]
     fn resolve_endpoint_errors_when_neither_set() {
-        let err = super::resolve_endpoint_inner(None, "PROMETHEUS_URL", None).unwrap_err();
+        let err = resolve_endpoint_inner(None, "PROMETHEUS_URL", None).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("PROMETHEUS_URL"), "got: {msg}");
         assert!(msg.contains("--url"), "got: {msg}");
@@ -293,7 +220,7 @@ mod tests {
 
     #[test]
     fn resolve_endpoint_treats_empty_flag_as_unset() {
-        let resolved = super::resolve_endpoint_inner(
+        let resolved = resolve_endpoint_inner(
             Some(""),
             "PROMETHEUS_URL",
             Some("http://env:9090".to_string()),
@@ -304,8 +231,7 @@ mod tests {
 
     #[test]
     fn resolve_endpoint_treats_empty_env_as_unset() {
-        let err =
-            super::resolve_endpoint_inner(None, "PROMETHEUS_URL", Some(String::new())).unwrap_err();
+        let err = resolve_endpoint_inner(None, "PROMETHEUS_URL", Some(String::new())).unwrap_err();
         assert!(format!("{err}").contains("PROMETHEUS_URL"));
     }
 }

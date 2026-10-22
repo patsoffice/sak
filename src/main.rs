@@ -25,6 +25,8 @@ mod output;
 mod prom;
 #[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(any(feature = "prom", feature = "loki"))]
+mod sync_http;
 mod talos;
 #[cfg(test)]
 mod test_support;
@@ -146,7 +148,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak linux mounts --type ext4                Mount table from /proc/self/mountinfo
   sak linux loadavg                           Typed /proc/loadavg fields
   sak linux uptime --human                    Uptime + idle from /proc/uptime
-  sak linux sysctl '^net\\.ipv4\\.'           sysctl knobs from /proc/sys (regex filter)
+  sak linux sysctl '^net\\.ipv4\\.'             sysctl knobs from /proc/sys (regex filter)
   sak linux process --all                     Process table from /proc/<pid>
   sak linux network --state LISTEN            Decoded sockets from /proc/net/*",
     );

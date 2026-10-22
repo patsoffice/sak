@@ -25,6 +25,7 @@ use serde_json::Value;
 use crate::loki::common_args::CommonLokiArgs;
 use crate::loki::runner::run_loki;
 use crate::output::collapse_ws;
+use crate::sync_http::urlencode;
 
 #[derive(Args)]
 #[command(
@@ -237,25 +238,6 @@ fn escape_label_value(s: &str) -> String {
     out
 }
 
-/// Minimal `application/x-www-form-urlencoded` encoder for query parameter
-/// values. Encodes anything outside the unreserved set (RFC 3986). Avoids
-/// pulling in a dedicated URL crate just to escape LogQL braces.
-///
-/// `pub(super)` so `sak loki query-range`, `label-values`, and `series` reuse
-/// the same encoder when building their request paths.
-pub(super) fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            _ => write!(&mut out, "%{:02X}", byte).unwrap(),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,14 +387,8 @@ mod tests {
 
     #[test]
     fn urlencode_handles_logql_punctuation() {
-        assert_eq!(urlencode("foo bar"), "foo%20bar");
+        // Encoder itself lives in `sync_http` (shared with prom); pin the
+        // LogQL shape here.
         assert_eq!(urlencode("{app=\"api\"}"), "%7Bapp%3D%22api%22%7D");
-        assert_eq!(urlencode("a-b_c.d~e"), "a-b_c.d~e");
-    }
-
-    #[test]
-    fn urlencode_handles_non_ascii() {
-        // µ = U+00B5, encoded UTF-8 as C2 B5
-        assert_eq!(urlencode("µs"), "%C2%B5s");
     }
 }

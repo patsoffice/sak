@@ -11,8 +11,8 @@ use clap::Args;
 
 use crate::loki::common_args::CommonLokiArgs;
 use crate::loki::labels::extract_strings;
-use crate::loki::query::urlencode;
 use crate::loki::runner::run_loki;
+use crate::sync_http::urlencode;
 
 #[derive(Args)]
 #[command(

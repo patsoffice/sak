@@ -8,9 +8,11 @@
 //!
 //! `ureq` exposes mutation methods (`post`, `put`, `patch`, `delete`) on the
 //! same agent used for reads. To keep the domain provably read-only, **all**
-//! HTTP access is confined to [`client`]. Other modules in `src/prom/` must
-//! not import `ureq::Agent`, call `ureq::agent(`, or use any non-GET method.
-//! A unit test in [`client`] enforces this by grep.
+//! HTTP goes through the shared [`crate::sync_http::client::SyncClient`]
+//! chokepoint; [`client`] only adds the Prometheus envelope shape on top.
+//! Other modules in `src/prom/` must not import `ureq::Agent`, call
+//! `ureq::agent(`, or use any non-GET method. A unit test in [`client`]
+//! enforces this by grep.
 //!
 //! Prometheus exposes admin write endpoints under `/api/v1/admin/tsdb/*` when
 //! the server is started with `--web.enable-admin-api`, so the chokepoint is

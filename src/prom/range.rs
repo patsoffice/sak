@@ -11,15 +11,15 @@
 //! same command walks the window forward in real time.
 
 use crate::output::Outcome;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
-use crate::prom::query::{format_result, urlencode};
+use crate::prom::query::format_result;
 use crate::prom::runner::run_prom;
+use crate::sync_http::{unix_now, urlencode};
 
 #[derive(Args)]
 #[command(
@@ -82,15 +82,6 @@ fn build_range_path(query: &str, start: u64, end: u64, step: u64) -> String {
         end,
         step
     )
-}
-
-/// Current unix time in whole seconds. Surfaces a clear error rather than
-/// panicking if the system clock is set before the unix epoch.
-fn unix_now() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| anyhow!("system clock is before the unix epoch: {e}"))?
-        .as_secs())
 }
 
 #[cfg(test)]

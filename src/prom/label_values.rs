@@ -11,8 +11,8 @@ use clap::Args;
 
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::labels::extract_strings;
-use crate::prom::query::urlencode;
 use crate::prom::runner::run_prom;
+use crate::sync_http::urlencode;
 
 #[derive(Args)]
 #[command(

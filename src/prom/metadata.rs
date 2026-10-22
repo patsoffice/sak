@@ -15,8 +15,8 @@ use serde_json::Value;
 
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::output::collapse_newlines;
-use crate::prom::query::urlencode;
 use crate::prom::runner::run_prom;
+use crate::sync_http::urlencode;
 
 #[derive(Args)]
 #[command(

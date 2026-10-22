@@ -14,7 +14,6 @@
 
 use crate::output::Outcome;
 use std::fmt::Write as _;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -22,8 +21,9 @@ use serde_json::Value;
 
 use crate::duration::parse_duration;
 use crate::loki::common_args::CommonLokiArgs;
-use crate::loki::query::{format_labels, urlencode};
+use crate::loki::query::format_labels;
 use crate::loki::runner::run_loki;
+use crate::sync_http::{unix_now, urlencode};
 
 /// Nanoseconds per second — the multiplier from sak's second-granularity
 /// duration windows to the nanosecond Unix epochs Loki's series API expects
@@ -128,16 +128,6 @@ pub(super) fn extract_series_lines(data: &Value) -> Result<Vec<String>> {
         out.push(format_labels(Some(series)));
     }
     Ok(out)
-}
-
-/// Current unix time in whole seconds. Surfaces a clear error rather than
-/// panicking if the system clock is set before the unix epoch (mirrors
-/// `crate::loki::range::unix_now`).
-fn unix_now() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| anyhow!("system clock is before the unix epoch: {e}"))?
-        .as_secs())
 }
 
 #[cfg(test)]

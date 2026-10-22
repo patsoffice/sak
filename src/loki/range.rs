@@ -18,15 +18,15 @@
 //! accepts a bare-seconds step).
 
 use crate::output::Outcome;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 
 use crate::duration::parse_duration;
 use crate::loki::common_args::CommonLokiArgs;
-use crate::loki::query::{format_result, urlencode};
+use crate::loki::query::format_result;
 use crate::loki::runner::run_loki;
+use crate::sync_http::{unix_now, urlencode};
 
 /// Nanoseconds per second — the multiplier from sak's second-granularity
 /// duration windows to the nanosecond Unix epochs Loki's range API expects.
@@ -97,16 +97,6 @@ fn build_range_path(query: &str, start_secs: u64, end_secs: u64, step_secs: u64)
         end_secs.saturating_mul(NANOS_PER_SEC),
         step_secs
     )
-}
-
-/// Current unix time in whole seconds. Surfaces a clear error rather than
-/// panicking if the system clock is set before the unix epoch (mirrors
-/// `crate::loki::series::unix_now` / `prom::range::unix_now`).
-fn unix_now() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| anyhow!("system clock is before the unix epoch: {e}"))?
-        .as_secs())
 }
 
 #[cfg(test)]

@@ -14,7 +14,6 @@
 
 use crate::output::Outcome;
 use std::fmt::Write as _;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use clap::Args;
@@ -22,8 +21,8 @@ use serde_json::Value;
 
 use crate::prom::common_args::CommonPromArgs;
 use crate::prom::duration::parse_duration;
-use crate::prom::query::urlencode;
 use crate::prom::runner::run_prom;
+use crate::sync_http::{unix_now, urlencode};
 
 #[derive(Args)]
 #[command(
@@ -160,16 +159,6 @@ fn escape_label_value(s: &str) -> String {
         }
     }
     out
-}
-
-/// Current unix time in whole seconds. Surfaces a clear error rather than
-/// panicking if the system clock is set before the unix epoch (mirrors
-/// `range::unix_now`).
-fn unix_now() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| anyhow!("system clock is before the unix epoch: {e}"))?
-        .as_secs())
 }
 
 #[cfg(test)]

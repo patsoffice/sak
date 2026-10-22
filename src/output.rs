@@ -255,14 +255,20 @@ pub fn collapse_ws(s: &str) -> String {
 }
 
 /// Pretty-print `data` as JSON through a [`BoundedWriter`], honoring `--limit`.
-/// This is the `--json` / metadata-dump branch shared by `sak prom` (every
-/// command), `sak k8s schema`, `sak docker info`, and `sak lxc info`. Always
-/// returns [`Outcome::Found`] — a JSON dump of an empty result is still a
-/// successful response, just an empty one.
+/// This is the `--json` / metadata-dump branch shared by `sak prom` and
+/// `sak loki` (every command), `sak k8s schema`, `sak docker info`, and
+/// `sak lxc info`. Always returns [`Outcome::Found`] — a JSON dump of an
+/// empty result is still a successful response, just an empty one.
 ///
 /// Gated to the domains that use it so lean builds don't carry it (and don't
 /// trip the dead-code lint).
-#[cfg(any(feature = "k8s", feature = "lxc", feature = "docker", feature = "prom"))]
+#[cfg(any(
+    feature = "k8s",
+    feature = "lxc",
+    feature = "docker",
+    feature = "prom",
+    feature = "loki"
+))]
 pub fn emit_json(data: &serde_json::Value, limit: Option<usize>) -> anyhow::Result<Outcome> {
     let stdout = io::stdout();
     let handle = stdout.lock();
