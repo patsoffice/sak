@@ -88,10 +88,11 @@ A few patterns recur — when you write tests for a new command, reach for these
 ## Commit Style
 
 - Prefix: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`
-- Summary line under 80 chars, no trailing period, no counts — e.g. `feat: fs read/head/tail/grep default to stdin`
+- Summary line under 80 chars, no trailing period, then a **blank line** before the body (without it git folds the bullets into the subject and `git log --oneline` shows one giant line) — e.g. `feat: fs read/head/tail/grep default to stdin`
 - Body: one `-` bullet per logical change, wrapped git-style (~72 cols), saying what and why rather than file names
 - Issue references ride on the relevant bullet (`...; closes sak-llm-bzfm`), not as separate trailers
-- Verification gets its own last bullet: `fmt/clippy/test/lean-test clean`, with pass counts when they matter (`(1170 + 783 passed)`); version bumps are named in a bullet too (`Patch bump 0.20.15 -> 0.20.16`)
+- Verification gets its own last bullet naming the gates that passed, without totals: `fmt/clippy/test/lean-test clean`. Version bumps are named in a bullet too (`Patch bump 0.20.15 -> 0.20.16`)
+- No volatile counts anywhere in the message — see [Documentation Hygiene](#documentation-hygiene)
 
 ## Architecture
 
@@ -205,7 +206,28 @@ br sync --flush-only                           # Export to JSONL for git commit
 
 ## Documentation Hygiene
 
-Do not embed volatile counts or statistics (e.g., "69 tests pass", "10 commands") in documentation files like AGENTS.md, README.md, or issue close reasons. These go stale immediately after the next change. Instead, describe *what* exists qualitatively and let readers run `cargo test`, `sak --help`, etc. to get current numbers.
+Do not embed volatile counts. A count is volatile if it describes the size of the codebase or of a change, so the next commit can make it wrong. Write down *what* exists and let readers run `cargo test`, `sak --help`, `br list`, etc. for current numbers.
+
+**Volatile (don't write these):**
+
+- Test totals and deltas: "1201 + 814 passed", "69 tests pass", "5 new tests"
+- Inventory counts: "10 commands", "18 directives", "eleven audit issues", "155 crates", "51 warnings"
+- Any number that is really "how many of X there are right now"
+
+**Fine (stable facts, not counts):**
+
+- Version numbers (`0.20.15 -> 0.20.16`), issue IDs, commit SHAs
+- Behavioural constants that are part of the spec: defaults (`10` lines), poll intervals (`250ms`), exit codes, limits a flag enforces
+- Numbers inside examples, fixtures or repro steps
+
+**Where it applies:** everywhere text outlives the moment it was written:
+
+- Docs: AGENTS.md, CLAUDE.md, README.md
+- Code: comments, `about`/`long_about`/`after_help` text, hook messages
+- Git: commit subjects *and* bodies, including the verification bullet (say `fmt/clippy/test/lean-test clean`, not how many passed)
+- Beads: issue titles, descriptions, comments and `--reason` close reasons
+
+If a number matters to the reader, name the thing instead: "added tests for truncation and stdin drain", not "added 5 tests"; "all `%` directives listed in --help", not "18 directives".
 
 ## Gotchas
 
