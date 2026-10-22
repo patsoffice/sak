@@ -231,6 +231,9 @@ pub fn run(args: &StatsArgs) -> Result<Outcome> {
     }
     let delim = parse_delimiter(&args.delimiter)?;
 
+    if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
+    }
     let path = args
         .files
         .first()

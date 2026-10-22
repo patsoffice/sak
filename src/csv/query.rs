@@ -282,6 +282,7 @@ pub fn run(args: &QueryArgs) -> Result<Outcome> {
     let mut found_any = false;
 
     if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
         process_source(
             &name,

@@ -64,6 +64,7 @@ pub fn run(args: &ConvertArgs) -> Result<Outcome> {
     let pretty_json = !args.compact;
 
     if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let (_name, value) = read_config_value(Path::new("-"), args.from)?;
         emit(&value, args.to, pretty_json, &mut handle)?;
     } else {

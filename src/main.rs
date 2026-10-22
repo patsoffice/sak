@@ -10,6 +10,7 @@ mod git;
 mod hash;
 mod helm;
 mod hook;
+mod input;
 mod json;
 #[cfg(feature = "k8s")]
 mod k8s;

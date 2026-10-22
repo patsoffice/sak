@@ -97,6 +97,7 @@ pub fn run(args: &ValidateArgs) -> Result<Outcome> {
     let mut any_invalid = false;
 
     if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
         let errors = validate_one(&name, reader, delim, args.strict);
         if errors.is_empty() {

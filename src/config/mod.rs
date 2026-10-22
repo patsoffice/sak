@@ -227,6 +227,7 @@ pub fn read_config_inputs(
 ) -> Result<Vec<(String, Value)>> {
     let mut out = Vec::new();
     if files.is_empty() {
+        crate::input::require_piped_stdin()?;
         out.push(read_config_value(Path::new("-"), format)?);
     } else {
         for path in files {

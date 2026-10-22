@@ -85,6 +85,7 @@ fn read_source(path: &Path) -> Result<(String, String)> {
 pub fn read_json_inputs(files: &[PathBuf]) -> Result<Vec<(String, Value)>> {
     let mut out = Vec::new();
     if files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let mut s = String::new();
         io::stdin()
             .read_to_string(&mut s)
@@ -110,6 +111,7 @@ pub fn read_json_inputs(files: &[PathBuf]) -> Result<Vec<(String, Value)>> {
 pub fn read_json_inputs_lines(files: &[PathBuf]) -> Result<Vec<(String, Value)>> {
     let mut out = Vec::new();
     if files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let stdin = io::stdin();
         read_ndjson_into("<stdin>", stdin.lock(), &mut out)?;
     } else {

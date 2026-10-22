@@ -121,6 +121,7 @@ pub(crate) fn read_path_bytes(path: &Path) -> Result<(String, Vec<u8>)> {
 pub fn read_cert_inputs(files: &[PathBuf]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut out = Vec::new();
     if files.is_empty() {
+        crate::input::require_piped_stdin()?;
         read_one_cert_source(Path::new("-"), &mut out)?;
     } else {
         for path in files {

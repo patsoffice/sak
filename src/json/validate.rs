@@ -186,6 +186,7 @@ pub fn run(args: &ValidateArgs) -> Result<Outcome> {
 
     let mut sources: Vec<(String, String)> = Vec::new();
     if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let mut s = String::new();
         io::stdin()
             .read_to_string(&mut s)

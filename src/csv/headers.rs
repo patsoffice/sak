@@ -179,6 +179,7 @@ pub fn run(args: &HeadersArgs) -> Result<Outcome> {
     let mut writer = BoundedWriter::new(handle, args.limit);
 
     if args.files.is_empty() {
+        crate::input::require_piped_stdin()?;
         let (name, reader) = crate::csv::open_reader(Path::new("-"))?;
         process_reader(&name, reader, delim, args, &mut writer, false)?;
     } else {

@@ -107,7 +107,9 @@ pub fn run(cmd: &HashCommand) -> Result<Outcome> {
     let mut writer = BoundedWriter::new(stdout.lock(), args.limit);
 
     if args.files.is_empty() {
-        // Stdin → bare hex, never a path (there is none).
+        // Stdin → bare hex, never a path (there is none). Nothing piped must
+        // not hash as the empty input — that digest looks like an answer.
+        crate::input::require_piped_stdin()?;
         let hex = hash_reader(algo, io::stdin().lock())?;
         writer.write_line(&hex)?;
         writer.flush()?;
