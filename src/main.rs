@@ -15,6 +15,7 @@ mod json;
 #[cfg(feature = "k8s")]
 mod k8s;
 mod linux;
+mod local_bin;
 #[cfg(feature = "loki")]
 mod loki;
 #[cfg(feature = "lxc")]

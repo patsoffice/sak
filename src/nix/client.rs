@@ -1,10 +1,11 @@
-//! Sole chokepoint for invoking the `nix` binary.
+//! Chokepoint for invoking the `nix` binary.
 //!
 //! Every other module under `src/nix/` must call into the helpers exposed
-//! here. Constructing a `std::process::Command` for `nix` from anywhere else
-//! in the domain is forbidden, and the
-//! [`tests::no_nix_invocations_outside_client_module`] grep test enforces it
-//! on every `cargo test` run.
+//! here. Spawning itself is the shared [`crate::local_bin::LocalBinClient`]
+//! (the tree-wide grep test confines all `Command::new(` to it); naming the
+//! `nix` binaries directly from anywhere else in the domain is forbidden,
+//! and the [`tests::no_nix_invocations_outside_client_module`] grep test
+//! enforces that on every `cargo test` run.
 //!
 //! Read-only enforcement is convention plus a verb allowlist plus the grep
 //! test. `nix` has plenty of mutating subcommands (`build`, `copy`, `store
@@ -27,9 +28,13 @@
 //! boundary at the verb level and avoids the chokepoint growing knowledge of
 //! every `nix` subcommand's surface.
 
-use std::process::Command;
+use std::ffi::OsString;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
+
+use crate::local_bin::{LocalBinClient, pair_allowed, stderr_suffix};
+
+pub use crate::local_bin::Output;
 
 /// (verb, subverb) pairs of `nix` that this domain is allowed to invoke.
 /// Anything not covered here is rejected at the chokepoint with a hard error —
@@ -59,14 +64,14 @@ pub const READ_ONLY_VERBS: &[(&str, Option<&str>)] = &[
     ("why-depends", None),
 ];
 
-/// Output of one `nix` invocation. Stdout is bytes (so binary-ish payloads
-/// round-trip cleanly) and stderr is text (so error reporting is readable).
-#[derive(Debug)]
-pub struct Output {
-    pub stdout: Vec<u8>,
-    pub stderr: String,
-    pub status: std::process::ExitStatus,
-}
+/// The single `nix` spawner. All subprocesses go through the shared
+/// [`LocalBinClient`]; the `"nix"` literal lives here (and in `hook.rs`
+/// tool names) by chokepoint-test exemption.
+static NIX: LocalBinClient = LocalBinClient::new("nix");
+
+/// The single `nix-store` spawner. A second binary (the classic stable CLI),
+/// so it gets its own client value rather than reusing [`NIX`].
+static NIX_STORE: LocalBinClient = LocalBinClient::new("nix-store");
 
 /// Invoke `nix --extra-experimental-features '…' <verb> [subverb] <args...>`.
 ///
@@ -77,6 +82,55 @@ pub struct Output {
 /// the domain works on stock nix. For `eval`, `--read-only` is injected too so
 /// expression evaluation can't write to the store.
 pub fn invoke(verb: &str, subverb: Option<&str>, args: &[&str]) -> Result<Output> {
+    ensure_allowed(verb, subverb)?;
+    NIX.run(&build_argv(verb, subverb, args))
+}
+
+/// Convenience: run [`invoke`] and return stdout if the process exited 0. On
+/// non-zero exit, surface stderr (trimmed) as an `anyhow::Error` — same shape
+/// as the shared `run_ok`, routed through [`invoke`] so the raw `Output`
+/// stays available to callers that need it.
+pub fn invoke_ok(verb: &str, subverb: Option<&str>, args: &[&str]) -> Result<Vec<u8>> {
+    let out = invoke(verb, subverb, args)?;
+    if !out.status.success() {
+        bail!(
+            "nix {} failed{}",
+            display_verb(verb, subverb),
+            stderr_suffix(&out.stderr)
+        );
+    }
+    Ok(out.stdout)
+}
+
+/// Assemble the `nix --extra-experimental-features … <verb> [subverb]
+/// [--read-only] <args...>` argv.
+///
+/// `nix-command flakes` experimental features are injected unconditionally so
+/// the domain works on stock nix. For `eval`, `--read-only` is injected too
+/// so expression evaluation can't write to the store.
+fn build_argv(verb: &str, subverb: Option<&str>, args: &[&str]) -> Vec<OsString> {
+    let mut argv: Vec<OsString> = vec![
+        "--extra-experimental-features".into(),
+        "nix-command flakes".into(),
+        verb.into(),
+    ];
+    if let Some(sv) = subverb {
+        argv.push(sv.into());
+    }
+    // `nix eval` evaluates arbitrary expressions; force read-only so it can't
+    // realise derivations or otherwise write to the store.
+    if verb == "eval" {
+        argv.push("--read-only".into());
+    }
+    argv.extend(args.iter().map(OsString::from));
+    argv
+}
+
+/// Reject a `(verb, subverb)` pair not covered by [`READ_ONLY_VERBS`] before
+/// any subprocess spawns. Shared by [`invoke`] and [`invoke_ok`] so the
+/// allowlist can't be bypassed by picking the wrong entry point
+/// (`nix_store_query` carries its own flag check for the second binary).
+fn ensure_allowed(verb: &str, subverb: Option<&str>) -> Result<()> {
     if !verb_allowed(verb, subverb) {
         bail!(
             "nix verb `{}` is not in the read-only allowlist ({})",
@@ -84,62 +138,16 @@ pub fn invoke(verb: &str, subverb: Option<&str>, args: &[&str]) -> Result<Output
             allowlist_summary()
         );
     }
-
-    let mut cmd = Command::new("nix");
-    cmd.arg("--extra-experimental-features")
-        .arg("nix-command flakes");
-    cmd.arg(verb);
-    if let Some(sv) = subverb {
-        cmd.arg(sv);
-    }
-    // `nix eval` evaluates arbitrary expressions; force read-only so it can't
-    // realise derivations or otherwise write to the store.
-    if verb == "eval" {
-        cmd.arg("--read-only");
-    }
-    for a in args {
-        cmd.arg(a);
-    }
-
-    let output = cmd
-        .output()
-        .with_context(|| "spawning `nix` (is it installed and on PATH?)".to_string())?;
-
-    Ok(Output {
-        stdout: output.stdout,
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    })
+    Ok(())
 }
 
-/// Convenience: run [`invoke`] and return stdout if the process exited 0. On
-/// non-zero exit, surface stderr (trimmed) as an `anyhow::Error`.
-pub fn invoke_ok(verb: &str, subverb: Option<&str>, args: &[&str]) -> Result<Vec<u8>> {
-    let out = invoke(verb, subverb, args)?;
-    if !out.status.success() {
-        let trimmed = out.stderr.trim();
-        let suffix = if trimmed.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", trimmed)
-        };
-        bail!("nix {} failed{}", display_verb(verb, subverb), suffix);
-    }
-    Ok(out.stdout)
-}
-
-/// Whether `(verb, subverb)` is covered by the allowlist. A `None` entry for
-/// `verb` admits any subverb (the subverb is treated as a read-only argument);
-/// otherwise the provided subverb must equal a `Some(_)` entry exactly.
+/// Whether `(verb, subverb)` is covered by the allowlist. Matching semantics
+/// are the shared [`pair_allowed`](crate::local_bin::pair_allowed): a `None`
+/// entry for `verb` admits any subverb (the subverb is treated as a read-only
+/// argument); otherwise the provided subverb must equal a `Some(_)` entry
+/// exactly.
 fn verb_allowed(verb: &str, subverb: Option<&str>) -> bool {
-    READ_ONLY_VERBS.iter().any(|(v, sv)| {
-        *v == verb
-            && match (sv, subverb) {
-                (None, _) => true,
-                (Some(want), Some(got)) => *want == got,
-                (Some(_), None) => false,
-            }
-    })
+    pair_allowed(READ_ONLY_VERBS, verb, subverb)
 }
 
 fn display_verb(verb: &str, subverb: Option<&str>) -> String {
@@ -182,24 +190,10 @@ pub fn nix_store_query(flag: &str, path: &str) -> Result<Vec<u8>> {
         );
     }
 
-    let output = Command::new("nix-store")
-        .arg("--query")
-        .arg(flag)
-        .arg(path)
-        .output()
-        .with_context(|| "spawning `nix-store` (is it installed and on PATH?)".to_string())?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let trimmed = stderr.trim();
-        let suffix = if trimmed.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", trimmed)
-        };
-        bail!("nix-store --query {} failed{}", flag, suffix);
-    }
-    Ok(output.stdout)
+    NIX_STORE.run_ok(
+        &format!("nix-store --query {flag}"),
+        &["--query", flag, path],
+    )
 }
 
 #[cfg(test)]
@@ -212,11 +206,12 @@ mod tests {
     /// would leave the `Command::new(` loophole — see the next test.
     const NIX_NAME_TOKENS: &[&str] = &["\"nix\"", "\"nix-store\""];
 
-    /// The `Command::new(` constructor — banned strictly (no `hook.rs`
-    /// exemption) because hook rules are pure data and never spawn
-    /// subprocesses. Banning the names alone would let a `Command` built from
-    /// a variable slip through; banning the constructor alone would let a
-    /// non-nix `Command` be re-targeted. The two assertions together close
+    /// `Command::new(` must appear nowhere in this domain — not even in
+    /// `client.rs`: all spawning goes through the shared `LocalBinClient`
+    /// (see the tree-wide `no_shell_spawns_outside_shared_chokepoint`
+    /// test). Banning the constructor alongside the binary names closes
+    /// the variable-built `Command` loophole as well. The two assertions
+    /// together close
     /// every realistic shell-out path for either binary.
     const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
@@ -232,11 +227,16 @@ mod tests {
     }
 
     #[test]
-    fn no_command_new_outside_client_module() {
-        crate::test_support::assert_no_forbidden_tokens(
+    fn no_command_new_in_domain() {
+        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
+        // itself (and the "nix" names). Spawning there would need a
+        // `std::process::Command` import, which no domain file has anymore.
+        crate::test_support::assert_no_forbidden_tokens_except(
             "nix",
             COMMAND_NEW_TOKEN,
-            "Command::new(...) must be confined to src/nix/client.rs",
+            &["client.rs"],
+            "only src/nix/client.rs may reference the Command constructor; \
+             all spawning goes through the shared LocalBinClient",
         );
     }
 

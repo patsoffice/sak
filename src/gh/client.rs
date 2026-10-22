@@ -1,10 +1,11 @@
-//! Sole chokepoint for invoking the `gh` (GitHub CLI) binary.
+//! Chokepoint for invoking the `gh` (GitHub CLI) binary.
 //!
 //! Every other module under `src/gh/` must call into the helpers exposed
-//! here. Constructing a `std::process::Command` for `gh` from anywhere
-//! else in the domain is forbidden, and the
-//! [`tests::no_gh_invocations_outside_client_module`] grep test enforces
-//! it on every `cargo test` run.
+//! here. Spawning itself is the shared [`crate::local_bin::LocalBinClient`]
+//! (the tree-wide grep test confines all `Command::new(` to it); naming the
+//! `gh` binary directly from anywhere else in the domain is forbidden, and
+//! the [`tests::no_gh_invocations_outside_client_module`] grep test enforces
+//! that on every `cargo test` run.
 //!
 //! Read-only enforcement is convention plus a noun/verb allowlist plus
 //! the grep test. `gh` has a wide mutation surface (`pr create`,
@@ -20,9 +21,11 @@
 //! (case-insensitive). Bare `gh api <endpoint>` is GET by `gh`'s own
 //! default; `gh api … -X GET` is accepted as redundant-but-correct.
 
-use std::process::Command;
+use anyhow::{Result, bail};
 
-use anyhow::{Context, Result, bail};
+use crate::local_bin::{LocalBinClient, pair_allowed};
+
+pub use crate::local_bin::Output;
 
 /// (noun, Option<verb>) pairs that `sak gh` is allowed to invoke.
 ///
@@ -60,15 +63,10 @@ pub const READ_ONLY_VERBS: &[(&str, Option<&str>)] = &[
     ("api", None),
 ];
 
-/// Output of one `gh` invocation. Stdout is bytes (so binary responses
-/// — e.g. `gh api` returning a tarball — round-trip cleanly) and stderr
-/// is text (so error reporting is readable).
-#[derive(Debug)]
-pub struct Output {
-    pub stdout: Vec<u8>,
-    pub stderr: String,
-    pub status: std::process::ExitStatus,
-}
+/// The single `gh` spawner. All subprocesses go through the shared
+/// [`LocalBinClient`]; the `"gh"` literal lives here (and in `hook.rs`
+/// tool names) by chokepoint-test exemption.
+static GH: LocalBinClient = LocalBinClient::new("gh");
 
 /// Invoke `gh <noun> [<verb>] <args...>`.
 ///
@@ -100,37 +98,20 @@ pub fn invoke_env(
     if let Some((name, _)) = env.iter().find(|(n, _)| !ALLOWED_ENV.contains(n)) {
         bail!("gh: environment variable `{name}` is not allowed for a sak gh call");
     }
-    if !verb_allowed(noun, verb) {
-        bail!(
-            "gh {} is not in the read-only allowlist ({})",
-            display_pair(noun, verb),
-            format_allowlist()
-        );
-    }
+    ensure_allowed(noun, verb)?;
 
     if noun == "api" {
         check_api_method(args)?;
     }
 
-    let mut cmd = Command::new("gh");
-    cmd.arg(noun);
+    let mut argv: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    argv.push(noun);
     if let Some(v) = verb {
-        cmd.arg(v);
+        argv.push(v);
     }
-    for a in args {
-        cmd.arg(a);
-    }
-    cmd.envs(env.iter().copied());
+    argv.extend(args.iter().copied());
 
-    let output = cmd
-        .output()
-        .with_context(|| "spawning `gh` (is it installed and on PATH?)".to_string())?;
-
-    Ok(Output {
-        stdout: output.stdout,
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    })
+    GH.run_with_env(&argv, env)
 }
 
 /// Convenience: run `invoke` and return stdout if the process exited 0.
@@ -180,15 +161,26 @@ fn concise_stderr(stderr: &str) -> &str {
     }
 }
 
+/// Whether `(noun, verb)` is permitted by the allowlist. Matching semantics
+/// are the shared [`pair_allowed`](crate::local_bin::pair_allowed): a `None`
+/// entry admits the whole noun family; otherwise the verb must equal a
+/// `Some(_)` entry exactly.
 fn verb_allowed(noun: &str, verb: Option<&str>) -> bool {
-    READ_ONLY_VERBS.iter().any(|(n, v)| {
-        *n == noun
-            && match (v, verb) {
-                (None, _) => true,
-                (Some(allowed), Some(got)) => *allowed == got,
-                (Some(_), None) => false,
-            }
-    })
+    pair_allowed(READ_ONLY_VERBS, noun, verb)
+}
+
+/// Reject a `(noun, verb)` pair not on [`READ_ONLY_VERBS`] before any
+/// subprocess spawns. Shared by [`invoke`] and [`invoke_env`] so the
+/// allowlist can't be bypassed by picking the wrong entry point.
+fn ensure_allowed(noun: &str, verb: Option<&str>) -> Result<()> {
+    if !verb_allowed(noun, verb) {
+        bail!(
+            "gh {} is not in the read-only allowlist ({})",
+            display_pair(noun, verb),
+            format_allowlist()
+        );
+    }
+    Ok(())
 }
 
 fn display_pair(noun: &str, verb: Option<&str>) -> String {
@@ -554,12 +546,11 @@ mod tests {
     /// move it to a `const` declared in `client.rs` and re-export it.
     const GH_NAME_TOKEN: &[&str] = &["\"gh\""];
 
-    /// The `Command::new(` constructor — banned strictly (no `hook.rs`
-    /// exemption) because hook rules are pure data and never spawn
-    /// subprocesses. Banning the name alone would leave the variable-built
-    /// `Command` loophole; banning the constructor alone would let a
-    /// non-`gh` `Command` be re-targeted. The two assertions together close
-    /// every realistic shell-out path.
+    /// `Command::new(` must appear nowhere in this domain — not even in
+    /// `client.rs`: all spawning goes through the shared `LocalBinClient`
+    /// (see the tree-wide `no_shell_spawns_outside_shared_chokepoint`
+    /// test). Banning the constructor alongside the binary name closes the
+    /// variable-built `Command` loophole as well as direct `gh` use.
     const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
     #[test]
@@ -574,11 +565,16 @@ mod tests {
     }
 
     #[test]
-    fn no_command_new_outside_client_module() {
-        crate::test_support::assert_no_forbidden_tokens(
+    fn no_command_new_in_domain() {
+        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
+        // itself (and the "gh" name). Spawning there would need a
+        // `std::process::Command` import, which no domain file has anymore.
+        crate::test_support::assert_no_forbidden_tokens_except(
             "gh",
             COMMAND_NEW_TOKEN,
-            "Command::new(...) must be confined to src/gh/client.rs",
+            &["client.rs"],
+            "only src/gh/client.rs may reference the Command constructor; \
+             all spawning goes through the shared LocalBinClient",
         );
     }
 

@@ -1,8 +1,10 @@
-//! Sole chokepoint for invoking the `talosctl` binary.
+//! Chokepoint for invoking the `talosctl` binary.
 //!
 //! Every other module under `src/talos/` must call into the helpers exposed
-//! here. Constructing a `std::process::Command` for `talosctl` from anywhere
-//! else in the domain is forbidden, and the
+//! here. Spawning itself is the shared [`crate::local_bin::LocalBinClient`]
+//! (the tree-wide grep test confines all `Command::new(` to it); naming the
+//! `talosctl` binary directly from anywhere else in the domain is forbidden,
+//! and the
 //! [`tests::no_talosctl_invocations_outside_client_module`] grep test
 //! enforces it on every `cargo test` run.
 //!
@@ -17,10 +19,14 @@
 //! the verb level and avoids the chokepoint growing knowledge of every
 //! `talosctl` subcommand's surface.
 
+use std::ffi::OsString;
 use std::path::Path;
-use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
+
+use crate::local_bin::{LocalBinClient, stderr_suffix};
+
+pub use crate::local_bin::Output;
 
 /// Subcommands of `talosctl` that this domain is allowed to invoke. Anything
 /// not on this list is rejected at the chokepoint with a hard error — no
@@ -32,15 +38,10 @@ use anyhow::{Context, Result, bail};
 /// <verb> --help` output before extending the list.
 pub const READ_ONLY_VERBS: &[&str] = &["get", "read", "version"];
 
-/// Output of one `talosctl` invocation. Stdout is bytes (so binary file
-/// reads via `talosctl read` round-trip cleanly) and stderr is text (so
-/// error reporting is readable).
-#[derive(Debug)]
-pub struct Output {
-    pub stdout: Vec<u8>,
-    pub stderr: String,
-    pub status: std::process::ExitStatus,
-}
+/// The single `talosctl` spawner. All subprocesses go through the shared
+/// [`LocalBinClient`]; the `"talosctl"` literal lives here (and in
+/// `hook.rs` tool names) by chokepoint-test exemption.
+static TALOSCTL: LocalBinClient = LocalBinClient::new("talosctl");
 
 /// Invoke `talosctl <verb> <args...>` with optional connection flags.
 ///
@@ -49,7 +50,7 @@ pub struct Output {
 ///
 /// `node` adds `-n <ip>`. `talosconfig` adds `--talosconfig <path>`. Both are
 /// applied before `verb` so they don't tangle with verb-specific flags in
-/// `args`.
+/// `args`. Spawning itself is the shared [`LocalBinClient::run`].
 pub fn invoke(
     verb: &str,
     args: &[&str],
@@ -64,27 +65,19 @@ pub fn invoke(
         );
     }
 
-    let mut cmd = Command::new("talosctl");
+    let mut argv: Vec<OsString> = Vec::new();
     if let Some(cfg) = talosconfig {
-        cmd.arg("--talosconfig").arg(cfg);
+        argv.push("--talosconfig".into());
+        argv.push(cfg.into());
     }
     if let Some(n) = node {
-        cmd.arg("-n").arg(n);
+        argv.push("-n".into());
+        argv.push(n.into());
     }
-    cmd.arg(verb);
-    for a in args {
-        cmd.arg(a);
-    }
+    argv.push(verb.into());
+    argv.extend(args.iter().map(OsString::from));
 
-    let output = cmd
-        .output()
-        .with_context(|| "spawning `talosctl` (is it installed and on PATH?)".to_string())?;
-
-    Ok(Output {
-        stdout: output.stdout,
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    })
+    TALOSCTL.run(&argv)
 }
 
 /// Convenience: run `invoke` and return stdout if the process exited 0.
@@ -99,14 +92,13 @@ pub fn invoke_ok(
 ) -> Result<Vec<u8>> {
     let out = invoke(verb, args, node, talosconfig)?;
     if !out.status.success() {
-        let trimmed = out.stderr.trim();
-        let suffix = if trimmed.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", trimmed)
-        };
         let node_suffix = node.map(|n| format!(" on node {}", n)).unwrap_or_default();
-        bail!("talosctl {}{} failed{}", verb, node_suffix, suffix);
+        bail!(
+            "talosctl {}{} failed{}",
+            verb,
+            node_suffix,
+            stderr_suffix(&out.stderr)
+        );
     }
     Ok(out.stdout)
 }
@@ -125,8 +117,9 @@ mod tests {
     /// exemption) because hook rules are pure data and never spawn
     /// subprocesses. Banning the name alone would leave the variable-built
     /// `Command` loophole; banning the constructor alone would let a
-    /// non-talosctl `Command` be re-targeted. The two assertions together
-    /// close every realistic shell-out path.
+    /// non-talosctl `Command` be re-targeted. Spawning itself lives in
+    /// the shared `LocalBinClient`, so the constructor is banned domain-wide
+    /// here too — the tree-wide chokepoint test is the backstop.
     const COMMAND_NEW_TOKEN: &[&str] = &["Command::new("];
 
     #[test]
@@ -141,11 +134,16 @@ mod tests {
     }
 
     #[test]
-    fn no_command_new_outside_client_module() {
-        crate::test_support::assert_no_forbidden_tokens(
+    fn no_command_new_in_domain() {
+        // client.rs stays exempt: it holds the COMMAND_NEW_TOKEN literal
+        // itself (and the "talosctl" name). Spawning there would need a
+        // `std::process::Command` import, which no domain file has anymore.
+        crate::test_support::assert_no_forbidden_tokens_except(
             "talos",
             COMMAND_NEW_TOKEN,
-            "Command::new(...) must be confined to src/talos/client.rs",
+            &["client.rs"],
+            "only src/talos/client.rs may reference the Command constructor; \
+             all spawning goes through the shared LocalBinClient",
         );
     }
 
