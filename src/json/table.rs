@@ -73,8 +73,9 @@ pub struct TableArgs {
 }
 
 /// Parse the comma-separated `--fields` argument into trimmed field paths. Each
-/// field doubles as its own header. Empty entries are rejected.
-fn parse_fields(spec: &str) -> Result<Vec<String>> {
+/// field doubles as its own header. Empty entries are rejected. Shared with
+/// `config table`.
+pub(crate) fn parse_fields(spec: &str) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for raw in spec.split(',') {
         let part = raw.trim();
@@ -92,7 +93,8 @@ fn parse_fields(spec: &str) -> Result<Vec<String>> {
 /// Render one resolved value to a TSV-safe cell: missing path or JSON null
 /// becomes `missing`; scalars render raw; arrays/objects render as compact JSON.
 /// Tabs and newlines are collapsed so a value can't break the TSV row.
-fn render_cell(value: Option<&Value>, missing: &str) -> String {
+/// Shared with `config table`.
+pub(crate) fn render_cell(value: Option<&Value>, missing: &str) -> String {
     match value {
         None | Some(Value::Null) => missing.to_string(),
         Some(v) => collapse_ws(&format_value(v, true, false)),
@@ -104,8 +106,12 @@ fn render_cell(value: Option<&Value>, missing: &str) -> String {
 /// Object (and array) elements resolve each field path independently. A scalar
 /// element (string/number/bool/null) has no addressable fields, so it renders
 /// in the first column with the `missing` token filling the rest — preserving
-/// the column count for ragged scalar/object mixes.
-fn project_row(element: &Value, fields: &[String], missing: &str) -> Result<Vec<String>> {
+/// the column count for ragged scalar/object mixes. Shared with `config table`.
+pub(crate) fn project_row(
+    element: &Value,
+    fields: &[String],
+    missing: &str,
+) -> Result<Vec<String>> {
     if !element.is_object() && !element.is_array() {
         let mut row = Vec::with_capacity(fields.len());
         row.push(render_cell(Some(element), missing));

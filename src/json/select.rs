@@ -69,13 +69,15 @@ pub struct SelectArgs {
 }
 
 #[derive(Debug)]
-struct Field {
-    alias: String,
-    path: String,
+pub(crate) struct Field {
+    pub(crate) alias: String,
+    pub(crate) path: String,
 }
 
 /// Parse the comma-separated `paths` argument into ordered fields.
-fn parse_fields(spec: &str) -> Result<Vec<Field>> {
+/// Shared with `config select`, which projects the same way over
+/// TOML/YAML/plist inputs normalized to `Value`.
+pub(crate) fn parse_fields(spec: &str) -> Result<Vec<Field>> {
     let mut out: Vec<Field> = Vec::new();
     for raw in spec.split(',') {
         let part = raw.trim();
@@ -193,7 +195,12 @@ pub fn run(args: &SelectArgs) -> Result<Outcome> {
     }
 }
 
-fn project(value: &Value, fields: &[Field], null_missing: bool) -> Result<Map<String, Value>> {
+/// Project `fields` out of one object value. Shared with `config select`.
+pub(crate) fn project(
+    value: &Value,
+    fields: &[Field],
+    null_missing: bool,
+) -> Result<Map<String, Value>> {
     let mut out = Map::new();
     for f in fields {
         match resolve_expression(value, &f.path)? {

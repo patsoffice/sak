@@ -22,6 +22,8 @@ pub mod length;
 pub mod paths;
 pub mod query;
 pub mod schema;
+pub mod select;
+pub mod table;
 pub mod type_;
 pub mod validate;
 
@@ -38,6 +40,8 @@ use serde_json::Value;
 #[derive(Subcommand)]
 pub enum ConfigCommand {
     Query(query::QueryArgs),
+    Select(select::SelectArgs),
+    Table(table::TableArgs),
     Exists(exists::ExistsArgs),
     Keys(keys::KeysArgs),
     Flatten(flatten::FlattenArgs),
@@ -54,6 +58,8 @@ pub enum ConfigCommand {
 pub fn run(cmd: &ConfigCommand) -> Result<Outcome> {
     match cmd {
         ConfigCommand::Query(args) => query::run(args),
+        ConfigCommand::Select(args) => select::run(args),
+        ConfigCommand::Table(args) => table::run(args),
         ConfigCommand::Exists(args) => exists::run(args),
         ConfigCommand::Keys(args) => keys::run(args),
         ConfigCommand::Flatten(args) => flatten::run(args),

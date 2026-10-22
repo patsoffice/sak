@@ -84,6 +84,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json diff a.json b.json                 Structural diff of two JSON files
   sak json validate data.json                 Check JSON validity
   sak config query .package.name Cargo.toml   Read TOML/YAML/plist values
+  sak config select .package.name,.version Cargo.toml   Project fields from a config object
+  sak config table .packages --fields name,version Cargo.toml   Config array to TSV rows
   sak config keys --types config.yaml         List config keys with types
   sak config flatten Info.plist               Flatten any config file
   sak config paths config.yaml                List leaf paths (no values)
