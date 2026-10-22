@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 
-use super::{STDIN_LABEL, is_stdin};
+use super::{STDIN_LABEL, is_stdin, require_piped_stdin};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -15,8 +15,9 @@ use crate::output::BoundedWriter;
         Prints `lines<TAB>words<TAB>bytes<TAB>filename` per file (matching `wc`'s \
         definitions: lines are newline characters, words are whitespace-separated \
         runs, bytes are the raw byte length). With more than one file, a `total` \
-        row is appended. With no files, counts standard input and omits the \
-        filename column; a file argument of '-' also reads standard input \
+        row is appended. With no files, counts piped standard input (exit 2 if \
+        nothing is piped, rather than a misleading 0) and omits the filename \
+        column; a file argument of '-' always reads standard input \
         (matches cat/grep) and is labelled `(standard input)`.\n\n\
         Pass any of --lines/--words/--bytes to restrict the output to those \
         columns (in that fixed order); with none given, all three are shown.",
@@ -29,7 +30,7 @@ Examples:
   cat file | sak fs wc -                    '-' is the stdin alias"
 )]
 pub struct WcArgs {
-    /// Files to count (reads stdin when none are given, or for a '-' argument)
+    /// Files to count (none: piped stdin; '-' always reads stdin)
     pub files: Vec<PathBuf>,
 
     /// Show the line count
@@ -110,6 +111,7 @@ pub fn run(args: &WcArgs) -> Result<Outcome> {
     let mut writer = BoundedWriter::new(stdout.lock(), args.limit);
 
     if args.files.is_empty() {
+        require_piped_stdin()?;
         let mut data = Vec::new();
         io::stdin().read_to_end(&mut data)?;
         let c = count(&data);

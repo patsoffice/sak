@@ -8,7 +8,7 @@ use globset::Glob;
 use regex::Regex;
 use walkdir::WalkDir;
 
-use super::STDIN_LABEL;
+use super::{STDIN_LABEL, stdin_is_piped};
 use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative_path};
 
 #[derive(Args)]
@@ -19,10 +19,11 @@ use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative
         backreferences).\n\n\
         Recursively searches files for lines matching the given regex pattern. \
         Supports multiline matching where . matches newlines.\n\n\
-        Reads stdin when no path is given, or pass '-' explicitly (matches \
-        grep/ripgrep), enabling pipelines like 'sak json query … | sak fs \
-        grep …'. Stdin can be mixed with file/directory paths; matches from \
-        stdin are labelled '(standard input)'.\n\n\
+        With no path, searches piped stdin ('sak json query … | sak fs grep \
+        …', or '< file') and otherwise the current directory, like ripgrep. \
+        Pass '-' to read stdin unconditionally; it can be mixed with \
+        file/directory paths, and matches from stdin are labelled '(standard \
+        input)'.\n\n\
         `-v` / `--invert-match` selects non-matching lines instead, with the \
         usual grep semantics: counts (`-c`, `--total`) count the selected \
         lines, and context flags apply around them.\n\n\
@@ -49,7 +50,7 @@ pub struct GrepArgs {
     /// Regex pattern to search for
     pub pattern: String,
 
-    /// Files or directories to search (reads stdin if omitted; '-' also reads stdin)
+    /// Files or directories to search (omitted: piped stdin, else `.`; '-' reads stdin)
     pub paths: Vec<PathBuf>,
 
     /// Select non-matching lines instead of matching ones
@@ -184,7 +185,7 @@ fn build_regex(pattern: &str, ignore_case: bool, word: bool, multiline: bool) ->
     Regex::new(&full).with_context(|| format!("invalid regex: {}", pattern))
 }
 
-fn collect_files(args: &GrepArgs) -> Result<Vec<PathBuf>> {
+fn collect_files(args: &GrepArgs, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let glob_matcher = args
         .file_glob
         .as_ref()
@@ -194,7 +195,7 @@ fn collect_files(args: &GrepArgs) -> Result<Vec<PathBuf>> {
 
     let mut files = Vec::new();
 
-    for path in &args.paths {
+    for path in paths {
         // '-' is the stdin sentinel, handled separately in run().
         if path.as_os_str() == "-" {
             continue;
@@ -617,11 +618,28 @@ fn emit_result(
     Ok(true)
 }
 
+/// The paths to search and whether to read stdin. Explicit paths are used
+/// as given (stdin only via '-'); with none, piped stdin is searched, else
+/// the current directory. `piped` is only consulted when paths are omitted.
+fn resolve_paths(paths: &[PathBuf], piped: impl FnOnce() -> bool) -> (Vec<PathBuf>, bool) {
+    if !paths.is_empty() {
+        let stdin = paths.iter().any(|p| p.as_os_str() == "-");
+        return (paths.to_vec(), stdin);
+    }
+    if piped() {
+        (Vec::new(), true)
+    } else {
+        (vec![PathBuf::from(".")], false)
+    }
+}
+
 pub fn run(args: &GrepArgs) -> Result<Outcome> {
     let re = build_regex(&args.pattern, args.ignore_case, args.word, args.multiline)?;
-    let files = collect_files(args)?;
-    // Omitted paths, or a '-' among them, read stdin.
-    let read_stdin = args.paths.is_empty() || args.paths.iter().any(|p| p.as_os_str() == "-");
+    // Omitted paths read piped stdin, or search `.` when nothing was piped
+    // (an agent harness's empty stdin must not read as "no matches"). A '-'
+    // among the paths always reads stdin.
+    let (paths, read_stdin) = resolve_paths(&args.paths, stdin_is_piped);
+    let files = collect_files(args, &paths)?;
 
     let before_ctx = args.before_context.or(args.context).unwrap_or(0);
     let after_ctx = args.after_context.or(args.context).unwrap_or(0);
@@ -756,13 +774,28 @@ mod tests {
     }
 
     #[test]
-    fn omitted_paths_mean_stdin() {
-        // No paths and no default: an empty vec signals stdin in run().
-        assert!(parse(&["grep", "pat"]).paths.is_empty());
-        assert_eq!(parse(&["grep", "pat", "-"]).paths, [PathBuf::from("-")]);
+    fn omitted_paths_follow_whether_stdin_is_piped() {
+        // Regression (sak-llm-poqf): with nothing piped (an agent harness's
+        // empty socket, a TTY), an omitted path searches `.` instead of
+        // reading empty stdin and reporting "no matches".
         assert_eq!(
-            parse(&["grep", "pat", "src/"]).paths,
-            [PathBuf::from("src/")]
+            resolve_paths(&[], || false),
+            (vec![PathBuf::from(".")], false)
+        );
+        assert_eq!(resolve_paths(&[], || true), (vec![], true));
+    }
+
+    #[test]
+    fn explicit_paths_ignore_stdin_kind() {
+        let never = || -> bool { panic!("stdin kind consulted for explicit paths") };
+        assert_eq!(
+            resolve_paths(&[PathBuf::from("src/")], never),
+            (vec![PathBuf::from("src/")], false)
+        );
+        // '-' reads stdin unconditionally, even when nothing looks piped.
+        assert_eq!(
+            resolve_paths(&[PathBuf::from("-"), PathBuf::from("src/")], never),
+            (vec![PathBuf::from("-"), PathBuf::from("src/")], true)
         );
     }
 

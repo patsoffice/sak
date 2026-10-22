@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
-use super::is_stdin;
 use super::read::{ReadArgs, run as read_run};
+use super::{is_stdin, require_piped_stdin};
 
 #[derive(Args)]
 #[command(
@@ -16,8 +16,9 @@ use super::read::{ReadArgs, run as read_run};
         on by default and reflect the lines' real positions in the file (disable \
         with --no-line-numbers). Pass --bytes to emit the last N bytes raw \
         instead of whole lines (the byte output is written verbatim, with no \
-        line numbers). Reads stdin when the file is omitted, or pass '-' \
-        explicitly (matches cat/grep); stdin can't be seeked, so it is read \
+        line numbers). With the file omitted, reads piped stdin (exit 2 if \
+        nothing is piped); '-' always reads stdin (matches cat/grep). Stdin \
+        can't be seeked, so it is read \
         fully into memory. --follow prints the last N and then polls the file \
         every 250ms for appended data, continuing line numbers; a truncated \
         file restarts from offset 0 with numbering reset. --follow on stdin \
@@ -32,7 +33,7 @@ Examples:
   sak fs tail --follow app.log             Last 10 lines, then follow growth"
 )]
 pub struct TailArgs {
-    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    /// Path to the file to read (omitted: piped stdin; '-' always reads stdin)
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
@@ -55,9 +56,12 @@ pub struct TailArgs {
 pub fn run(args: &TailArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
         return match args.file.as_ref() {
-            // Omitted file, or '-', reads stdin (a drained pipe has no
-            // growth to follow, so --follow is a no-op there).
-            None => tail_bytes_stdin(n),
+            // Omitted file reads piped stdin; '-' always reads stdin (a
+            // drained pipe has no growth to follow, so --follow is a no-op).
+            None => {
+                require_piped_stdin()?;
+                tail_bytes_stdin(n)
+            }
             Some(path) if is_stdin(path) => tail_bytes_stdin(n),
             Some(path) => {
                 if args.follow {

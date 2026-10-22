@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
-use super::is_stdin;
 use super::read::{ReadArgs, run as read_run};
+use super::{is_stdin, require_piped_stdin};
 
 #[derive(Args)]
 #[command(
@@ -15,9 +15,9 @@ use super::read::{ReadArgs, run as read_run};
         An ergonomic shorthand for `sak fs read <file> -n 1-N`: line numbers are \
         on by default (disable with --no-line-numbers). Pass --bytes to emit the \
         first N bytes raw instead of whole lines — useful for peeking at binary \
-        headers (the byte output is written verbatim, with no line numbers). Reads \
-        stdin when the file is omitted, or pass '-' explicitly (matches \
-        cat/grep).",
+        headers (the byte output is written verbatim, with no line numbers). With \
+        the file omitted, reads piped stdin (exit 2 if nothing is piped); '-' \
+        always reads stdin (matches cat/grep).",
     after_help = "\
 Examples:
   sak fs head src/main.rs                  First 10 lines
@@ -27,7 +27,7 @@ Examples:
   some-cmd | sak fs head                   First 10 lines of piped stdin"
 )]
 pub struct HeadArgs {
-    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    /// Path to the file to read (omitted: piped stdin; '-' always reads stdin)
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
@@ -46,8 +46,11 @@ pub struct HeadArgs {
 pub fn run(args: &HeadArgs) -> Result<Outcome> {
     if let Some(n) = args.bytes {
         return match args.file.as_ref() {
-            // Omitted file, or '-', reads stdin.
-            None => head_bytes(io::stdin().lock(), n),
+            // Omitted file reads piped stdin; '-' always reads stdin.
+            None => {
+                require_piped_stdin()?;
+                head_bytes(io::stdin().lock(), n)
+            }
             Some(path) if is_stdin(path) => head_bytes(io::stdin().lock(), n),
             Some(path) => {
                 let f = std::fs::File::open(path)

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 
-use super::is_stdin;
+use super::{is_stdin, require_piped_stdin};
 use crate::output::{BoundedWriter, Limit, format_line_number, line_number_width};
 
 /// Lines emitted when the caller doesn't pass `--limit`. Big enough to cover
@@ -19,9 +19,9 @@ const DEFAULT_LIMIT: usize = 2000;
     about = "Read file contents with line numbers",
     long_about = "Read file contents with line numbers.\n\n\
         Displays the contents of a file with line numbers for easy reference. \
-        Supports reading specific line ranges and limiting output length. Reads \
-        stdin when the file is omitted, or pass '-' explicitly (matches \
-        cat/grep).",
+        Supports reading specific line ranges and limiting output length. With \
+        the file omitted, reads piped stdin (exit 2 if nothing is piped); '-' \
+        always reads stdin (matches cat/grep).",
     after_help = "\
 Examples:
   sak fs read src/main.rs                  Read entire file (up to 2000 lines)
@@ -32,7 +32,7 @@ Examples:
   some-cmd | sak fs read                   Read piped stdin (file omitted)"
 )]
 pub struct ReadArgs {
-    /// Path to the file to read (reads stdin if omitted; '-' also reads stdin)
+    /// Path to the file to read (omitted: piped stdin; '-' always reads stdin)
     pub file: Option<PathBuf>,
 
     /// Line range to read (e.g., "1-50", "100-", "-20")
@@ -82,10 +82,13 @@ fn parse_line_range(spec: &str) -> Result<(Option<usize>, Option<usize>)> {
 }
 
 pub fn run(args: &ReadArgs) -> Result<Outcome> {
-    // An omitted file, or a file arg of "-", reads stdin (cat/grep
-    // convention); anything else is a path.
+    // An omitted file reads piped stdin; a file arg of "-" always reads stdin
+    // (cat/grep convention); anything else is a path.
     let reader: Box<dyn BufRead> = match args.file.as_ref() {
-        None => Box::new(io::stdin().lock()),
+        None => {
+            require_piped_stdin()?;
+            Box::new(io::stdin().lock())
+        }
         Some(path) if is_stdin(path) => Box::new(io::stdin().lock()),
         Some(path) => {
             let file =

@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use regex::Regex;
 
-use super::is_stdin;
+use super::{is_stdin, require_piped_stdin};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -14,8 +14,9 @@ use crate::output::BoundedWriter;
     about = "Extract fields from delimited text",
     long_about = "Extract fields from delimited text.\n\n\
         Splits each line by a delimiter and outputs selected fields. \
-        Reads from stdin if no files are given, or for any file argument of '-' \
-        (matches cat/grep). Default delimiter is whitespace.",
+        With no files, reads piped stdin (exit 2 if nothing is piped); a file \
+        argument of '-' always reads stdin (matches cat/grep). Default \
+        delimiter is whitespace.",
     after_help = "\
 Examples:
   echo 'alice 30 nyc' | sak fs cut -f 1,3           Extract fields 1 and 3
@@ -27,7 +28,7 @@ Examples:
   cat data.tsv | sak fs cut -f 1 -                  '-' is the stdin alias"
 )]
 pub struct CutArgs {
-    /// Input files (reads stdin if omitted, or for a '-' argument)
+    /// Input files (omitted: piped stdin; '-' always reads stdin)
     pub files: Vec<PathBuf>,
 
     /// Field delimiter (default: split on whitespace runs)
@@ -382,7 +383,8 @@ pub fn run(args: &CutArgs) -> Result<Outcome> {
     };
 
     if args.files.is_empty() {
-        // Read from stdin
+        // No files: read piped stdin.
+        require_piped_stdin()?;
         let stdin = io::stdin();
         let reader = stdin.lock();
         process_lines(
