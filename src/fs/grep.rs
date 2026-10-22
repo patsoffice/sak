@@ -441,11 +441,11 @@ fn search_content_multiline(
 
     let mut matches_found: Vec<LineMatch> = Vec::new();
     let mut count = 0;
+    let starts = line_starts(content);
 
     for mat in re.find_iter(content) {
         count += 1;
-        // Find line number of match start
-        let line_num = content[..mat.start()].matches('\n').count() + 1;
+        let line_num = line_at(&starts, mat.start());
         let matched_text = mat.as_str();
 
         // For multiline matches, show all lines of the match
@@ -489,6 +489,20 @@ fn search_content_multiline(
     }))
 }
 
+/// Byte offset at which each line of `content` starts (line 1 at index 0),
+/// so a match offset maps to its line by binary search instead of
+/// re-counting newlines from the top for every match.
+fn line_starts(content: &str) -> Vec<usize> {
+    std::iter::once(0)
+        .chain(content.match_indices('\n').map(|(i, _)| i + 1))
+        .collect()
+}
+
+/// 1-based line number containing byte offset `pos`.
+fn line_at(starts: &[usize], pos: usize) -> usize {
+    starts.partition_point(|&s| s <= pos)
+}
+
 /// Complement of [`search_content_multiline`]: emit the lines no match span
 /// touches. Untouched lines are usually contiguous, so unlike the forward
 /// path this emits no `--` separators — every output row is a selected line.
@@ -498,18 +512,26 @@ fn search_content_multiline_inverted(
     max_count: Option<usize>,
     label: PathBuf,
 ) -> Result<Option<MatchResult>> {
-    use std::collections::HashSet;
-
-    let mut covered: HashSet<usize> = HashSet::new();
+    let starts = line_starts(content);
+    // Index 0 unused; one slot per line (plus one for a match at EOF).
+    let mut covered = vec![false; starts.len() + 1];
     for mat in re.find_iter(content) {
-        let first = content[..mat.start()].matches('\n').count() + 1;
-        let last = content[..mat.end()].matches('\n').count() + 1;
-        covered.extend(first..=last);
+        let first = line_at(&starts, mat.start());
+        // A span's last line holds its last *byte*: a match ending in `\n`
+        // ends on that newline's line, not on the line after it. A
+        // zero-width match covers only the line it sits on.
+        let last_byte = if mat.end() > mat.start() {
+            mat.end() - 1
+        } else {
+            mat.start()
+        };
+        let last = line_at(&starts, last_byte);
+        covered[first..=last].fill(true);
     }
 
     let mut matches_found: Vec<LineMatch> = Vec::new();
     for (i, line) in content.lines().enumerate() {
-        if covered.contains(&(i + 1)) {
+        if covered[i + 1] {
             continue;
         }
         matches_found.push(LineMatch {
@@ -1081,6 +1103,53 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(result.count, 2);
+    }
+
+    fn inverted_lines(input: &str, pattern: &str) -> Vec<(usize, String)> {
+        let re = Regex::new(pattern).unwrap();
+        search_content_multiline_inverted(input, &re, None, PathBuf::from(STDIN_LABEL))
+            .unwrap()
+            .map(|r| {
+                r.matches
+                    .into_iter()
+                    .map(|m| (m.line_num, m.content))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn invert_multiline_keeps_line_after_newline_terminated_match() {
+        // Regression (sak-llm-q1dz): `foo\n` ends on line 1's newline, so
+        // line 2 is untouched and must be selected.
+        assert_eq!(
+            inverted_lines("foo\nbar\nbaz\n", r"foo\n"),
+            [(2, "bar".to_string()), (3, "baz".to_string())]
+        );
+        // A span crossing lines covers through its last byte only.
+        assert_eq!(
+            inverted_lines("a\nb\nc\nd\n", r"a\nb\n"),
+            [(3, "c".to_string()), (4, "d".to_string())]
+        );
+    }
+
+    #[test]
+    fn invert_multiline_zero_width_match_covers_its_line_only() {
+        // `(?m)^$` matches (zero-width) only on the empty line 2; the
+        // lines around it stay selected.
+        assert_eq!(
+            inverted_lines("a\n\nc\n", r"(?m)^$"),
+            [(1, "a".to_string()), (3, "c".to_string())]
+        );
+    }
+
+    #[test]
+    fn line_at_maps_offsets_to_lines() {
+        let starts = line_starts("ab\ncd\n\nef");
+        // 'a'=0 'b'=1 '\n'=2 | 'c'=3 'd'=4 '\n'=5 | '\n'=6 | 'e'=7
+        for (pos, line) in [(0, 1), (2, 1), (3, 2), (5, 2), (6, 3), (7, 4), (9, 4)] {
+            assert_eq!(line_at(&starts, pos), line, "offset {pos}");
+        }
     }
 
     #[test]
