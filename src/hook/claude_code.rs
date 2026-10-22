@@ -30,6 +30,7 @@ use serde::Deserialize;
 use crate::output::Outcome;
 
 use super::rule::{self, HookRule};
+use super::shell_text::{strip_heredocs, strip_redirections};
 
 #[derive(Args)]
 #[command(
@@ -43,7 +44,11 @@ use super::rule::{self, HookRule};
         The classifier recurses through shell composition, so a redirectable \
         read can't hide behind a pipeline, a substitution (`$(…)` / backticks), \
         a subshell or brace group, a `sh -c '…'` script, a wrapper prefix \
-        (sudo/env/xargs/timeout/nice/…), or a `find … -exec …` clause.\n\n\
+        (sudo/env/xargs/timeout/nice/…), or a `find … -exec …` clause. Each \
+        line of a multi-line command is its own command. Heredoc bodies are \
+        data (only an unquoted body's `$(…)` / backticks are checked), output \
+        redirection targets (`> out.txt`) are not reads, and `< file` is a \
+        read of that file.\n\n\
         Prefix the Bash command with SAK_HOOK_BYPASS=1 to disable the hook for \
         one call. The marker is honored wherever it appears as an env \
         assignment (leading the command, after `env`/`sudo`, inside `sh -c`), \
@@ -198,6 +203,9 @@ fn bypass_depth(command: &str, depth: usize) -> bool {
     if depth > MAX_DEPTH {
         return false;
     }
+    // A marker quoted in a heredoc body is data (e.g. docs being written),
+    // not an assignment.
+    let command = &strip_heredocs(command);
     if extract_nested(command)
         .iter()
         .any(|inner| bypass_depth(inner, depth + 1))
@@ -252,6 +260,9 @@ fn classify_depth(command: &str, depth: usize) -> Option<String> {
     if depth > MAX_DEPTH {
         return None;
     }
+    // Heredoc bodies are data, not commands (only an unquoted body's
+    // substitutions survive); continuations join and comments drop.
+    let command = &strip_heredocs(command);
     // Reads hidden inside command substitutions / subshell / brace groups don't
     // appear as the leading token of any pipeline segment, so recurse into them
     // first.
@@ -261,7 +272,8 @@ fn classify_depth(command: &str, depth: usize) -> Option<String> {
         }
     }
     for part in split_pipeline(command) {
-        let tokens = tokenize(&part);
+        // `> out.txt` is not a file the command reads; `< in.txt` is.
+        let tokens = tokenize(&strip_redirections(&part));
         let tokens = strip_env_assignments(tokens);
         if tokens.is_empty() {
             continue;
@@ -273,8 +285,9 @@ fn classify_depth(command: &str, depth: usize) -> Option<String> {
     None
 }
 
-/// Split on `|`, `||`, `&&`, `;`, `&` outside of single/double quotes and
-/// outside of backslash escapes.
+/// Split on `|`, `||`, `&&`, `;`, `&` and newlines outside of single/double
+/// quotes and outside of backslash escapes. The `&` of a redirection (`2>&1`,
+/// `>&2`, `&> f`) is not a separator.
 fn split_pipeline(cmd: &str) -> Vec<String> {
     let bytes = cmd.as_bytes();
     let mut parts = Vec::new();
@@ -335,6 +348,14 @@ fn split_pipeline(cmd: &str) -> Vec<String> {
             };
             continue;
         }
+        if c == '&'
+            && ((i > 0 && matches!(bytes[i - 1], b'>' | b'<'))
+                || (i + 1 < n && bytes[i + 1] == b'>'))
+        {
+            buf.push(c);
+            i += 1;
+            continue;
+        }
         if c == '&' {
             push_trimmed(&mut parts, &mut buf);
             i += if i + 1 < n && bytes[i + 1] == b'&' {
@@ -344,7 +365,7 @@ fn split_pipeline(cmd: &str) -> Vec<String> {
             };
             continue;
         }
-        if c == ';' {
+        if c == ';' || c == '\n' {
             push_trimmed(&mut parts, &mut buf);
             i += 1;
             continue;
@@ -906,7 +927,7 @@ fn extract_nested(cmd: &str) -> Vec<String> {
 /// Return the contents between a balanced `open`/`close` pair starting at
 /// `bytes[start] == open`, plus the index just past the closing delimiter.
 /// Quote- and escape-aware; honors nesting. `None` if never balanced.
-fn balanced(bytes: &[u8], start: usize, open: u8, close: u8) -> Option<(String, usize)> {
+pub(super) fn balanced(bytes: &[u8], start: usize, open: u8, close: u8) -> Option<(String, usize)> {
     let n = bytes.len();
     let mut depth = 0i32;
     let mut i = start;
@@ -958,7 +979,7 @@ fn balanced(bytes: &[u8], start: usize, open: u8, close: u8) -> Option<(String, 
 
 /// Return a backtick span's contents (starting at the opening backtick) plus the
 /// index past the closing backtick. Backslash-aware; `None` if unterminated.
-fn backtick_span(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+pub(super) fn backtick_span(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     let n = bytes.len();
     let inner_start = start + 1;
     let mut i = inner_start;

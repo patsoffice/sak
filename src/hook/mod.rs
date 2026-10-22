@@ -14,6 +14,7 @@
 pub mod claude_code;
 pub mod muse_code;
 pub mod rule;
+mod shell_text;
 
 #[cfg(test)]
 mod tests;

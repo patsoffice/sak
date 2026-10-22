@@ -1070,3 +1070,61 @@ fn unknown_command_allows() {
     assert!(allows("cargo build"));
     assert!(allows("make test"));
 }
+
+// ── heredocs, newlines, redirections (sak-llm-6diz) ───────────
+
+#[test]
+fn heredoc_bodies_are_data() {
+    // Writing a doc that mentions reads must not trip their rules.
+    assert!(allows(
+        "cat > notes.md <<'EOF'\nRun `git status`; then cat file.txt | grep x\n\
+         gh api x -f a=b\nEOF"
+    ));
+    assert!(allows("cat <<-\"END\"\n\tgit log\n\tEND"));
+    // An unquoted body's substitutions do run.
+    assert!(blocks("cat > out.md <<EOF\nconfig: $(cat secret.txt)\nEOF"));
+    assert!(blocks("cat > out.md <<EOF\nlog: `git log -1`\nEOF"));
+    // A heredoc-carried bypass marker is data, not an escape hatch.
+    assert!(blocks(
+        "cat > d.md <<'EOF'\nSAK_HOOK_BYPASS=1\nEOF\ngit status"
+    ));
+}
+
+#[test]
+fn commands_after_a_heredoc_still_classify() {
+    assert!(blocks("cat > a.md <<'EOF'\nbody\nEOF\ngit status"));
+    assert!(blocks("python3 - <<'PY'\nprint(1)\nPY\ncat result.txt"));
+}
+
+#[test]
+fn newlines_separate_commands() {
+    // Regression: a newline was whitespace, so later lines hid behind the
+    // first command's name.
+    assert!(blocks("echo hi\ncat file.txt"));
+    assert!(blocks("cd src\ngit diff"));
+    assert!(allows("echo hi\necho there"));
+    // A newline inside quotes is not a separator.
+    assert!(allows("echo 'line one\ncat file.txt'"));
+    // Continuations join; comments drop.
+    assert!(blocks("cat \\\n  file.txt"));
+    assert!(allows("make test # then cat file.txt"));
+}
+
+#[test]
+fn output_redirection_targets_are_not_reads() {
+    assert!(allows("cat > out.txt"));
+    assert!(allows("cat >> log.txt"));
+    assert!(allows("echo hi > out.txt 2>&1"));
+    assert!(allows("cat <<< \"inline text\""));
+    assert!(allows("make 2>&1 | tee build.log"));
+    // The source of a copy is still a read.
+    assert!(blocks("cat file.txt > out.txt"));
+    assert!(blocks("cat file.txt 2>/dev/null"));
+}
+
+#[test]
+fn input_redirection_is_a_read_of_its_target() {
+    assert!(blocks("cat < file.txt"));
+    assert!(blocks("head -n 5 < file.txt"));
+    assert!(blocks("grep foo < notes.txt"));
+}
