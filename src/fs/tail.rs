@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 use super::read::{ReadArgs, run as read_run};
-use super::{is_stdin, require_piped_stdin};
+use super::{TailCount, is_stdin, require_piped_stdin};
 
 #[derive(Args)]
 #[command(
@@ -17,7 +17,10 @@ use super::{is_stdin, require_piped_stdin};
         on by default and reflect the lines' real positions in the file (disable \
         with --no-line-numbers). Pass --bytes to emit the last N bytes raw \
         instead of whole lines (the byte output is written verbatim, with no \
-        line numbers). With the file omitted, reads piped stdin (exit 2 if \
+        line numbers). `-n +N` (coreutils form) prints every line from line N \
+        to the end instead, e.g. `-n +2` to skip a header line; the output is \
+        bounded like `sak fs read` (its default cap, or --limit). With the file \
+        omitted, reads piped stdin (exit 2 if \
         nothing is piped); '-' always reads stdin (matches cat/grep). Stdin \
         can't be seeked, so it is read \
         fully into memory.\n\n\
@@ -32,6 +35,7 @@ Examples:
   sak fs tail logfile.txt                  Last 10 lines
   sak fs tail logfile.txt 50               Last 50 lines
   sak fs tail -n 50 logfile.txt            Last 50 lines (-n spelling)
+  sak fs tail -n +2 data.csv               Everything from line 2 (skip a header)
   sak fs tail --no-line-numbers file.txt   Last 10 lines, no line numbers
   sak fs tail --bytes 256 capture.bin      Last 256 bytes (raw)
   some-cmd | sak fs tail                   Last 10 lines of piped stdin
@@ -45,15 +49,17 @@ pub struct TailArgs {
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
-    #[arg(value_name = "N", conflicts_with_all = ["bytes", "num_lines"])]
+    #[arg(value_name = "N", value_parser = super::parse_plain_count,
+          conflicts_with_all = ["bytes", "num_lines"])]
     pub lines: Option<usize>,
 
-    /// Number of lines to show (coreutils `-n` spelling; conflicts with positional N)
-    #[arg(short = 'n', long = "lines", value_name = "N", conflicts_with_all = ["lines", "bytes"])]
-    pub num_lines: Option<usize>,
+    /// Last N lines, or `+N` for every line from line N on (coreutils `-n`)
+    #[arg(short = 'n', long = "lines", value_name = "[+]N", value_parser = super::parse_tail_count,
+          allow_hyphen_values = true, conflicts_with_all = ["lines", "bytes"])]
+    pub num_lines: Option<TailCount>,
 
     /// Show the last N bytes instead of lines (raw output)
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = super::parse_plain_count)]
     pub bytes: Option<usize>,
 
     /// Omit line numbers from output
@@ -105,11 +111,35 @@ pub fn run(args: &TailArgs) -> Result<Outcome> {
             }
         };
     }
-    // `-n` and the positional N conflict in clap; a lone all-digit positional
-    // with no such file reads as a count over stdin (`cmd | sak fs tail 5`).
-    let (file, count) =
-        super::resolve_file_and_count(args.file.clone(), args.lines, args.num_lines);
-    let n = count.unwrap_or(10);
+    // `-n` and the positional N conflict in clap. Without `-n`, a lone
+    // all-digit positional with no such file reads as a count over stdin
+    // (`cmd | sak fs tail 5`); with it, the positional is always the file.
+    let (file, count) = match args.num_lines {
+        Some(count) => (args.file.clone(), count),
+        None => {
+            let (file, n) = super::resolve_file_and_count(args.file.clone(), args.lines, None);
+            (file, TailCount::Last(n.unwrap_or(10)))
+        }
+    };
+    let n = match count {
+        TailCount::Last(n) => n,
+        TailCount::From(start) => {
+            if args.follow {
+                anyhow::bail!(
+                    "--follow with `-n +{start}` is not supported; follow with `-n N` instead"
+                );
+            }
+            // Every line from `start` on: `read`'s open range, under its
+            // default output cap (with its truncation notice), not a count.
+            return read_run(&ReadArgs {
+                file,
+                lines: Some(format!("{start}-")),
+                no_line_numbers: args.no_line_numbers,
+                limit: None,
+                offset: 0,
+            });
+        }
+    };
     if args.follow
         && let Some(path) = file.as_ref()
         && !is_stdin(path)
@@ -399,12 +429,35 @@ mod tests {
     }
 
     #[test]
+    fn plus_n_means_from_line_n_and_signs_never_slip_through() {
+        // Regression: `usize` parsing accepted `+2`, so `tail -n +2 data.csv`
+        // (skip the header) silently printed the *last* two lines.
+        let cli = TailCli::try_parse_from(["tail", "-n", "+2", "data.csv"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(TailCount::From(2)));
+        let cli = TailCli::try_parse_from(["tail", "-n", "+0", "data.csv"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(TailCount::From(1)));
+        // Everywhere else a sign is an error, not a silently different count.
+        for argv in [
+            &["tail", "data.csv", "+5"][..],
+            &["tail", "--bytes", "+5", "data.csv"][..],
+            &["tail", "-n", "-5", "data.csv"][..],
+            &["tail", "-n", "+", "data.csv"][..],
+        ] {
+            assert!(TailCli::try_parse_from(argv).is_err(), "{argv:?}");
+        }
+        // `cmd | sak fs tail +5` must not read `+5` as a bare count either.
+        assert!(!std::path::Path::new("+5").exists());
+        let (file, n) = crate::fs::resolve_file_and_count(Some(PathBuf::from("+5")), None, None);
+        assert_eq!((file, n), (Some(PathBuf::from("+5")), None));
+    }
+
+    #[test]
     fn dash_n_spelling_parses_and_conflicts_with_positional() {
         let cli = TailCli::try_parse_from(["tail", "-n", "50", "f.txt"]).unwrap();
-        assert_eq!(cli.args.num_lines, Some(50));
+        assert_eq!(cli.args.num_lines, Some(TailCount::Last(50)));
         assert_eq!(cli.args.file, Some(PathBuf::from("f.txt")));
         let cli = TailCli::try_parse_from(["tail", "--lines", "50"]).unwrap();
-        assert_eq!(cli.args.num_lines, Some(50));
+        assert_eq!(cli.args.num_lines, Some(TailCount::Last(50)));
         assert_eq!(cli.args.file, None);
         // Positional N and -n disagree about the count: a clap error, not a pick.
         assert!(TailCli::try_parse_from(["tail", "-n", "50", "f.txt", "20"]).is_err());

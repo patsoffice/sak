@@ -68,6 +68,36 @@ pub(crate) use crate::input::{require_piped_stdin, stdin_is_piped};
 /// by `grep` and `wc` so stdin is named identically across `fs` commands.
 pub(crate) const STDIN_LABEL: &str = "(standard input)";
 
+/// Clap value parser for an unsigned count: ASCII digits only. Rust's
+/// `usize` parser also accepts a leading `+`, which silently turned coreutils'
+/// `tail -n +2` ("from line 2") into "last 2"; a sign is an error here so a
+/// count can never mean something other than what was typed.
+pub(crate) fn parse_plain_count(s: &str) -> Result<usize, String> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!(
+            "`{s}` is not a plain count (digits only); `tail -n +N` reads from line N"
+        ));
+    }
+    s.parse().map_err(|e| format!("`{s}`: {e}"))
+}
+
+/// `tail -n` in coreutils form: `N` is the last N lines, `+N` is every line
+/// from line N on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TailCount {
+    Last(usize),
+    From(usize),
+}
+
+/// Clap value parser for [`TailCount`]. `+0` reads from the start, as in
+/// coreutils.
+pub(crate) fn parse_tail_count(s: &str) -> Result<TailCount, String> {
+    match s.strip_prefix('+') {
+        Some(rest) => Ok(TailCount::From(parse_plain_count(rest)?.max(1))),
+        None => Ok(TailCount::Last(parse_plain_count(s)?)),
+    }
+}
+
 /// Split head/tail's file/count positionals: a lone all-digit positional with
 /// no such file on disk is a count (`cmd | sak fs tail 5`), not a filename.
 /// A digit-named file that exists still reads as a file.
@@ -83,7 +113,7 @@ pub(crate) fn resolve_file_and_count(
         return (file, positional);
     }
     match file {
-        Some(p) if !is_stdin(&p) => match p.to_str().and_then(|s| s.parse::<usize>().ok()) {
+        Some(p) if !is_stdin(&p) => match p.to_str().and_then(|s| parse_plain_count(s).ok()) {
             Some(n) if !p.exists() => (None, Some(n)),
             _ => (Some(p), None),
         },

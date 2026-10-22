@@ -33,15 +33,17 @@ pub struct HeadArgs {
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
-    #[arg(value_name = "N", conflicts_with_all = ["bytes", "num_lines"])]
+    #[arg(value_name = "N", value_parser = super::parse_plain_count,
+          conflicts_with_all = ["bytes", "num_lines"])]
     pub lines: Option<usize>,
 
     /// Number of lines to show (coreutils `-n` spelling; conflicts with positional N)
-    #[arg(short = 'n', long = "lines", value_name = "N", conflicts_with_all = ["lines", "bytes"])]
+    #[arg(short = 'n', long = "lines", value_name = "N", value_parser = super::parse_plain_count,
+          conflicts_with_all = ["lines", "bytes"])]
     pub num_lines: Option<usize>,
 
     /// Show the first N bytes instead of lines (raw output)
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = super::parse_plain_count)]
     pub bytes: Option<usize>,
 
     /// Omit line numbers from output
@@ -129,6 +131,10 @@ mod tests {
         // Positional N and -n disagree about the count: a clap error, not a pick.
         assert!(HeadCli::try_parse_from(["head", "-n", "5", "f.txt", "25"]).is_err());
         assert!(HeadCli::try_parse_from(["head", "--bytes", "4", "-n", "5"]).is_err());
+        // Signed counts are errors, never a silently different count.
+        assert!(HeadCli::try_parse_from(["head", "-n", "+5", "f.txt"]).is_err());
+        assert!(HeadCli::try_parse_from(["head", "f.txt", "+5"]).is_err());
+        assert!(HeadCli::try_parse_from(["head", "--bytes", "+4", "f.txt"]).is_err());
     }
 
     #[test]
