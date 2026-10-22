@@ -75,10 +75,10 @@ pub struct Output {
 /// The (noun, verb) pair must be permitted by [`READ_ONLY_VERBS`];
 /// otherwise this returns an error without spawning a subprocess.
 ///
-/// When `noun == "api"`, `args` is additionally scanned for `-X` /
-/// `--method` flags; any value other than `GET` (case-insensitive) is
-/// rejected. Bare `gh api <endpoint>` (no method flag) is GET by `gh`'s
-/// own default and is accepted.
+/// When `noun == "api"`, `args` is additionally classified by
+/// [`api_method`]: any explicit non-GET `-X` / `--method`, and any request
+/// parameters (`-f`/`-F`/`--input`) on a REST endpoint without an explicit
+/// `-X GET` (gh would switch to POST), are rejected.
 pub fn invoke(noun: &str, verb: Option<&str>, args: &[&str]) -> Result<Output> {
     if !verb_allowed(noun, verb) {
         bail!(
@@ -160,61 +160,169 @@ fn format_allowlist() -> String {
     out.join(", ")
 }
 
-/// What a `gh api` invocation's `-X` / `--method` flags select. Shared by
-/// the [`check_api_method`] enforcement below and the hook guard
+/// The HTTP method a `gh api` invocation will use. Shared by the
+/// [`check_api_method`] enforcement below and the hook guard
 /// (`gh_api_method_is_get` in `src/gh/hook.rs`) so the redirect decision and
 /// the enforcement can never disagree about what counts as a read.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ApiMethod {
-    /// No flag, or every value GET (gh defaults to GET).
+    /// A REST GET: no method flag and no request parameters (gh's default),
+    /// or an explicit `-X GET` (which sends any parameters as a query string).
     Get,
-    /// First non-GET value seen.
+    /// The `graphql` endpoint without an explicit method. gh always POSTs
+    /// GraphQL; query documents are reads, mutation documents are not (the
+    /// method can't tell them apart).
+    GraphQl,
+    /// First explicit non-GET method seen.
     NonGet(String),
-    /// Flag with no following value.
+    /// Request parameters or a body (`-f`/`-F`/`--input`, named here) on a
+    /// REST endpoint without an explicit GET: gh silently switches to POST.
+    ImplicitPost(String),
+    /// Value-taking flag with no following value.
     Dangling(String),
 }
 
-/// Scan every `-X` / `--method` flag. Both spellings accept `-X GET`
-/// (separate arg) or `-XGET` / `--method=GET` (joined). Scans *all* flags
-/// rather than stopping at the first: `gh api x -X GET -X POST` is a POST
-/// (last wins in gh), so stopping early would misclassify a write as a read.
+/// The endpoint gh treats as GraphQL (always POSTed by gh).
+pub(crate) const GRAPHQL_ENDPOINT: &str = "graphql";
+
+/// `gh api` flags that consume a value, as (short, long). Needed to tell
+/// flag values from the endpoint positional, and to find the value of a
+/// short flag inside a pflag cluster such as `-iXPOST`.
+const API_VALUE_FLAGS: &[(Option<char>, &str)] = &[
+    (Some('X'), "method"),
+    (Some('H'), "header"),
+    (Some('F'), "field"),
+    (Some('f'), "raw-field"),
+    (Some('q'), "jq"),
+    (Some('t'), "template"),
+    (Some('p'), "preview"),
+    (None, "input"),
+    (None, "cache"),
+    (None, "hostname"),
+];
+
+/// Flags that add request parameters or a body, so gh POSTs unless told GET.
+const API_BODY_FLAGS: &[&str] = &["field", "raw-field", "input"];
+
+/// Classify a `gh api` argv (with or without the leading `api` token).
+///
+/// Parses the way gh's pflag does: `-X GET`, `-XGET`, `-X=GET`,
+/// `--method GET`, `--method=GET`, and short clusters where a boolean
+/// (`-i`) precedes a value flag (`-iXPOST`, `-iX POST`). Every method flag
+/// is checked rather than stopping at the first: `-X GET -X POST` is a POST
+/// (last wins in gh), and any non-GET is rejected outright.
 pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
+    let mut explicit_get = false;
+    let mut body_flag: Option<String> = None;
+    let mut graphql = false;
+
+    // Record one parsed (long name, value) flag; returns early on a non-GET.
+    let mut on_flag = |long: &str, value: &str, spelled: &str| -> Option<ApiMethod> {
+        if long == "method" {
+            if !value.eq_ignore_ascii_case("GET") {
+                return Some(ApiMethod::NonGet(value.to_string()));
+            }
+            explicit_get = true;
+        } else if API_BODY_FLAGS.contains(&long) && body_flag.is_none() {
+            body_flag = Some(spelled.to_string());
+        }
+        None
+    };
+
     let mut i = 0;
+    let mut positional_only = false;
     while i < args.len() {
         let arg = args[i].as_ref();
+        i += 1;
 
-        let method = if arg == "-X" || arg == "--method" {
-            i += 1;
-            match args.get(i) {
-                Some(v) => Some(v.as_ref()),
-                None => return ApiMethod::Dangling(arg.to_string()),
+        if positional_only || arg == "-" || !arg.starts_with('-') {
+            if arg == GRAPHQL_ENDPOINT {
+                graphql = true;
             }
-        } else {
-            arg.strip_prefix("-X")
-                .or_else(|| arg.strip_prefix("--method="))
-        };
-
-        if let Some(m) = method
-            && !m.eq_ignore_ascii_case("GET")
-        {
-            return ApiMethod::NonGet(m.to_string());
+            continue;
+        }
+        if arg == "--" {
+            positional_only = true;
+            continue;
         }
 
-        i += 1;
+        if let Some(long_arg) = arg.strip_prefix("--") {
+            let (name, inline) = match long_arg.split_once('=') {
+                Some((n, v)) => (n, Some(v)),
+                None => (long_arg, None),
+            };
+            if !API_VALUE_FLAGS.iter().any(|(_, l)| *l == name) {
+                continue; // boolean long flag (--paginate, --include, ...)
+            }
+            let value = match inline {
+                Some(v) => v,
+                None => match args.get(i) {
+                    Some(v) => {
+                        i += 1;
+                        v.as_ref()
+                    }
+                    None => return ApiMethod::Dangling(arg.to_string()),
+                },
+            };
+            if let Some(m) = on_flag(name, value, &format!("--{name}")) {
+                return m;
+            }
+            continue;
+        }
+
+        // Short cluster: booleans until the first value flag, which takes the
+        // rest of the token (minus a leading `=`) or the next argument.
+        let cluster = &arg[1..];
+        for (pos, c) in cluster.char_indices() {
+            let Some((_, long)) = API_VALUE_FLAGS.iter().find(|(s, _)| *s == Some(c)) else {
+                continue;
+            };
+            let rest = &cluster[pos + c.len_utf8()..];
+            let value = if !rest.is_empty() {
+                rest.strip_prefix('=').unwrap_or(rest)
+            } else {
+                match args.get(i) {
+                    Some(v) => {
+                        i += 1;
+                        v.as_ref()
+                    }
+                    None => return ApiMethod::Dangling(format!("-{c}")),
+                }
+            };
+            if let Some(m) = on_flag(long, value, &format!("-{c}")) {
+                return m;
+            }
+            break;
+        }
     }
-    ApiMethod::Get
+
+    if explicit_get {
+        ApiMethod::Get
+    } else if graphql {
+        ApiMethod::GraphQl
+    } else if let Some(flag) = body_flag {
+        ApiMethod::ImplicitPost(flag)
+    } else {
+        ApiMethod::Get
+    }
 }
 
-/// Reject any `gh api` invocation whose `-X` / `--method` value is not
-/// `GET` (case-insensitive). Bare `gh api <endpoint>` is permitted because
-/// `gh`'s own default is GET.
+/// Reject any `gh api` invocation that would not be a read: an explicit
+/// non-GET method, or REST request parameters without `-X GET` (gh's
+/// implicit POST). Bare `gh api <endpoint>` is GET by gh's own default.
 fn check_api_method(args: &[&str]) -> Result<()> {
     match api_method(args) {
-        ApiMethod::Get => Ok(()),
+        ApiMethod::Get | ApiMethod::GraphQl => Ok(()),
         ApiMethod::NonGet(m) => bail!(
             "gh api: HTTP method `{}` is not allowed — sak gh is read-only, only GET is permitted",
             m
         ),
-        ApiMethod::Dangling(flag) => bail!("gh api: `{}` requires a method value", flag),
+        ApiMethod::ImplicitPost(flag) => bail!(
+            "gh api: `{}` adds request parameters, which makes gh send a POST — sak gh is \
+             read-only; add `-X GET` to send them as a query string",
+            flag
+        ),
+        ApiMethod::Dangling(flag) => bail!("gh api: `{}` requires a value", flag),
     }
 }
 
@@ -335,10 +443,97 @@ mod tests {
     #[test]
     fn rejects_dangling_method_flag() {
         let err = invoke("api", None, &["repos/x/y", "-X"]).unwrap_err();
-        assert!(err.to_string().contains("requires a method value"));
+        assert!(err.to_string().contains("`-X` requires a value"), "{err}");
 
         let err = invoke("api", None, &["repos/x/y", "--method"]).unwrap_err();
-        assert!(err.to_string().contains("requires a method value"));
+        assert!(
+            err.to_string().contains("`--method` requires a value"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_rest_params_without_explicit_get() {
+        // Regression (sak-llm-16cp): gh switches to POST when parameters are
+        // added, so `-f title=x` against a REST endpoint is a write. Rejected
+        // before any subprocess is spawned.
+        for args in [
+            &["repos/x/y/issues", "-f", "title=x"][..],
+            &["repos/x/y/issues", "-F", "n=1"][..],
+            &["repos/x/y/issues", "--raw-field", "title=x"][..],
+            &["repos/x/y/issues", "--field=n=1"][..],
+            &["repos/x/y/issues", "-ftitle=x"][..],
+            &["repos/x/y/rulesets", "--input", "body.json"][..],
+        ] {
+            let err = invoke("api", None, args).unwrap_err();
+            assert!(
+                err.to_string().contains("makes gh send a POST"),
+                "expected implicit-POST rejection for `{:?}`, got: {}",
+                args,
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn api_method_params_follow_the_effective_method() {
+        // Explicit GET turns parameters into a query string: still a read.
+        assert_eq!(
+            api_method(&["search/issues", "-X", "GET", "-f", "q=is:open"]),
+            ApiMethod::Get
+        );
+        assert_eq!(
+            api_method(&["-f", "q=x", "search/issues", "--method=get"]),
+            ApiMethod::Get
+        );
+        // Without it, gh POSTs.
+        assert_eq!(
+            api_method(&["repos/x/y/issues", "-f", "title=x"]),
+            ApiMethod::ImplicitPost("-f".into())
+        );
+        // A flag value that happens to look like a body flag is not one.
+        assert_eq!(
+            api_method(&["repos/x/y", "--jq", "--input"]),
+            ApiMethod::Get
+        );
+    }
+
+    #[test]
+    fn api_method_graphql_is_its_own_class() {
+        // gh always POSTs GraphQL; queries are reads (mutations: sak-llm-a08h).
+        for args in [
+            &["graphql", "-f", "query={ viewer { login } }"][..],
+            &["api", "graphql", "-F", "n=1", "-f", "query=q"][..],
+        ] {
+            assert_eq!(api_method(args), ApiMethod::GraphQl, "{args:?}");
+        }
+        // `graphql` as a flag value is not the endpoint.
+        assert_eq!(
+            api_method(&["repos/x/y", "-H", "graphql", "-f", "a=b"]),
+            ApiMethod::ImplicitPost("-f".into())
+        );
+    }
+
+    #[test]
+    fn api_method_parses_short_flag_clusters() {
+        // pflag clusters: a boolean (-i) then a value flag that takes the
+        // rest of the token or the next argument.
+        assert_eq!(
+            api_method(&["x", "-iXPOST"]),
+            ApiMethod::NonGet("POST".into())
+        );
+        assert_eq!(
+            api_method(&["x", "-iX", "DELETE"]),
+            ApiMethod::NonGet("DELETE".into())
+        );
+        assert_eq!(api_method(&["x", "-X=GET"]), ApiMethod::Get);
+        assert_eq!(api_method(&["x", "-iXGET"]), ApiMethod::Get);
+        assert_eq!(
+            api_method(&["x", "-if", "a=b"]),
+            ApiMethod::ImplicitPost("-f".into())
+        );
+        assert_eq!(api_method(&["x", "-i"]), ApiMethod::Get);
+        assert_eq!(api_method(&["x", "-iX"]), ApiMethod::Dangling("-X".into()));
     }
 
     #[test]

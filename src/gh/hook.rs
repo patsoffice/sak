@@ -93,15 +93,14 @@ pub const HOOK_RULES: &[HookRule] = &[
     },
 ];
 
-/// Whether a `gh api` invocation is an HTTP GET — delegates to the shared
-/// [`crate::gh::client::api_method`] scanner so the redirect decision uses
-/// exactly the semantics the enforcement does (scan every flag; a dangling
-/// flag is not a GET).
+/// Whether a `gh api` invocation is a read sak can perform — delegates to
+/// the shared [`crate::gh::client::api_method`] classifier so the redirect
+/// decision uses exactly the semantics the enforcement does (every method
+/// flag checked; REST parameters without `-X GET` are gh's implicit POST; a
+/// dangling flag is not a read).
 fn gh_api_method_is_get(args: &[String]) -> bool {
-    matches!(
-        crate::gh::client::api_method(args),
-        crate::gh::client::ApiMethod::Get
-    )
+    use crate::gh::client::{ApiMethod, api_method};
+    matches!(api_method(args), ApiMethod::Get | ApiMethod::GraphQl)
 }
 
 #[cfg(test)]
@@ -156,5 +155,30 @@ mod tests {
         ])));
         // A dangling flag is malformed, not a GET.
         assert!(!gh_api_method_is_get(&a(&["api", "x", "-X"])));
+    }
+
+    #[test]
+    fn api_params_without_get_are_not_redirected() {
+        // Regression (sak-llm-16cp): `-f` makes gh POST, so this is a write
+        // and must pass through to real gh rather than redirect to sak.
+        assert!(!gh_api_method_is_get(&a(&[
+            "api",
+            "repos/o/r/issues",
+            "-f",
+            "title=x"
+        ])));
+        assert!(!gh_api_method_is_get(&a(&[
+            "api", "x", "--input", "b.json"
+        ])));
+        assert!(!gh_api_method_is_get(&a(&["api", "x", "-iXPOST"])));
+        // With an explicit GET the params are a query string: still a read.
+        assert!(gh_api_method_is_get(&a(&[
+            "api",
+            "-X",
+            "GET",
+            "search/issues",
+            "-f",
+            "q=is:open"
+        ])));
     }
 }

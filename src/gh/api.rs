@@ -15,9 +15,11 @@ use crate::output::BoundedWriter;
         GitHub REST or GraphQL read that the other `sak gh` commands don't cover. \
         The response body is emitted verbatim through sak's bounded writer.\n\n\
         This command is strictly read-only: it never exposes `gh api`'s \
-        `-X / --method` flag, so every call is an HTTP GET (gh's own default). \
-        The shared chokepoint additionally rejects any attempt to smuggle a \
-        non-GET method, so even direct misuse can't mutate.\n\n\
+        `-X / --method` flag and pins every REST call to `-X GET`, so \
+        `--field` / `--raw-field` are sent as a query string (left to itself, \
+        gh would switch to POST as soon as a parameter is added). The shared \
+        chokepoint additionally rejects any non-GET method or implicit POST, \
+        so even direct misuse can't mutate.\n\n\
         GraphQL note: `gh api graphql -f query=...` is technically issued as \
         POST by `gh`, but the read-only invariant holds for *query* documents — \
         a GraphQL mutation requires an explicit `mutation { ... }` body, not a \
@@ -99,13 +101,18 @@ pub fn run(args: &ApiArgs) -> Result<Outcome> {
 }
 
 /// Assemble the `gh api` passthrough arg vector. The endpoint leads; every flag
-/// maps 1:1 to a `gh api` flag. Notably absent: any `-X / --method` flag — this
-/// command is GET-only by construction, and the chokepoint rejects a non-GET
-/// method if one ever reaches it some other way. Split out for unit testing.
+/// maps 1:1 to a `gh api` flag. REST endpoints are pinned to `-X GET`: gh
+/// otherwise switches to POST as soon as `-f`/`-F` adds a parameter, and with
+/// GET pinned those parameters go out as a query string instead. GraphQL is
+/// left alone (gh only speaks POST to it). The chokepoint rejects any argv
+/// that would still not be a read. Split out for unit testing.
 fn build_argv(args: &ApiArgs) -> Vec<String> {
     let mut b = ArgvBuilder::new();
-    b.push_value(args.endpoint.as_str())
-        .push_opt("--repo", args.repo.as_deref())
+    b.push_value(args.endpoint.as_str());
+    if args.endpoint != client::GRAPHQL_ENDPOINT {
+        b.push("-X", "GET");
+    }
+    b.push_opt("--repo", args.repo.as_deref())
         .push_each("-H", &args.headers)
         .push_each("-F", &args.fields)
         .push_each("-f", &args.raw_fields)
@@ -136,9 +143,28 @@ mod tests {
     #[test]
     fn bare_endpoint_passes_only_the_endpoint() {
         let argv = build_argv(&bare("repos/cli/cli"));
-        assert_eq!(argv, vec!["repos/cli/cli"]);
-        // No `-X` / `--method` is ever emitted — GET-only by construction.
-        assert!(!argv.iter().any(|a| a == "-X" || a == "--method"));
+        assert_eq!(argv, vec!["repos/cli/cli", "-X", "GET"]);
+    }
+
+    #[test]
+    fn rest_fields_stay_a_get() {
+        // Regression (sak-llm-16cp): without the pinned GET, gh POSTs as soon
+        // as a field is present. The built argv must classify as a read.
+        let mut args = bare("repos/o/r/issues");
+        args.raw_fields = vec!["title=x".into()];
+        args.fields = vec!["per_page=5".into()];
+        let argv = build_argv(&args);
+        assert_eq!(client::api_method(&argv), client::ApiMethod::Get);
+    }
+
+    #[test]
+    fn graphql_is_not_pinned_to_get() {
+        // gh only POSTs to GraphQL; forcing GET would break every query.
+        let mut args = bare("graphql");
+        args.raw_fields = vec!["query={ viewer { login } }".into()];
+        let argv = build_argv(&args);
+        assert!(!argv.iter().any(|a| a == "-X"), "{argv:?}");
+        assert_eq!(client::api_method(&argv), client::ApiMethod::GraphQl);
     }
 
     #[test]
@@ -157,6 +183,8 @@ mod tests {
             argv,
             vec![
                 "repos/{owner}/{repo}/issues",
+                "-X",
+                "GET",
                 "--repo",
                 "cli/cli",
                 "-H",
@@ -185,6 +213,6 @@ mod tests {
             .filter(|(_, a)| *a == "A: 1" || *a == "B: 2")
             .map(|(i, _)| i)
             .collect();
-        assert_eq!(positions, vec![2, 4]);
+        assert_eq!(positions, vec![4, 6]);
     }
 }
