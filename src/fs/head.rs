@@ -22,17 +22,23 @@ use super::{is_stdin, require_piped_stdin};
 Examples:
   sak fs head src/main.rs                  First 10 lines
   sak fs head src/main.rs 25               First 25 lines
+  sak fs head -n 25 src/main.rs            First 25 lines (-n spelling)
   sak fs head --no-line-numbers file.txt   First 10 lines, no line numbers
   sak fs head --bytes 64 image.png         First 64 bytes (raw)
-  some-cmd | sak fs head                   First 10 lines of piped stdin"
+  some-cmd | sak fs head                   First 10 lines of piped stdin
+  some-cmd | sak fs head 5                 First 5 lines of piped stdin"
 )]
 pub struct HeadArgs {
     /// Path to the file to read (omitted: piped stdin; '-' always reads stdin)
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
-    #[arg(value_name = "N", conflicts_with = "bytes")]
+    #[arg(value_name = "N", conflicts_with_all = ["bytes", "num_lines"])]
     pub lines: Option<usize>,
+
+    /// Number of lines to show (coreutils `-n` spelling; conflicts with positional N)
+    #[arg(short = 'n', long = "lines", value_name = "N", conflicts_with_all = ["lines", "bytes"])]
+    pub num_lines: Option<usize>,
 
     /// Show the first N bytes instead of lines (raw output)
     #[arg(long, value_name = "N")]
@@ -59,10 +65,14 @@ pub fn run(args: &HeadArgs) -> Result<Outcome> {
             }
         };
     }
-    let n = args.lines.unwrap_or(10);
+    // `-n` and the positional N conflict in clap; a lone all-digit positional
+    // with no such file reads as a count over stdin (`cmd | sak fs head 5`).
+    let (file, count) =
+        super::resolve_file_and_count(args.file.clone(), args.lines, args.num_lines);
+    let n = count.unwrap_or(10);
     // Delegate the line path to `read` so head stays a thin, consistent wrapper.
     let read_args = ReadArgs {
-        file: args.file.clone(),
+        file,
         lines: Some(format!("1-{n}")),
         no_line_numbers: args.no_line_numbers,
         // Explicit (not `read`'s built-in cap), so hitting it is silent —
@@ -108,6 +118,37 @@ mod tests {
         let cli = HeadCli::try_parse_from(["head", "-"]).unwrap();
         assert_eq!(cli.args.file, Some(PathBuf::from("-")));
     }
+
+    #[test]
+    fn dash_n_spelling_parses_and_conflicts_with_positional() {
+        let cli = HeadCli::try_parse_from(["head", "-n", "5", "f.txt"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(5));
+        assert_eq!(cli.args.file, Some(PathBuf::from("f.txt")));
+        let cli = HeadCli::try_parse_from(["head", "--lines", "5", "f.txt"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(5));
+        // Positional N and -n disagree about the count: a clap error, not a pick.
+        assert!(HeadCli::try_parse_from(["head", "-n", "5", "f.txt", "25"]).is_err());
+        assert!(HeadCli::try_parse_from(["head", "--bytes", "4", "-n", "5"]).is_err());
+    }
+
+    #[test]
+    fn lone_digits_without_a_file_resolve_to_count() {
+        // Guarded: the branch under test is "no such file", so fail loudly
+        // instead of silently testing the other branch if one ever appears.
+        assert!(!std::path::Path::new("424242").exists());
+        let (file, n) =
+            crate::fs::resolve_file_and_count(Some(PathBuf::from("424242")), None, None);
+        assert_eq!(file, None);
+        assert_eq!(n, Some(424242));
+        // '-' stays stdin; an explicit flag wins over the positional.
+        let (file, n) = crate::fs::resolve_file_and_count(Some(PathBuf::from("-")), None, None);
+        assert_eq!(file, Some(PathBuf::from("-")));
+        assert_eq!(n, None);
+        let (file, n) =
+            crate::fs::resolve_file_and_count(Some(PathBuf::from("f.txt")), Some(25), Some(5));
+        assert_eq!(file, Some(PathBuf::from("f.txt")));
+        assert_eq!(n, Some(5));
+    }
     use std::io::Write;
 
     fn write_lines(path: &std::path::Path, n: usize) {
@@ -125,6 +166,7 @@ mod tests {
         let args = HeadArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: None,
             no_line_numbers: true,
         };
@@ -139,6 +181,7 @@ mod tests {
         let args = HeadArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: Some(4),
             no_line_numbers: false,
         };
@@ -161,6 +204,7 @@ mod tests {
         let args = HeadArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: None,
             no_line_numbers: true,
         };

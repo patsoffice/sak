@@ -68,6 +68,29 @@ pub(crate) use crate::input::{require_piped_stdin, stdin_is_piped};
 /// by `grep` and `wc` so stdin is named identically across `fs` commands.
 pub(crate) const STDIN_LABEL: &str = "(standard input)";
 
+/// Split head/tail's file/count positionals: a lone all-digit positional with
+/// no such file on disk is a count (`cmd | sak fs tail 5`), not a filename.
+/// A digit-named file that exists still reads as a file.
+pub(crate) fn resolve_file_and_count(
+    file: Option<std::path::PathBuf>,
+    positional: Option<usize>,
+    flag: Option<usize>,
+) -> (Option<std::path::PathBuf>, Option<usize>) {
+    if flag.is_some() {
+        return (file, flag);
+    }
+    if positional.is_some() {
+        return (file, positional);
+    }
+    match file {
+        Some(p) if !is_stdin(&p) => match p.to_str().and_then(|s| s.parse::<usize>().ok()) {
+            Some(n) if !p.exists() => (None, Some(n)),
+            _ => (Some(p), None),
+        },
+        other => (other, None),
+    }
+}
+
 /// Directories pruned from every recursive walk unless `--hidden` is set
 /// (which only un-prunes the dotfile entries, never the junk dirs).
 pub(crate) const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".venv"];

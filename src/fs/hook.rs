@@ -35,13 +35,13 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "head",
         subcommand: &[],
         guard: Some(headtail_reads_a_file),
-        message: "Use `sak fs head <file> [n]` instead of `head` (--bytes N, --no-line-numbers).",
+        message: "Use `sak fs head [-n N] <file> [n]` instead of `head` (--bytes N, --no-line-numbers).",
     },
     HookRule {
         tool: "tail",
         subcommand: &[],
         guard: Some(headtail_reads_a_file),
-        message: "Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers, --follow [--for 30s]).",
+        message: "Use `sak fs tail [-n N] <file> [n]` instead of `tail` (--bytes N, --no-line-numbers, --follow [--for 30s]).",
     },
     HookRule {
         tool: "grep",
@@ -281,6 +281,19 @@ mod tests {
         assert!(!find_searches(&a(&[
             ".", "-name", "x", "-exec", "rm", "{}", ";"
         ])));
+    }
+
+    #[test]
+    fn headtail_messages_name_dash_n() {
+        let msgs: Vec<&&str> = HOOK_RULES
+            .iter()
+            .filter(|r| r.tool == "head" || r.tool == "tail")
+            .map(|r| &r.message)
+            .collect();
+        assert_eq!(msgs.len(), 2);
+        for m in msgs {
+            assert!(m.contains("-n"), "{m}");
+        }
     }
 
     #[test]

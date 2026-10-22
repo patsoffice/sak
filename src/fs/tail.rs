@@ -31,9 +31,11 @@ use super::{is_stdin, require_piped_stdin};
 Examples:
   sak fs tail logfile.txt                  Last 10 lines
   sak fs tail logfile.txt 50               Last 50 lines
+  sak fs tail -n 50 logfile.txt            Last 50 lines (-n spelling)
   sak fs tail --no-line-numbers file.txt   Last 10 lines, no line numbers
   sak fs tail --bytes 256 capture.bin      Last 256 bytes (raw)
   some-cmd | sak fs tail                   Last 10 lines of piped stdin
+  some-cmd | sak fs tail 5                 Last 5 lines of piped stdin
   sak fs tail --follow app.log             Last 10 lines, then follow for 30s
   sak fs tail --follow --for 5m app.log    Follow for five minutes
   sak fs tail --follow --for 0 app.log     Follow until killed"
@@ -43,8 +45,12 @@ pub struct TailArgs {
     pub file: Option<PathBuf>,
 
     /// Number of lines to show (default 10)
-    #[arg(value_name = "N", conflicts_with = "bytes")]
+    #[arg(value_name = "N", conflicts_with_all = ["bytes", "num_lines"])]
     pub lines: Option<usize>,
+
+    /// Number of lines to show (coreutils `-n` spelling; conflicts with positional N)
+    #[arg(short = 'n', long = "lines", value_name = "N", conflicts_with_all = ["lines", "bytes"])]
+    pub num_lines: Option<usize>,
 
     /// Show the last N bytes instead of lines (raw output)
     #[arg(long, value_name = "N")]
@@ -99,9 +105,13 @@ pub fn run(args: &TailArgs) -> Result<Outcome> {
             }
         };
     }
-    let n = args.lines.unwrap_or(10);
+    // `-n` and the positional N conflict in clap; a lone all-digit positional
+    // with no such file reads as a count over stdin (`cmd | sak fs tail 5`).
+    let (file, count) =
+        super::resolve_file_and_count(args.file.clone(), args.lines, args.num_lines);
+    let n = count.unwrap_or(10);
     if args.follow
-        && let Some(path) = args.file.as_ref()
+        && let Some(path) = file.as_ref()
         && !is_stdin(path)
     {
         let window = follow_window(args.follow_for.as_deref())?;
@@ -117,7 +127,7 @@ pub fn run(args: &TailArgs) -> Result<Outcome> {
     // consistent wrapper (and line numbers reflect real file positions).
     // (--follow on stdin drains to EOF and exits: a pipe has nothing to poll.)
     let read_args = ReadArgs {
-        file: args.file.clone(),
+        file,
         lines: Some(format!("-{n}")),
         no_line_numbers: args.no_line_numbers,
         // Explicit (not `read`'s built-in cap), so hitting it is silent —
@@ -389,6 +399,19 @@ mod tests {
     }
 
     #[test]
+    fn dash_n_spelling_parses_and_conflicts_with_positional() {
+        let cli = TailCli::try_parse_from(["tail", "-n", "50", "f.txt"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(50));
+        assert_eq!(cli.args.file, Some(PathBuf::from("f.txt")));
+        let cli = TailCli::try_parse_from(["tail", "--lines", "50"]).unwrap();
+        assert_eq!(cli.args.num_lines, Some(50));
+        assert_eq!(cli.args.file, None);
+        // Positional N and -n disagree about the count: a clap error, not a pick.
+        assert!(TailCli::try_parse_from(["tail", "-n", "50", "f.txt", "20"]).is_err());
+        assert!(TailCli::try_parse_from(["tail", "--bytes", "4", "-n", "50"]).is_err());
+    }
+
+    #[test]
     fn for_requires_follow() {
         assert!(TailCli::try_parse_from(["tail", "--for", "5s", "f.txt"]).is_err());
         assert!(TailCli::try_parse_from(["tail", "--follow", "--for", "5s", "f.txt"]).is_ok());
@@ -515,6 +538,7 @@ mod tests {
         let args = TailArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: None,
             no_line_numbers: true,
             follow: false,
@@ -531,6 +555,7 @@ mod tests {
         let args = TailArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: Some(3),
             follow: false,
             follow_for: None,
@@ -547,6 +572,7 @@ mod tests {
         let args = TailArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: Some(1000),
             follow: false,
             follow_for: None,
@@ -571,6 +597,7 @@ mod tests {
         let args = TailArgs {
             file: Some(p),
             lines: None,
+            num_lines: None,
             bytes: Some(10),
             follow: false,
             follow_for: None,
