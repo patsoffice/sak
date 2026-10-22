@@ -3,7 +3,6 @@ mod config;
 mod csv;
 #[cfg(feature = "docker")]
 mod docker;
-#[cfg(any(feature = "docker", feature = "prom", feature = "loki"))]
 mod duration;
 mod fs;
 mod gh;

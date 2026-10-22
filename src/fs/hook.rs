@@ -41,7 +41,7 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "tail",
         subcommand: &[],
         guard: Some(headtail_reads_a_file),
-        message: "Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers, --follow).",
+        message: "Use `sak fs tail <file> [n]` instead of `tail` (--bytes N, --no-line-numbers, --follow [--for 30s]).",
     },
     HookRule {
         tool: "grep",

@@ -9,7 +9,7 @@
 //! `docker`) deliberately keep their dependency surface minimal. This started
 //! life in `src/prom/duration.rs` and was promoted to the crate root so the
 //! `docker` domain (`sak docker logs --since`) can reuse it without depending
-//! on the `prom` cargo feature.
+//! on the `prom` cargo feature. Always compiled: `fs tail --follow --for` uses it too.
 
 use anyhow::{Result, anyhow};
 
