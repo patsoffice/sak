@@ -73,6 +73,9 @@
               clippy
               rustfmt
               rust-analyzer
+              # Structural rewrites: with the editor, the only sanctioned way
+              # to change tracked files (AGENTS.md "Changing files").
+              ast-grep
               # External CLIs the shell-out domains invoke at runtime (helm,
               # k8s, talos, gh). sak adds no Rust deps for these — they're
               # spawned via each domain's client.rs chokepoint — so the dev

@@ -30,6 +30,17 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 
 The harness's built-in Glob/Read/Grep tools are still fine — and the rule against using bash for `cat`/`head`/`find`/`grep` still applies — but when you *do* reach for a CLI in this repo, reach for `sak`. Run `cargo run --quiet -- <domain> <command> --help` (or, after `cargo install --path .`, just `sak <domain> <command> --help`) to discover flags. If you find yourself wanting a sak command that doesn't exist yet, that's a signal to add it rather than fall back to shell.
 
+## Changing files
+
+Change tracked files (source, `Cargo.toml`, docs) with exactly two tools:
+
+- **The LLM's edit function**: the agent harness's built-in edit/write tools (Claude Code's Edit and Write, or your harness's equivalent), for every ordinary change.
+- **`ast-grep`**: for structural, syntax-aware rewrites across many sites (renames, signature changes, adding a field to every struct literal).
+
+Nothing else: no `perl -pi`, `sed -i`, `awk`, `python -c`, heredoc-over-file, or shell redirect into a tracked file. That includes "trivial" one-liners like a version bump or an import line. The edit function shows the exact old and new text and fails loudly when its anchor doesn't match; ast-grep matches syntax, not text. A regex rewrite can silently match nothing, or too much, and leaves no record of intent.
+
+Tools that own their output are exempt: `cargo fmt`, cargo updating `Cargo.lock`, and `br` writing `.beads/issues.jsonl`. Scratch files outside the repo are fine.
+
 ## Build & Test
 
 The repo ships a Nix `flake.nix` + `.envrc` that pins the Rust toolchain and a C compiler. If your shell wasn't started inside the dev shell (no `cc` / `cargo` on PATH, or `cargo build` fails with `linker 'cc' not found`), prefix the relevant command with `nix develop -c` — e.g. `nix develop -c cargo build`, `nix develop -c cargo test`, `nix develop -c cargo clippy …`, `nix develop -c cargo fmt`. The dev shell is the source of truth for the toolchain; don't try to install a system Rust to work around it.
