@@ -84,8 +84,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json diff a.json b.json                 Structural diff of two JSON files
   sak json validate data.json                 Check JSON validity
   sak config query .package.name Cargo.toml   Read TOML/YAML/plist values
-  sak config select .package.name,.version Cargo.toml   Project fields from a config object
-  sak config table .packages --fields name,version Cargo.toml   Config array to TSV rows
+  sak config select .package.name,.package.version Cargo.toml   Project fields
+  sak config table .package --fields name,version -f toml Cargo.lock   Array of tables to TSV
   sak config keys --types config.yaml         List config keys with types
   sak config flatten Info.plist               Flatten any config file
   sak config paths config.yaml                List leaf paths (no values)
@@ -156,9 +156,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s contexts                            List kubeconfig contexts
   sak k8s kinds                               List group/version/kinds
   sak k8s get pods -n kube-system             List resources of a kind
-  sak k8s get pods -A -o wide                  Pod table (NAME/READY/STATUS/NODE/AGE)
+  sak k8s get pods -A -o wide                 Pod table (NAME/READY/STATUS/NODE/AGE)
   sak k8s images deployment/foo               Container images on a workload
-  sak k8s env deployment/foo                Env vars on a pod-bearing resource
+  sak k8s env deployment foo                  Env vars on a pod-bearing resource
   sak k8s schema deployment.apps/v1           OpenAPI v3 schema for a kind
   sak k8s restarts -A                         Pod containers with restarts
   sak k8s failing -A                          Pods not Running or Succeeded
@@ -190,8 +190,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
         "
   sak sqlite tables app.db                    List tables in a SQLite file
   sak sqlite schema app.db                    Show database schema
-  sak sqlite count users app.db               Count rows in a table
-  sak sqlite query 'SELECT * FROM users' app.db   Run a read-only query
+  sak sqlite count app.db users               Count rows in a table
+  sak sqlite query app.db 'SELECT * FROM users'   Run a read-only query
   sak sqlite dump app.db users                Dump rows without hand SQL
   sak sqlite info app.db                      Database-level metadata",
     );
@@ -399,5 +399,120 @@ mod tests {
             .context("reading Cargo.toml");
         assert!(!is_broken_pipe(&missing));
         assert!(!is_broken_pipe(&anyhow::anyhow!("invalid JSON")));
+    }
+
+    /// The quick-start examples as `(command, description column)`: each
+    /// `  sak …` line split at the first run of two spaces. The column is the
+    /// byte offset where the description starts.
+    fn quick_start_examples() -> Vec<(&'static str, usize)> {
+        QUICK_START
+            .lines()
+            .filter(|l| l.starts_with("  sak "))
+            .map(|l| {
+                let cmd_end = l[2..].find("  ").map_or(l.len(), |i| i + 2);
+                let gap = l[cmd_end..].len() - l[cmd_end..].trim_start().len();
+                // Columns are characters, not bytes: `…` is one column wide.
+                let desc = l[..cmd_end].chars().count() + gap;
+                (l[2..cmd_end].trim_end(), desc)
+            })
+            .collect()
+    }
+
+    /// Minimal shell word splitting for the examples: whitespace, single
+    /// quotes (literal), double quotes and backslash escapes.
+    fn shell_words(cmd: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut cur = String::new();
+        let mut in_word = false;
+        let mut chars = cmd.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '\'' => {
+                    in_word = true;
+                    for q in chars.by_ref() {
+                        if q == '\'' {
+                            break;
+                        }
+                        cur.push(q);
+                    }
+                }
+                '"' => {
+                    in_word = true;
+                    while let Some(q) = chars.next() {
+                        match q {
+                            '"' => break,
+                            '\\' => cur.extend(chars.next()),
+                            _ => cur.push(q),
+                        }
+                    }
+                }
+                '\\' => {
+                    in_word = true;
+                    cur.extend(chars.next());
+                }
+                c if c.is_whitespace() => {
+                    if in_word {
+                        words.push(std::mem::take(&mut cur));
+                        in_word = false;
+                    }
+                }
+                c => {
+                    in_word = true;
+                    cur.push(c);
+                }
+            }
+        }
+        if in_word {
+            words.push(cur);
+        }
+        words
+    }
+
+    #[test]
+    fn quick_start_examples_parse() {
+        // Regression (sak-llm-pp4s): examples with reversed arguments
+        // (`sqlite count users app.db`) shipped because nothing parsed them.
+        let examples = quick_start_examples();
+        assert!(!examples.is_empty());
+        let failures: Vec<String> = examples
+            .iter()
+            .filter_map(|(cmd, _)| {
+                Cli::try_parse_from(shell_words(cmd))
+                    .err()
+                    .map(|e| format!("{cmd}\n    {}", e.to_string().lines().next().unwrap_or("")))
+            })
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "examples that don't parse:\n  {}",
+            failures.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn quick_start_descriptions_line_up() {
+        // Every description starts at the shared column unless its command
+        // is too long to leave a two-space gap before it.
+        let examples = quick_start_examples();
+        let column = examples[0].1;
+        let misaligned: Vec<&str> = examples
+            .iter()
+            .filter(|(cmd, desc)| 2 + cmd.chars().count() + 2 <= column && *desc != column)
+            .map(|(cmd, _)| *cmd)
+            .collect();
+        assert!(
+            misaligned.is_empty(),
+            "descriptions not at column {column}:\n  {}",
+            misaligned.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn shell_words_honors_quotes_and_escapes() {
+        assert_eq!(
+            shell_words(r#"sak loki query '{app="api"}' --since 1h"#),
+            ["sak", "loki", "query", r#"{app="api"}"#, "--since", "1h"]
+        );
+        assert_eq!(shell_words(r#"a "b \" c" d\ e"#), ["a", "b \" c", "d e"]);
     }
 }

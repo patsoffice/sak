@@ -126,7 +126,11 @@ pub(crate) fn project_row(
 
 pub fn run(args: &TableArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.fields)?;
-    let inputs = read_json_inputs_maybe_lines(&args.files, args.lines)?;
+    // `sak json table --fields a,b rows.json` puts the file in the
+    // array-path slot; a lone existing file there is the input, path `.`.
+    let (path, files) = crate::input::path_or_file(Some(&args.array_path), &args.files);
+    let array_path = path.unwrap_or_else(|| ".".to_string());
+    let inputs = read_json_inputs_maybe_lines(&files, args.lines)?;
 
     // Gather every row source up front (refs into `inputs`, which outlives this
     // loop) so an empty result can suppress the header, matching `k8s get
@@ -135,20 +139,20 @@ pub fn run(args: &TableArgs) -> Result<Outcome> {
     let mut elements: Vec<&Value> = Vec::new();
     for (name, value) in &inputs {
         if args.lines {
-            match resolve_expression(value, &args.array_path)? {
+            match resolve_expression(value, &array_path)? {
                 Some(v) => elements.push(v),
-                None => bail!("path {:?} did not resolve in {}", args.array_path, name),
+                None => bail!("path {:?} did not resolve in {}", array_path, name),
             }
         } else {
-            match resolve_expression(value, &args.array_path)? {
+            match resolve_expression(value, &array_path)? {
                 Some(Value::Array(items)) => elements.extend(items.iter()),
                 Some(other) => bail!(
                     "expected a JSON array at {:?} in {}, found {}",
-                    args.array_path,
+                    array_path,
                     name,
                     type_name(other)
                 ),
-                None => bail!("path {:?} did not resolve in {}", args.array_path, name),
+                None => bail!("path {:?} did not resolve in {}", array_path, name),
             }
         }
     }

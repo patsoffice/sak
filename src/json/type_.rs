@@ -38,7 +38,8 @@ pub struct TypeArgs {
 }
 
 pub fn run(args: &TypeArgs) -> Result<Outcome> {
-    let inputs = read_json_inputs(&args.files)?;
+    let (path, files) = crate::input::path_or_file(args.path.as_deref(), &args.files);
+    let inputs = read_json_inputs(&files)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -46,7 +47,7 @@ pub fn run(args: &TypeArgs) -> Result<Outcome> {
 
     let mut found_any = false;
     for (_name, value) in &inputs {
-        let target = match &args.path {
+        let target = match &path {
             Some(p) => match resolve_expression(value, p)? {
                 Some(v) => v,
                 None => continue,

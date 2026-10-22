@@ -46,7 +46,8 @@ pub struct TypeArgs {
 }
 
 pub fn run(args: &TypeArgs) -> Result<Outcome> {
-    let inputs = read_config_inputs(&args.files, args.format)?;
+    let (path, files) = crate::input::path_or_file(args.path.as_deref(), &args.files);
+    let inputs = read_config_inputs(&files, args.format)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -54,7 +55,7 @@ pub fn run(args: &TypeArgs) -> Result<Outcome> {
 
     let mut found_any = false;
     for (_name, value) in &inputs {
-        let target = match &args.path {
+        let target = match &path {
             Some(p) => match resolve_expression(value, p)? {
                 Some(v) => v,
                 None => continue,

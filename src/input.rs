@@ -48,10 +48,71 @@ pub(crate) fn require_piped_stdin() -> Result<()> {
     }
 }
 
+/// Resolve a `[PATH] [FILES]...` command's positionals, where PATH is an
+/// optional location *inside* the document (`json keys`, `config type`, ...).
+///
+/// Clap fills PATH first, so `sak json keys data.json` arrives as
+/// PATH=`data.json` with no files, and the command would then read stdin for
+/// a document that was named on the command line. When no files were given,
+/// the lone positional is an existing file, and nothing is piped, it is the
+/// input file and the path falls back to the document root (`None`). A real
+/// in-document path (`.a.b`, `/a/b`) isn't a file, and with piped input a
+/// positional stays a path even if a file of that name exists.
+pub(crate) fn path_or_file(
+    path: Option<&str>,
+    files: &[std::path::PathBuf],
+) -> (Option<String>, Vec<std::path::PathBuf>) {
+    path_or_file_with(path, files, |p| p.is_file(), stdin_is_piped)
+}
+
+fn path_or_file_with(
+    path: Option<&str>,
+    files: &[std::path::PathBuf],
+    is_file: impl Fn(&std::path::Path) -> bool,
+    piped: impl FnOnce() -> bool,
+) -> (Option<String>, Vec<std::path::PathBuf>) {
+    if files.is_empty()
+        && let Some(p) = path
+        && is_file(std::path::Path::new(p))
+        && !piped()
+    {
+        return (None, vec![std::path::PathBuf::from(p)]);
+    }
+    (path.map(str::to_string), files.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::fd::AsFd;
+    use std::path::PathBuf;
+
+    #[test]
+    fn lone_file_positional_is_the_input() {
+        // Regression: `sak json keys data.json` read stdin instead of the file.
+        let file = |p: &std::path::Path| p.as_os_str() == "data.json";
+        assert_eq!(
+            path_or_file_with(Some("data.json"), &[], file, || false),
+            (None, vec![PathBuf::from("data.json")])
+        );
+        // A real in-document path stays a path.
+        assert_eq!(
+            path_or_file_with(Some(".a.b"), &[], file, || false),
+            (Some(".a.b".to_string()), vec![])
+        );
+        // With files given, the first positional is always the path.
+        assert_eq!(
+            path_or_file_with(Some("data.json"), &[PathBuf::from("x.json")], file, || {
+                false
+            }),
+            (Some("data.json".to_string()), vec![PathBuf::from("x.json")])
+        );
+        // With piped input, a positional naming a file is still a path.
+        assert_eq!(
+            path_or_file_with(Some("data.json"), &[], file, || true),
+            (Some("data.json".to_string()), vec![])
+        );
+    }
 
     #[test]
     fn pipes_and_files_are_piped_input() {

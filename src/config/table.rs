@@ -34,7 +34,7 @@ use crate::value::{resolve_expression, type_name};
         array was empty (no rows), 2 = error (bad path, non-array, parse error).",
     after_help = "\
 Examples:
-  sak config table .packages --fields name,version Cargo.toml
+  sak config table .package --fields name,version -f toml Cargo.lock
   sak config table .items --fields id,user.name,ts data.yaml   Nested field paths
   sak config table .rows --fields a,b --header data.toml        Emit a header row
   sak config table .rows --fields a,b --missing NULL data.yaml  Custom missing token"
@@ -71,22 +71,26 @@ pub struct TableArgs {
 
 pub fn run(args: &TableArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.fields)?;
-    let inputs = read_config_inputs(&args.files, args.format)?;
+    // `sak config table --fields a,b Cargo.lock` puts the file in the
+    // array-path slot; a lone existing file there is the input, path `.`.
+    let (path, files) = crate::input::path_or_file(Some(&args.array_path), &args.files);
+    let array_path = path.unwrap_or_else(|| ".".to_string());
+    let inputs = read_config_inputs(&files, args.format)?;
 
     // Gather every row source up front (refs into `inputs`, which outlives this
     // loop) so an empty result can suppress the header, matching `k8s get
     // --columns`.
     let mut elements: Vec<&Value> = Vec::new();
     for (name, value) in &inputs {
-        match resolve_expression(value, &args.array_path)? {
+        match resolve_expression(value, &array_path)? {
             Some(Value::Array(items)) => elements.extend(items.iter()),
             Some(other) => bail!(
                 "expected an array at {:?} in {}, found {}",
-                args.array_path,
+                array_path,
                 name,
                 type_name(other)
             ),
-            None => bail!("path {:?} did not resolve in {}", args.array_path, name),
+            None => bail!("path {:?} did not resolve in {}", array_path, name),
         }
     }
 

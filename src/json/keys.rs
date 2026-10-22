@@ -53,7 +53,8 @@ pub struct KeysArgs {
 }
 
 pub fn run(args: &KeysArgs) -> Result<Outcome> {
-    let inputs = read_json_inputs_maybe_lines(&args.files, args.lines)?;
+    let (path, files) = crate::input::path_or_file(args.path.as_deref(), &args.files);
+    let inputs = read_json_inputs_maybe_lines(&files, args.lines)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -67,7 +68,7 @@ pub fn run(args: &KeysArgs) -> Result<Outcome> {
     let mut found_any_object = false;
 
     for (_name, value) in &inputs {
-        let target = match &args.path {
+        let target = match &path {
             Some(p) => match resolve_expression(value, p)? {
                 Some(v) => v,
                 None => continue,
