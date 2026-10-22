@@ -13,9 +13,10 @@
 //!
 //! The classifier is shared, not forked: command strings go through
 //! [`super::claude_code::classify`], so every domain's `HOOK_RULES` table
-//! applies identically under both harnesses. Only the payload envelope is
-//! Muse-specific: `tool_name` arrives lowercase (`"bash"`, matched
-//! case-insensitively) and the command lives at `tool_input.command`.
+//! applies identically under both harnesses. The run driver is shared too
+//! ([`super::run_hook`]) — only the payload envelope is Muse-specific:
+//! `tool_name` arrives lowercase (`"bash"`, matched case-insensitively) and
+//! the command lives at `tool_input.command`.
 //!
 //! Configure the project tier in `<project-root>/.muse/hooks.json`:
 //!
@@ -32,15 +33,11 @@
 //! }
 //! ```
 
-use std::io::{self, IsTerminal, Read};
-
 use anyhow::Result;
 use clap::Args;
 use serde::Deserialize;
 
 use crate::output::Outcome;
-
-use super::claude_code::{classify, is_bypass_value};
 
 #[derive(Args)]
 #[command(
@@ -166,47 +163,7 @@ pub fn run(args: &MuseCodeArgs) -> Result<Outcome> {
         return Ok(Outcome::Found);
     }
 
-    if std::env::var("SAK_HOOK_BYPASS").is_ok_and(|v| is_bypass_value(&v)) {
-        return Ok(Outcome::Found);
-    }
-
-    let command = match &args.check {
-        Some(cmd) => cmd.clone(),
-        None => {
-            // A bare terminal invocation would block forever waiting for EOF
-            // that never comes — and a harness always pipes, never attaches a
-            // TTY — so fail open with a hint instead of hanging.
-            if io::stdin().is_terminal() {
-                eprintln!(
-                    "sak hook muse-code reads its PreToolUse payload from stdin (or use --check <COMMAND>); nothing to check — allowing."
-                );
-                return Ok(Outcome::Found);
-            }
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-            // Empty stdin → nothing to check.
-            if buf.trim().is_empty() {
-                return Ok(Outcome::Found);
-            }
-            match command_from_payload(&buf) {
-                Some(cmd) => cmd,
-                // Malformed JSON or a non-shell tool shouldn't block real
-                // work — fail open.
-                None => return Ok(Outcome::Found),
-            }
-        }
-    };
-
-    if command.trim().is_empty() {
-        return Ok(Outcome::Found);
-    }
-
-    if let Some(msg) = classify(&command) {
-        eprintln!("{}", msg);
-        return Ok(Outcome::Partial);
-    }
-
-    Ok(Outcome::Found)
+    super::run_hook(args.check.as_deref(), "muse-code", command_from_payload)
 }
 
 /// Extract the shell command from a raw Muse `PreToolUse` stdin payload.
@@ -229,6 +186,7 @@ fn command_from_payload(buf: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::claude_code::classify;
     use super::*;
 
     /// Minimal live-shaped payload; only the fields the adapter reads matter.

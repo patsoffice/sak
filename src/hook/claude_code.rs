@@ -21,8 +21,6 @@
 //! }
 //! ```
 
-use std::io::{self, IsTerminal, Read};
-
 use anyhow::Result;
 use clap::Args;
 use serde::Deserialize;
@@ -106,51 +104,14 @@ struct ToolInput {
 // mapping. The alternative would have been a fourth Outcome variant just
 // for hook, which we explicitly didn't add.
 pub fn run(args: &ClaudeCodeArgs) -> Result<Outcome> {
-    if std::env::var("SAK_HOOK_BYPASS").is_ok_and(|v| is_bypass_value(&v)) {
-        return Ok(Outcome::Found);
-    }
-
-    let command = match &args.check {
-        Some(cmd) => cmd.clone(),
-        None => {
-            // A bare terminal invocation would block forever waiting for EOF
-            // that never comes — and a harness always pipes, never attaches a
-            // TTY — so fail open with a hint instead of hanging.
-            if io::stdin().is_terminal() {
-                eprintln!(
-                    "sak hook claude-code reads its PreToolUse payload from stdin (or use --check <COMMAND>); nothing to check — allowing."
-                );
-                return Ok(Outcome::Found);
-            }
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-            // Empty stdin → nothing to check.
-            if buf.trim().is_empty() {
-                return Ok(Outcome::Found);
-            }
-            let payload: HookPayload = match serde_json::from_str(&buf) {
-                Ok(p) => p,
-                // Malformed JSON shouldn't block real work — fail open.
-                Err(_) => return Ok(Outcome::Found),
-            };
-            // Only intercept Bash tool calls.
-            if payload.tool_name != "Bash" {
-                return Ok(Outcome::Found);
-            }
-            payload.tool_input.command
+    super::run_hook(args.check.as_deref(), "claude-code", |buf| {
+        let payload: HookPayload = serde_json::from_str(buf).ok()?;
+        // Only intercept Bash tool calls.
+        if payload.tool_name != "Bash" {
+            return None;
         }
-    };
-
-    if command.trim().is_empty() {
-        return Ok(Outcome::Found);
-    }
-
-    if let Some(msg) = classify(&command) {
-        eprintln!("{}", msg);
-        return Ok(Outcome::Partial);
-    }
-
-    Ok(Outcome::Found)
+        Some(payload.tool_input.command)
+    })
 }
 
 const BYPASS_HINT: &str = " Set SAK_HOOK_BYPASS=1 to override.";
