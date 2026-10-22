@@ -171,6 +171,13 @@ mod tests {
             "api", "x", "--input", "b.json"
         ])));
         assert!(!gh_api_method_is_get(&a(&["api", "x", "-iXPOST"])));
+        // GraphQL mutations are writes sak gh can't perform (sak-llm-a08h).
+        assert!(!gh_api_method_is_get(&a(&[
+            "api",
+            "graphql",
+            "-f",
+            "query=mutation { addStar { x } }"
+        ])));
         // With an explicit GET the params are a query string: still a read.
         assert!(gh_api_method_is_get(&a(&[
             "api",

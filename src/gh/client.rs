@@ -169,10 +169,17 @@ pub(crate) enum ApiMethod {
     /// A REST GET: no method flag and no request parameters (gh's default),
     /// or an explicit `-X GET` (which sends any parameters as a query string).
     Get,
-    /// The `graphql` endpoint without an explicit method. gh always POSTs
-    /// GraphQL; query documents are reads, mutation documents are not (the
-    /// method can't tell them apart).
+    /// The `graphql` endpoint whose every `query` document defines only
+    /// `query` operations and fragments. gh always POSTs GraphQL, so the
+    /// document — not the HTTP method — is what makes it a read.
     GraphQl,
+    /// A GraphQL document defining a non-`query` operation (`mutation`,
+    /// `subscription`, ...), named here.
+    GraphQlWrite(String),
+    /// A GraphQL request whose document sak can't inspect (a body from
+    /// `--input`, a query read from `@file`, a malformed document) — the
+    /// reason is named here. Rejected rather than trusted.
+    GraphQlUnverifiable(String),
     /// First explicit non-GET method seen.
     NonGet(String),
     /// Request parameters or a body (`-f`/`-F`/`--input`, named here) on a
@@ -215,6 +222,10 @@ pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
     let mut explicit_get = false;
     let mut body_flag: Option<String> = None;
     let mut graphql = false;
+    // GraphQL documents sent as the `query` field, and the first reason (if
+    // any) a document can't be inspected.
+    let mut query_docs: Vec<String> = Vec::new();
+    let mut unverifiable: Option<String> = None;
 
     // Record one parsed (long name, value) flag; returns early on a non-GET.
     let mut on_flag = |long: &str, value: &str, spelled: &str| -> Option<ApiMethod> {
@@ -223,8 +234,26 @@ pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
                 return Some(ApiMethod::NonGet(value.to_string()));
             }
             explicit_get = true;
-        } else if API_BODY_FLAGS.contains(&long) && body_flag.is_none() {
+            return None;
+        }
+        if API_BODY_FLAGS.contains(&long) && body_flag.is_none() {
             body_flag = Some(spelled.to_string());
+        }
+        if long == "input" && unverifiable.is_none() {
+            unverifiable = Some(format!("a request body from `{spelled}`"));
+        }
+        if (long == "field" || long == "raw-field")
+            && let Some(("query", doc)) = value.split_once('=')
+        {
+            // `-F` (typed) reads `@path` / `@-` from a file or stdin; `-f`
+            // (raw) sends the text verbatim.
+            if long == "field" && doc.starts_with('@') {
+                if unverifiable.is_none() {
+                    unverifiable = Some(format!("a query read from a file, `query={doc}`"));
+                }
+            } else {
+                query_docs.push(doc.to_string());
+            }
         }
         None
     };
@@ -296,10 +325,32 @@ pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
         }
     }
 
+    if graphql {
+        // The document decides, whatever the method: inspect every `query`
+        // field gh will send (gh's own pick among duplicates doesn't matter
+        // when all of them must pass).
+        if let Some(reason) = unverifiable {
+            return ApiMethod::GraphQlUnverifiable(reason);
+        }
+        for doc in &query_docs {
+            match graphql_operation_types(doc) {
+                Err(reason) => return ApiMethod::GraphQlUnverifiable(reason.to_string()),
+                Ok(ops) => {
+                    if let Some(op) = ops.iter().find(|op| !matches!(**op, "query" | "fragment")) {
+                        return ApiMethod::GraphQlWrite((*op).to_string());
+                    }
+                }
+            }
+        }
+        return if explicit_get {
+            ApiMethod::Get
+        } else {
+            ApiMethod::GraphQl
+        };
+    }
+
     if explicit_get {
         ApiMethod::Get
-    } else if graphql {
-        ApiMethod::GraphQl
     } else if let Some(flag) = body_flag {
         ApiMethod::ImplicitPost(flag)
     } else {
@@ -307,12 +358,121 @@ pub(crate) fn api_method<S: AsRef<str>>(args: &[S]) -> ApiMethod {
     }
 }
 
+/// The keyword opening each top-level definition of a GraphQL executable
+/// document: `query`, `mutation`, `subscription`, `fragment`, or `query`
+/// for the anonymous `{ … }` shorthand. Every definition is reported, not
+/// just the first — `query A {…} mutation B {…}` with `operationName=B`
+/// runs the mutation.
+///
+/// A deliberately small scanner, not a parser: it skips comments, strings
+/// and block strings, ignores braces inside parentheses (object values in
+/// arguments and variable defaults), and takes the first name at brace depth
+/// 0 after each definition closes. That position is exactly where GraphQL
+/// puts the operation keyword, so an operation *named* `mutation` doesn't
+/// confuse it. Unterminated strings and unbalanced brackets are errors: a
+/// document sak can't scan is not one it can vouch for.
+fn graphql_operation_types(doc: &str) -> std::result::Result<Vec<&str>, &'static str> {
+    let b = doc.as_bytes();
+    let mut ops = Vec::new();
+    let (mut depth, mut parens) = (0usize, 0usize);
+    let mut expect_definition = true;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'#' => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'"' if b[i..].starts_with(b"\"\"\"") => {
+                i += 3;
+                loop {
+                    if i >= b.len() {
+                        return Err("an unterminated block string in the GraphQL document");
+                    }
+                    if b[i..].starts_with(b"\\\"\"\"") {
+                        i += 4;
+                    } else if b[i..].starts_with(b"\"\"\"") {
+                        i += 3;
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+                continue;
+            }
+            b'"' => {
+                i += 1;
+                loop {
+                    match b.get(i) {
+                        None | Some(b'\n') => {
+                            return Err("an unterminated string in the GraphQL document");
+                        }
+                        Some(b'\\') => i += 2,
+                        Some(b'"') => break,
+                        Some(_) => i += 1,
+                    }
+                }
+            }
+            b'(' => parens += 1,
+            b')' => {
+                parens = parens
+                    .checked_sub(1)
+                    .ok_or("unbalanced parentheses in the GraphQL document")?;
+            }
+            b'{' if parens == 0 => {
+                if depth == 0 && expect_definition {
+                    ops.push("query");
+                    expect_definition = false;
+                }
+                depth += 1;
+            }
+            b'}' if parens == 0 => {
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or("unbalanced braces in the GraphQL document")?;
+                if depth == 0 {
+                    expect_definition = true;
+                }
+            }
+            c if c == b'_' || c.is_ascii_alphabetic() => {
+                let start = i;
+                while i < b.len() && (b[i] == b'_' || b[i].is_ascii_alphanumeric()) {
+                    i += 1;
+                }
+                if depth == 0 && parens == 0 && expect_definition {
+                    ops.push(&doc[start..i]);
+                    expect_definition = false;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if depth != 0 || parens != 0 {
+        return Err("unbalanced brackets in the GraphQL document");
+    }
+    Ok(ops)
+}
+
 /// Reject any `gh api` invocation that would not be a read: an explicit
-/// non-GET method, or REST request parameters without `-X GET` (gh's
-/// implicit POST). Bare `gh api <endpoint>` is GET by gh's own default.
+/// non-GET method, REST request parameters without `-X GET` (gh's implicit
+/// POST), or a GraphQL document that isn't provably query-only. Bare
+/// `gh api <endpoint>` is GET by gh's own default.
 fn check_api_method(args: &[&str]) -> Result<()> {
     match api_method(args) {
         ApiMethod::Get | ApiMethod::GraphQl => Ok(()),
+        ApiMethod::GraphQlWrite(op) => bail!(
+            "gh api graphql: `{}` operations are not allowed — sak gh is read-only, only \
+             `query` documents are permitted",
+            op
+        ),
+        ApiMethod::GraphQlUnverifiable(reason) => bail!(
+            "gh api graphql: can't verify the request is read-only ({}); pass the query \
+             inline with `--raw-field query='…'`",
+            reason
+        ),
         ApiMethod::NonGet(m) => bail!(
             "gh api: HTTP method `{}` is not allowed — sak gh is read-only, only GET is permitted",
             m
@@ -500,10 +660,17 @@ mod tests {
 
     #[test]
     fn api_method_graphql_is_its_own_class() {
-        // gh always POSTs GraphQL; queries are reads (mutations: sak-llm-a08h).
+        // gh always POSTs GraphQL; query documents are reads.
         for args in [
             &["graphql", "-f", "query={ viewer { login } }"][..],
-            &["api", "graphql", "-F", "n=1", "-f", "query=q"][..],
+            &[
+                "api",
+                "graphql",
+                "-F",
+                "n=1",
+                "-f",
+                "query=query($n: Int) { a(n: $n) }",
+            ][..],
         ] {
             assert_eq!(api_method(args), ApiMethod::GraphQl, "{args:?}");
         }
@@ -512,6 +679,122 @@ mod tests {
             api_method(&["repos/x/y", "-H", "graphql", "-f", "a=b"]),
             ApiMethod::ImplicitPost("-f".into())
         );
+    }
+
+    #[test]
+    fn graphql_operation_types_reads_every_definition() {
+        let ops = |d| graphql_operation_types(d).unwrap();
+        assert_eq!(ops("{ viewer { login } }"), ["query"]);
+        assert_eq!(ops("query Q($n: Int) { a(n: $n) { b } }"), ["query"]);
+        assert_eq!(
+            ops("query { ...F } fragment F on T { a }"),
+            ["query", "fragment"]
+        );
+        assert_eq!(ops("mutation { addStar(input: {}) { x } }"), ["mutation"]);
+        assert_eq!(ops("subscription S { e }"), ["subscription"]);
+        // The mutation hides behind a harmless first operation.
+        assert_eq!(ops("query A { a } mutation B { b }"), ["query", "mutation"]);
+        assert_eq!(ops(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn graphql_operation_types_ignores_keywords_outside_definition_position() {
+        let ops = |d| graphql_operation_types(d).unwrap();
+        // An operation *named* mutation, a field named mutation.
+        assert_eq!(ops("query mutation { mutation }"), ["query"]);
+        // Keywords and braces inside strings, block strings and comments.
+        assert_eq!(
+            ops("query { a(s: \"} mutation {\") }\n# } mutation { x }\n"),
+            ["query"]
+        );
+        assert_eq!(
+            ops("query { a(s: \"\"\"} \\\"\"\" mutation {\"\"\") }"),
+            ["query"]
+        );
+        // Object values in variable defaults and arguments.
+        assert_eq!(
+            ops("query ($f: In = {a: {b: 1}}) { x(f: {c: 2}) }"),
+            ["query"]
+        );
+    }
+
+    #[test]
+    fn graphql_operation_types_rejects_what_it_cannot_scan() {
+        for doc in [
+            "query { a(s: \"unterminated) }",
+            "query { a(s: \"\"\"open) }",
+            "query { a ",
+            "query { a } }",
+            "query ( { a }",
+        ] {
+            assert!(graphql_operation_types(doc).is_err(), "{doc:?}");
+        }
+    }
+
+    #[test]
+    fn api_method_classifies_graphql_documents() {
+        // Regression (sak-llm-a08h): mutations ride the same POST as queries.
+        assert_eq!(
+            api_method(&["graphql", "-f", "query=mutation { addStar { x } }"]),
+            ApiMethod::GraphQlWrite("mutation".into())
+        );
+        assert_eq!(
+            api_method(&[
+                "graphql",
+                "-f",
+                "query=query A { a } mutation B { b }",
+                "-f",
+                "operationName=B"
+            ]),
+            ApiMethod::GraphQlWrite("mutation".into())
+        );
+        // Every `query` field must pass, not just the last.
+        assert_eq!(
+            api_method(&[
+                "graphql",
+                "--raw-field=query=mutation { m }",
+                "-f",
+                "query={ viewer { login } }"
+            ]),
+            ApiMethod::GraphQlWrite("mutation".into())
+        );
+        // An explicit GET doesn't excuse the document.
+        assert_eq!(
+            api_method(&["graphql", "-X", "GET", "-f", "query=mutation { m }"]),
+            ApiMethod::GraphQlWrite("mutation".into())
+        );
+        // Variables are not documents.
+        assert_eq!(
+            api_method(&["graphql", "-F", "owner=mutation", "-f", "query={ a }"]),
+            ApiMethod::GraphQl
+        );
+    }
+
+    #[test]
+    fn api_method_rejects_uninspectable_graphql_bodies() {
+        for args in [
+            &["graphql", "--input", "body.json"][..],
+            &["graphql", "-F", "query=@q.graphql"][..],
+            &["graphql", "--field", "query=@-"][..],
+            &["graphql", "-f", "query={ a(s: \"open) }"][..],
+        ] {
+            assert!(
+                matches!(api_method(args), ApiMethod::GraphQlUnverifiable(_)),
+                "{args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_graphql_writes_before_spawning() {
+        let err = invoke("api", None, &["graphql", "-f", "query=mutation { m }"]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`mutation` operations are not allowed"),
+            "{err}"
+        );
+        let err = invoke("api", None, &["graphql", "--input", "b.json"]).unwrap_err();
+        assert!(err.to_string().contains("can't verify"), "{err}");
     }
 
     #[test]

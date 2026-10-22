@@ -20,11 +20,14 @@ use crate::output::BoundedWriter;
         gh would switch to POST as soon as a parameter is added). The shared \
         chokepoint additionally rejects any non-GET method or implicit POST, \
         so even direct misuse can't mutate.\n\n\
-        GraphQL note: `gh api graphql -f query=...` is technically issued as \
-        POST by `gh`, but the read-only invariant holds for *query* documents — \
-        a GraphQL mutation requires an explicit `mutation { ... }` body, not a \
-        different HTTP method. sak does not parse the query string, so if you \
-        need strict no-mutation discipline, validate the body before calling.\n\n\
+        GraphQL: `sak gh api graphql --raw-field query=…` is POSTed by gh (it \
+        only speaks POST to GraphQL), so the document is what keeps it a read. \
+        The chokepoint scans every `query` document and rejects any that \
+        defines a non-`query` operation (`mutation`, `subscription`), \
+        including one hidden after a harmless first operation. A query it \
+        can't inspect — read from a file with `--field query=@path`, or \
+        malformed — is rejected too; pass the document inline with \
+        `--raw-field`. Other fields are sent as GraphQL variables.\n\n\
         Auth, base URL, and host resolution are whatever `gh` itself uses \
         (`GH_TOKEN` / `GITHUB_TOKEN` or `~/.config/gh/hosts.yml`); sak passes \
         the environment through unchanged.",
