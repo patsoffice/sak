@@ -2,7 +2,7 @@ use crate::output::Outcome;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde_json::Value;
 
@@ -128,8 +128,43 @@ pub(crate) fn emit<W: Write>(
                 .context("cannot serialize to plist")?;
             w.write_all(b"\n")?;
         }
+        Format::Ini => {
+            let s = emit_ini(value).context("cannot serialize to INI")?;
+            w.write_all(s.as_bytes())?;
+            if !s.ends_with('\n') {
+                w.write_all(b"\n")?;
+            }
+        }
     }
     Ok(())
+}
+
+/// Render a value as INI: a two-level object becomes `[section]` headers
+/// with `key = value` lines. Anything deeper (nested objects, arrays),
+/// top-level scalars, or nulls are errors rather than silent drops —
+/// the same lossy-edge policy as the other writers. No escaping is applied,
+/// so values containing newlines will not round-trip.
+fn emit_ini(value: &Value) -> Result<String> {
+    let root = value
+        .as_object()
+        .context("INI output requires a top-level object of sections")?;
+    let mut s = String::new();
+    for (section, obj) in root {
+        let props = obj.as_object().with_context(|| {
+            format!("INI output requires two levels: [{section}] holds a non-object value")
+        })?;
+        s.push_str(&format!("[{section}]\n"));
+        for (k, v) in props {
+            match v {
+                Value::String(text) => s.push_str(&format!("{k} = {text}\n")),
+                Value::Number(_) | Value::Bool(_) => {
+                    s.push_str(&format!("{k} = {v}\n"));
+                }
+                _ => bail!("cannot represent {v} under [{section}].{k} in INI"),
+            }
+        }
+    }
+    Ok(s)
 }
 
 #[cfg(test)]
@@ -254,6 +289,54 @@ mod tests {
         let err = emit(&value, Format::Toml, true, &mut buf).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("TOML"), "unexpected error: {}", msg);
+    }
+
+    #[test]
+    fn ini_to_json() {
+        let out = convert_bytes(
+            b"[server]\nhost = a\nport = 8080\n",
+            Format::Ini,
+            Format::Json,
+            false,
+        );
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.contains(r#""server":{"host":"a","port":"8080"}"#));
+    }
+
+    #[test]
+    fn json_to_ini_two_levels() {
+        let out = convert_bytes(
+            b"{\"server\":{\"host\":\"a\",\"port\":1},\"empty\":{}}",
+            Format::Json,
+            Format::Ini,
+            true,
+        );
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.contains("[server]\nhost = a\nport = 1\n"));
+        assert!(s.contains("[empty]\n"));
+        // And it parses back to the same value.
+        let back = parse_one(Format::Ini, &out).unwrap();
+        assert_eq!(back["server"]["host"], "a");
+        assert_eq!(back["server"]["port"], "1");
+    }
+
+    #[test]
+    fn ini_emit_rejects_deep_or_null() {
+        let deep = parse_one(Format::Json, b"{\"a\":{\"b\":{\"c\":1}}}").unwrap();
+        let err = format!(
+            "{:#}",
+            emit(&deep, Format::Ini, true, &mut Vec::new()).unwrap_err()
+        );
+        assert!(err.contains("cannot represent"), "unexpected: {err}");
+        // A scalar where a section object belongs names the two-level rule.
+        let flat = parse_one(Format::Json, b"{\"a\":1}").unwrap();
+        let err = format!(
+            "{:#}",
+            emit(&flat, Format::Ini, true, &mut Vec::new()).unwrap_err()
+        );
+        assert!(err.contains("two levels"), "unexpected: {err}");
+        let nul = parse_one(Format::Json, b"{\"a\":null}").unwrap();
+        assert!(emit(&nul, Format::Ini, true, &mut Vec::new()).is_err());
     }
 
     #[test]

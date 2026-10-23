@@ -92,6 +92,7 @@ fn fixture() -> tempfile::TempDir {
         "server:\n  port: 8080\n  host: localhost\n",
     );
     write(d, "config.toml", "[server]\nport = 8080\n");
+    write(d, "app.ini", "[server]\nport = 8080\n");
     write(d, "a.toml", "[server]\nport = 8080\n");
     write(d, "b.yaml", "server:\n  port: 9090\n");
     write(

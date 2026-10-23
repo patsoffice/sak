@@ -10,14 +10,16 @@ use crate::output::BoundedWriter;
 
 #[derive(Args)]
 #[command(
-    about = "Check whether files contain valid TOML, YAML, plist, or JSON",
-    long_about = "Check whether files contain valid TOML, YAML, plist, or JSON and \
+    about = "Check whether files contain valid TOML, YAML, plist, JSON, or INI",
+    long_about = "Check whether files contain valid TOML, YAML, plist, JSON, or INI and \
         report parse errors.\n\n\
         Format is auto-detected from the file extension or set explicitly with \
         `--format`. Reads from stdin if no files are given (requires `--format`). \
         Exits 0 if all inputs are valid, exits 1 if any input is invalid. \
         Errors are reported to stderr as `filename:line:column: message` (line \
-        and column may be omitted when the parser cannot pinpoint a location).",
+        and column may be omitted when the parser cannot pinpoint a location).\n\n\
+        INI inputs parse to two-level string maps (`section` → `key` → string) \
+        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
     after_help = "\
 Examples:
   sak config validate Cargo.toml

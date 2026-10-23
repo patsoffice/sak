@@ -17,7 +17,9 @@ use crate::value::{WalkOpts, collect_keys, resolve_expression};
         lists keys up to N levels deep using dot-path notation. With `--types`, \
         each key is annotated with its value type. Format is auto-detected from \
         the file extension or set with `--format`. Reads from stdin if no files \
-        are given (requires `--format`).",
+        are given (requires `--format`).\n\n\
+        INI inputs parse to two-level string maps (`section` → `key` → string) \
+        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
     after_help = "\
 Examples:
   sak config keys Cargo.toml                       Top-level keys

@@ -13,10 +13,12 @@ use crate::value::{format_value, resolve_expression};
 #[command(
     about = "Extract values from TOML, YAML, plist, or JSON",
     long_about = "Extract values from a config file using a path expression.\n\n\
-        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist, .json) \
+        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist, .json, .ini) \
         or may be set explicitly with `--format`. The expression may use dot notation \
         (e.g. `.server.port`) or JSON Pointer syntax (e.g. `/server/port`). \
-        Reads from stdin if no files are given (requires `--format`).",
+        Reads from stdin if no files are given (requires `--format`).\n\n\
+        INI inputs parse to two-level string maps (`section` → `key` → string) \
+        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
     after_help = "\
 Examples:
   sak config query .package.name Cargo.toml

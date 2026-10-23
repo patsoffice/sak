@@ -84,6 +84,7 @@ pub enum Format {
     Yaml,
     Plist,
     Json,
+    Ini,
 }
 
 impl fmt::Display for Format {
@@ -93,6 +94,7 @@ impl fmt::Display for Format {
             Format::Yaml => "yaml",
             Format::Plist => "plist",
             Format::Json => "json",
+            Format::Ini => "ini",
         })
     }
 }
@@ -129,8 +131,11 @@ pub fn detect_format(path: &Path, override_: Option<Format>) -> Result<Format> {
         Some("yaml" | "yml") => Ok(Format::Yaml),
         Some("plist") => Ok(Format::Plist),
         Some("json") => Ok(Format::Json),
+        // `.cfg`/`.conf` are deliberately excluded: both are heavily
+        // overloaded, so a file with those extensions needs `--format ini`.
+        Some("ini") => Ok(Format::Ini),
         _ => bail!(
-            "cannot detect format for {} — pass --format toml|yaml|plist|json",
+            "cannot detect format for {} — pass --format toml|yaml|plist|json|ini",
             path.display()
         ),
     }
@@ -184,6 +189,34 @@ pub fn parse_one(format: Format, content: &[u8]) -> std::result::Result<Value, P
             col: Some(e.column()),
             message: e.to_string(),
         }),
+        Format::Ini => {
+            let s = std::str::from_utf8(content).map_err(|e| ParseError {
+                line: None,
+                col: None,
+                message: format!("not valid UTF-8: {}", e),
+            })?;
+            // Stock configparser defaults, spelled out here because INI has
+            // no spec: `;` and `#` start a comment anywhere on the line, `=`
+            // is the only key/value delimiter, section names and keys are
+            // lowercased, keys before any `[section]` land in a synthetic
+            // `default` section, duplicate keys keep the last value, and a
+            // bare key with no `=` parses as null (distinct from `key =`).
+            let mut parser = configparser::ini::Ini::new();
+            let map = parser.read(s.to_string()).map_err(|e| ParseError {
+                line: None,
+                col: None,
+                message: e,
+            })?;
+            let mut root = serde_json::Map::with_capacity(map.len());
+            for (section, props) in map {
+                let mut obj = serde_json::Map::with_capacity(props.len());
+                for (k, v) in props {
+                    obj.insert(k, v.map(Value::String).unwrap_or(Value::Null));
+                }
+                root.insert(section, Value::Object(obj));
+            }
+            Ok(Value::Object(root))
+        }
     }
 }
 
@@ -295,6 +328,17 @@ mod tests {
     }
 
     #[test]
+    fn detect_ini_only_by_ini_extension() {
+        assert_eq!(
+            detect_format(Path::new("a.ini"), None).unwrap(),
+            Format::Ini
+        );
+        // `.cfg`/`.conf` are overloaded: they need `--format ini`.
+        assert!(detect_format(Path::new("a.cfg"), None).is_err());
+        assert!(detect_format(Path::new("a.conf"), None).is_err());
+    }
+
+    #[test]
     fn detect_override_wins() {
         assert_eq!(
             detect_format(Path::new("a.txt"), Some(Format::Yaml)).unwrap(),
@@ -351,6 +395,45 @@ mod tests {
         let err = parse_one(Format::Json, b"{\"a\":").unwrap_err();
         assert!(err.line.is_some());
         assert!(err.col.is_some());
+    }
+
+    #[test]
+    fn parse_ini_sections_and_keys() {
+        let v = parse_one(
+            Format::Ini,
+            b"[server]\nhost = a\nport = 8080\n[db]\nname = main",
+        )
+        .unwrap();
+        assert_eq!(v["server"]["host"], "a");
+        assert_eq!(v["server"]["port"], "8080");
+        assert_eq!(v["db"]["name"], "main");
+    }
+
+    #[test]
+    fn parse_ini_lowercases_and_last_wins() {
+        // Sections and keys lowercase; later duplicates win; `#` truncates.
+        let v = parse_one(Format::Ini, b"[Server]\nPort = 1 # old\nPORT = 2").unwrap();
+        assert_eq!(v["server"]["port"], "2");
+    }
+
+    #[test]
+    fn parse_ini_sectionless_goes_to_default() {
+        let v = parse_one(Format::Ini, b"top = 1\n[sec]\na = 2").unwrap();
+        assert_eq!(v["default"]["top"], "1");
+        assert_eq!(v["sec"]["a"], "2");
+    }
+
+    #[test]
+    fn parse_ini_bare_key_is_null_and_colon_is_not_a_delimiter() {
+        // No `=` means a valueless key (null); `:` does not split.
+        let v = parse_one(Format::Ini, b"[s]\nflag\nurl: x").unwrap();
+        assert_eq!(v["s"]["flag"], Value::Null);
+        assert_eq!(v["s"]["url: x"], Value::Null);
+    }
+
+    #[test]
+    fn parse_ini_unclosed_section_errors() {
+        assert!(parse_one(Format::Ini, b"[oops\n").is_err());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.20.44"
+version = "0.20.45"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -97,6 +97,11 @@ serde_json = { version = "1", features = ["arbitrary_precision"] }
 toml = "0.8"
 serde_yaml = "0.9"
 plist = "1.6"
+# config domain INI support: configparser is pure Rust with no native deps
+# (it is also the engine behind rust-ini's `ini` 1.x re-export). Parsing
+# uses stock defaults (documented on the parse branch in config/mod.rs);
+# values are always untyped strings.
+configparser = "1"
 # cert domain (always on — pure Rust, no native deps, no network). x509-parser
 # brings nom + asn1-rs + oid-registry for ASN.1/DER decoding; sha2 is used for
 # fingerprints; base64 (also used by `sqlite`) is needed to strip the base64

@@ -110,6 +110,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config paths config.yaml                List leaf paths (no values)
   sak config diff a.toml b.yaml               Cross-format structural diff
   sak config merge config.toml b.yaml         Layer YAML over TOML
+  sak config query .server.port app.ini       Read INI values
   sak config validate config.toml             Check syntax validity
   sak csv headers data.csv                    List CSV column names and indices
   sak csv query -c name,age data.csv          Project columns and filter rows
@@ -276,7 +277,7 @@ enum Command {
     /// JSON operations (read-only)
     #[command(subcommand)]
     Json(json::JsonCommand),
-    /// Config file operations — TOML, YAML, plist (read-only)
+    /// Config file operations — TOML, YAML, plist, JSON, INI (read-only)
     #[command(subcommand)]
     Config(config::ConfigCommand),
     /// CSV operations (read-only)

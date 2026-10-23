@@ -17,16 +17,16 @@ pub const HOOK_RULES: &[HookRule] = &[
         subcommand: &[],
         guard: Some(yq_has_filter),
         message: "Use `sak config query <path> <file>` instead of `yq` \
-             (omit <file> and pass `--format yaml|toml|json|plist` to read stdin). \
-             Handles TOML/YAML/JSON/plist.",
+             (omit <file> and pass `--format yaml|toml|json|plist|ini` to read stdin). \
+             Handles TOML/YAML/JSON/plist/INI.",
     },
     HookRule {
         tool: "tomlq",
         subcommand: &[],
         guard: Some(yq_has_filter),
         message: "Use `sak config query <path> <file>` instead of `tomlq` \
-             (omit <file> and pass `--format toml|yaml|json|plist` to read stdin). \
-             Handles TOML/YAML/JSON/plist.",
+             (omit <file> and pass `--format toml|yaml|json|plist|ini` to read stdin). \
+             Handles TOML/YAML/JSON/plist/INI.",
     },
     HookRule {
         tool: "plistutil",

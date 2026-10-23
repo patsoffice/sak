@@ -14,10 +14,12 @@ use crate::value::resolve_expression;
         Produces no stdout output — the result is signalled by the exit code: \
         0 if the path exists, 1 if it is missing. Useful in agent loops and \
         shell pipelines where the value itself isn't needed.\n\n\
-        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist) \
+        Format is auto-detected from the file extension (.toml, .yaml/.yml, .plist, .ini) \
         or may be set explicitly with `--format`. The expression accepts the same \
         dot notation (e.g. `.server.port`) and JSON Pointer syntax (e.g. `/server/port`) \
         as `sak config query`. Reads from stdin if no files are given (requires `--format`).\n\n\
+        INI inputs parse to two-level string maps (`section` → `key` → string) \
+        with lowercased names, so depth- and type-dependent options are trivially flat on INI.\n\n\
         With multiple files, the default is *all*: exit 0 only if every input \
         contains the path. Pass `--any` to flip the semantics (exit 0 if any \
         input contains the path).",
