@@ -1,3 +1,4 @@
+pub mod count;
 pub mod diff;
 pub mod exists;
 pub mod flatten;
@@ -36,6 +37,7 @@ pub enum JsonCommand {
     Type(type_::TypeArgs),
     Validate(validate::ValidateArgs),
     Diff(diff::DiffArgs),
+    Count(count::CountArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -53,6 +55,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Type(args) => type_::run(args),
         JsonCommand::Validate(args) => validate::run(args),
         JsonCommand::Diff(args) => diff::run(args),
+        JsonCommand::Count(args) => count::run(args),
     }
 }
 

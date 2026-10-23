@@ -102,7 +102,7 @@ A few patterns recur — when you write tests for a new command, reach for these
 - Summary line under 80 chars, no trailing period, then a **blank line** before the body (without it git folds the bullets into the subject and `git log --oneline` shows one giant line) — e.g. `feat: fs read/head/tail/grep default to stdin`
 - Body: one `-` bullet per logical change, wrapped git-style (~72 cols), saying what and why rather than file names
 - Issue references ride on the relevant bullet (`...; closes sak-llm-bzfm`), not as separate trailers
-- Verification gets its own last bullet naming the gates that passed, without totals: `fmt/clippy/test/lean-test clean`. Version bumps are named in a bullet too (`Patch bump 0.20.15 -> 0.20.16`)
+- Version bumps are named in a bullet too (`Patch bump 0.20.15 -> 0.20.16`). No verification bullet — fmt/clippy/test/lean-test clean is the standing bar for every commit, so stating it adds nothing
 - No volatile counts anywhere in the message — see [Documentation Hygiene](#documentation-hygiene)
 
 ## Architecture
