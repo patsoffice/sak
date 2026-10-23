@@ -33,6 +33,52 @@ pub use walk::*;
 
 use serde_json::Value;
 
+/// Serialize a [`Value`] with numbers as native integers/floats, for writers
+/// other than serde_json (TOML, YAML, plist).
+///
+/// serde_json is built with `arbitrary_precision` so numbers keep their
+/// source text through JSON round trips. The price: a `Value::Number`
+/// serializes as serde_json's private `{"$serde_json::private::Number": …}`
+/// map to any *other* serializer, which TOML/YAML/plist would emit verbatim.
+/// Those formats can't hold arbitrary precision anyway, so this wrapper
+/// hands them `u64`, then `i64`, then `f64`, the same values they received
+/// before the feature was enabled.
+pub struct NativeNumbers<'a>(pub &'a Value);
+
+impl serde::Serialize for NativeNumbers<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self.0 {
+            Value::Null => s.serialize_unit(),
+            Value::Bool(b) => s.serialize_bool(*b),
+            Value::Number(n) => {
+                if let Some(u) = n.as_u64() {
+                    s.serialize_u64(u)
+                } else if let Some(i) = n.as_i64() {
+                    s.serialize_i64(i)
+                } else {
+                    s.serialize_f64(n.as_f64().unwrap_or(f64::NAN))
+                }
+            }
+            Value::String(text) => s.serialize_str(text),
+            Value::Array(items) => {
+                let mut seq = s.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    seq.serialize_element(&NativeNumbers(item))?;
+                }
+                seq.end()
+            }
+            Value::Object(map) => {
+                let mut out = s.serialize_map(Some(map.len()))?;
+                for (k, v) in map {
+                    out.serialize_entry(k, &NativeNumbers(v))?;
+                }
+                out.end()
+            }
+        }
+    }
+}
+
 /// Format a value for output.
 pub fn format_value(value: &Value, raw: bool, pretty: bool) -> String {
     if raw && let Value::String(s) = value {

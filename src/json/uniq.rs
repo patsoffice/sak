@@ -35,31 +35,32 @@ pub struct UniqArgs {
     pub lines: bool,
 }
 
+/// `sort | uniq` over JSON values. Dedupe identity is the canonical JSON
+/// text, so `1` and `1.0` stay distinct. Ties in [`value_cmp`] (which calls
+/// `1` and `1.0` equal) are broken by that same text, so identical texts are
+/// always adjacent after the sort; without the tie-break, `[1, 1.0, 1]` kept
+/// its input order and the adjacent-only dedupe emitted `1` twice.
+fn distinct_sorted(values: Vec<Value>) -> Vec<Value> {
+    let mut keyed: Vec<(String, Value)> = values
+        .into_iter()
+        .map(|v| (serde_json::to_string(&v).unwrap_or_default(), v))
+        .collect();
+    keyed.sort_by(|(ta, a), (tb, b)| value_cmp(a, b, false).then_with(|| ta.cmp(tb)));
+    keyed.dedup_by(|(later, _), (earlier, _)| later == earlier);
+    keyed.into_iter().map(|(_, v)| v).collect()
+}
+
 pub fn run(args: &UniqArgs) -> Result<Outcome> {
     // A lone existing file in the path slot is the input (path `.`) —
     // mirroring `slice`, `sort`, and `table`.
     let (path, files) = crate::input::path_or_file(args.path.as_deref(), &args.files);
     let array_path = path.as_deref().unwrap_or(".");
     let inputs = read_json_inputs_maybe_lines(&files, args.lines)?;
-    let mut values = collect_path_values(&inputs, array_path)?;
+    let values = collect_path_values(&inputs, array_path)?;
     if values.is_empty() {
         return Ok(Outcome::NotFound);
     }
-
-    // sort | uniq: order by value, then drop adjacent duplicates. Dedupe
-    // identity is the canonical JSON text, so 1 and 1.0 stay distinct.
-    values.sort_by(|a, b| value_cmp(a, b, false));
-    let mut distinct: Vec<Value> = Vec::with_capacity(values.len());
-    for v in values {
-        let text = serde_json::to_string(&v).unwrap_or_default();
-        let keep = distinct
-            .last()
-            .map(|prev| serde_json::to_string(prev).unwrap_or_default() != text)
-            .unwrap_or(true);
-        if keep {
-            distinct.push(v);
-        }
-    }
+    let distinct = distinct_sorted(values);
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -95,6 +96,30 @@ mod tests {
             vec![json!("x"), json!("y"), json!("x"), json!("z")]
         );
         assert!(collect_path_values(&inputs, ".nope").unwrap().is_empty());
+    }
+
+    #[test]
+    fn distinct_values_are_sorted_and_unique() {
+        assert_eq!(
+            distinct_sorted(vec![json!("b"), json!("a"), json!("b")]),
+            vec![json!("a"), json!("b")]
+        );
+        // Regression: equal-comparing numbers with different text (1 / 1.0)
+        // kept input order, so the adjacent dedupe emitted `1` twice.
+        let text = |v: &[Value]| serde_json::to_string(v).unwrap();
+        assert_eq!(
+            text(&distinct_sorted(vec![json!(1), json!(1.0), json!(1)])),
+            "[1,1.0]"
+        );
+        assert_eq!(
+            text(&distinct_sorted(vec![
+                json!(1.0),
+                json!(1),
+                json!(1.0),
+                json!(1)
+            ])),
+            "[1,1.0]"
+        );
     }
 
     #[test]

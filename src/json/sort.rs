@@ -17,12 +17,12 @@ use crate::value::{resolve_expression, type_name};
     long_about = "Sort the array at <path> (default `.`) by the value at \
         <field> in each element, emitting the sorted array as JSON — for \
         ordering query results. The sort is stable: equal keys keep their \
-        input order. Elements missing the field sort last (first with \
-        --reverse). Values compare by JSON type rank (null, boolean, number, \
+        input order, with --reverse too. Elements missing the field always \
+        sort last. Values compare by JSON type rank (null, boolean, number, \
         string, array, object) then by value; with --numeric, numbers and \
-        numeric strings compare as f64 and sort before any other value. \
-        Elements from multiple inputs are concatenated in order before \
-        sorting.",
+        numeric strings compare as f64 and sort before any other value (a \
+        `\"NaN\"` string is not numeric). Elements from multiple inputs are \
+        concatenated in order before sorting.",
     after_help = "\
 Examples:
   sak json sort .id .issues data.json             Sort issues by id
@@ -62,14 +62,17 @@ fn type_rank(v: &Value) -> u8 {
 }
 
 /// Best-effort numeric projection for --numeric: JSON numbers directly,
-/// strings via f64 parsing (`"NaN"`/`"inf"` parse and compare as unordered,
-/// falling back to Equal against another NaN).
+/// strings via f64 parsing. NaN (`"nan"`, `"NaN"`) is *not* numeric: it is
+/// unordered against every number, and a comparator that calls it equal to
+/// everything isn't a total order (`sort_by` may then misorder or panic).
+/// Infinities are ordered and stay numeric.
 fn as_number(v: &Value) -> Option<f64> {
-    match v {
+    let n = match v {
         Value::Number(n) => n.as_f64(),
         Value::String(s) => s.parse().ok(),
         _ => None,
-    }
+    }?;
+    (!n.is_nan()).then_some(n)
 }
 
 fn scalar_cmp(a: &Value, b: &Value) -> Ordering {
@@ -92,9 +95,9 @@ fn scalar_cmp(a: &Value, b: &Value) -> Ordering {
 pub(crate) fn value_cmp(a: &Value, b: &Value, numeric: bool) -> Ordering {
     if numeric {
         match (as_number(a), as_number(b)) {
-            (Some(x), Some(y)) => {
-                return x.partial_cmp(&y).unwrap_or(Ordering::Equal);
-            }
+            // NaN is filtered out by `as_number`, so `total_cmp` agrees with
+            // numeric order here and is total by construction.
+            (Some(x), Some(y)) => return x.total_cmp(&y),
             // Numerics sort before anything that isn't a number.
             (Some(_), None) => return Ordering::Less,
             (None, Some(_)) => return Ordering::Greater,
@@ -107,14 +110,31 @@ pub(crate) fn value_cmp(a: &Value, b: &Value, numeric: bool) -> Ordering {
 }
 
 /// Compare two per-element keys. A missing field sorts after every present
-/// value; --reverse flips the whole order afterwards.
-fn key_cmp(a: Option<&Value>, b: Option<&Value>, numeric: bool) -> Ordering {
+/// value in both directions; `reverse` flips only the comparison of present
+/// values. Reversing inside the comparator (not reversing the sorted array)
+/// is what keeps the sort stable: equal keys still compare Equal, so they
+/// keep their input order.
+fn key_cmp(a: Option<&Value>, b: Option<&Value>, numeric: bool, reverse: bool) -> Ordering {
     match (a, b) {
         (None, None) => Ordering::Equal,
         (None, _) => Ordering::Greater,
         (_, None) => Ordering::Less,
-        (Some(x), Some(y)) => value_cmp(x, y, numeric),
+        (Some(x), Some(y)) => {
+            let ord = value_cmp(x, y, numeric);
+            if reverse { ord.reverse() } else { ord }
+        }
     }
+}
+
+/// Stable sort of `(key, element)` pairs, returning the elements. Pure so
+/// the ordering (stability, missing-last, reverse) is testable without I/O.
+fn sort_by_key(
+    mut elements: Vec<(Option<Value>, Value)>,
+    numeric: bool,
+    reverse: bool,
+) -> Vec<Value> {
+    elements.sort_by(|(ka, _), (kb, _)| key_cmp(ka.as_ref(), kb.as_ref(), numeric, reverse));
+    elements.into_iter().map(|(_, v)| v).collect()
 }
 
 pub fn run(args: &SortArgs) -> Result<Outcome> {
@@ -143,12 +163,7 @@ pub fn run(args: &SortArgs) -> Result<Outcome> {
         }
     }
 
-    elements.sort_by(|(ka, _), (kb, _)| key_cmp(ka.as_ref(), kb.as_ref(), args.numeric));
-    if args.reverse {
-        elements.reverse();
-    }
-
-    let sorted: Vec<Value> = elements.into_iter().map(|(_, v)| v).collect();
+    let sorted = sort_by_key(elements, args.numeric, args.reverse);
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, None);
@@ -194,9 +209,67 @@ mod tests {
 
     #[test]
     fn missing_field_sorts_last() {
-        assert_eq!(key_cmp(None, Some(&json!(1)), false), Ordering::Greater);
-        assert_eq!(key_cmp(Some(&json!(1)), None, false), Ordering::Less);
-        assert_eq!(key_cmp(None, None, false), Ordering::Equal);
+        assert_eq!(
+            key_cmp(None, Some(&json!(1)), false, false),
+            Ordering::Greater
+        );
+        assert_eq!(key_cmp(Some(&json!(1)), None, false, false), Ordering::Less);
+        assert_eq!(key_cmp(None, None, false, false), Ordering::Equal);
+    }
+
+    /// `(key, element)` pairs keyed by `.k`, tagged by `.t` for identity.
+    fn keyed(rows: &[(Option<i64>, &str)]) -> Vec<(Option<Value>, Value)> {
+        rows.iter()
+            .map(|(k, t)| (k.map(|k| json!(k)), json!({"t": t})))
+            .collect()
+    }
+
+    fn tags(sorted: &[Value]) -> Vec<&str> {
+        sorted.iter().map(|v| v["t"].as_str().unwrap()).collect()
+    }
+
+    #[test]
+    fn reverse_keeps_equal_keys_in_input_order_and_missing_last() {
+        // Regression: --reverse reversed the sorted array, so equal keys
+        // swapped order and missing-field elements jumped to the front.
+        let rows = keyed(&[(Some(1), "a"), (None, "m"), (Some(1), "b"), (Some(2), "c")]);
+        assert_eq!(
+            tags(&sort_by_key(rows.clone(), false, false)),
+            ["a", "b", "c", "m"]
+        );
+        assert_eq!(tags(&sort_by_key(rows, false, true)), ["c", "a", "b", "m"]);
+    }
+
+    #[test]
+    fn numeric_nan_is_not_a_number() {
+        // Regression: "nan" parsed to NaN and compared Equal to every
+        // number — not a total order. It now ranks as a non-numeric string.
+        assert_eq!(cmp(&json!("nan"), &json!(1), true), Ordering::Greater);
+        assert_eq!(cmp(&json!(1), &json!("NaN"), true), Ordering::Less);
+        // Infinities stay numeric and ordered.
+        assert_eq!(cmp(&json!("inf"), &json!(1e300), true), Ordering::Greater);
+        assert_eq!(cmp(&json!("-inf"), &json!(-1), true), Ordering::Less);
+    }
+
+    #[test]
+    fn numeric_order_is_total_with_nan_strings_mixed_in() {
+        // A total order sorts the same however the input is shuffled.
+        let values: Vec<Value> = ["3", "nan", "1", "NaN", "2", "x", "nan", "10"]
+            .iter()
+            .map(|s| json!(s))
+            .collect();
+        let sorted = |mut v: Vec<Value>| {
+            v.sort_by(|a, b| value_cmp(a, b, true));
+            v
+        };
+        let forward = sorted(values.clone());
+        let mut backward = values.clone();
+        backward.reverse();
+        assert_eq!(forward, sorted(backward));
+        assert_eq!(
+            forward,
+            ["1", "2", "3", "10", "NaN", "nan", "nan", "x"].map(|s| json!(s))
+        );
     }
 
     #[test]

@@ -15,7 +15,9 @@ use crate::output::BoundedWriter;
     long_about = "Re-parse and re-emit each input as compact JSON — for \
         inlining a pretty-printed document. Object keys sort alphabetically \
         (the deterministic-output convention), so this also normalizes key \
-        order. One line per input. `sak json query .` does the same; this \
+        order. Numbers keep their exact source text (no float rounding of \
+        big integers or long decimals). One line per input. `sak json query \
+        .` does the same; this \
         verb exists so the operation is discoverable.",
     after_help = "\
 Examples:
@@ -36,7 +38,8 @@ pub struct MinifyArgs {
     about = "Pretty-print JSON",
     long_about = "Re-parse and re-emit each input as indented JSON — for \
         reading a compact document. Object keys sort alphabetically (the \
-        deterministic-output convention). `sak json query . --pretty` does \
+        deterministic-output convention); numbers keep their exact source \
+        text. `sak json query . --pretty` does \
         the same; this verb exists so the operation is discoverable.",
     after_help = "\
 Examples:
@@ -140,5 +143,16 @@ mod tests {
             limit: None,
         };
         assert!(minify(&args).is_err());
+    }
+
+    #[test]
+    fn numbers_keep_their_source_text() {
+        // Regression: numbers went through f64, so minify rewrote
+        // 12345678901234567890123 as 1.2345678901234568e+22 and truncated
+        // long decimals. serde_json's arbitrary_precision keeps the text.
+        // Keys already in sorted order, since minify also sorts them.
+        let src = r#"{"big":12345678901234567890123,"neg":-0.000000000000000000001,"pi":3.14159265358979323846264338}"#;
+        let v: Value = serde_json::from_str(src).unwrap();
+        assert_eq!(format_doc(&v, false), src);
     }
 }

@@ -7,6 +7,7 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::config::{Format, read_config_value};
+use crate::value::NativeNumbers;
 
 #[derive(Args)]
 #[command(
@@ -102,8 +103,11 @@ pub(crate) fn emit<W: Write>(
                 w.write_all(b"\n")?;
             }
         }
+        // Non-JSON writers get native numbers: see `NativeNumbers` for why a
+        // bare `Value` would serialize as serde_json's private number map.
         Format::Toml => {
-            let s = toml::to_string_pretty(value).context("cannot serialize to TOML")?;
+            let s = toml::to_string_pretty(&NativeNumbers(value))
+                .context("cannot serialize to TOML")?;
             w.write_all(s.as_bytes())?;
             if !s.ends_with('\n') {
                 w.write_all(b"\n")?;
@@ -111,7 +115,8 @@ pub(crate) fn emit<W: Write>(
         }
         Format::Yaml => {
             // serde_yaml::to_string already terminates the document with '\n'.
-            let s = serde_yaml::to_string(value).context("cannot serialize to YAML")?;
+            let s =
+                serde_yaml::to_string(&NativeNumbers(value)).context("cannot serialize to YAML")?;
             w.write_all(s.as_bytes())?;
             if !s.ends_with('\n') {
                 w.write_all(b"\n")?;
@@ -119,7 +124,8 @@ pub(crate) fn emit<W: Write>(
         }
         Format::Plist => {
             // plist::to_writer_xml writes the XML doctype + closing tag and ends with '\n'.
-            plist::to_writer_xml(&mut *w, value).context("cannot serialize to plist")?;
+            plist::to_writer_xml(&mut *w, &NativeNumbers(value))
+                .context("cannot serialize to plist")?;
             w.write_all(b"\n")?;
         }
     }
