@@ -24,6 +24,7 @@ pub mod containers;
 pub mod contexts;
 pub mod describe;
 pub mod discovery;
+pub mod endpoints;
 pub mod env;
 pub mod events;
 pub mod failing;
@@ -71,6 +72,8 @@ pub enum K8sCommand {
     Events(events::EventsArgs),
     /// Aggregated description of one resource (object/status/containers/owners/events)
     Describe(describe::DescribeArgs),
+    /// Backing endpoints of a Service
+    Endpoints(endpoints::EndpointsArgs),
     /// Fetch container logs from a pod
     Logs(logs::LogsArgs),
     /// CPU/memory usage from metrics-server
@@ -100,6 +103,7 @@ async fn dispatch(cmd: &K8sCommand) -> Result<Outcome> {
         K8sCommand::NotReady(args) => not_ready::run(args).await,
         K8sCommand::Events(args) => events::run(args).await,
         K8sCommand::Describe(args) => describe::run(args).await,
+        K8sCommand::Endpoints(args) => endpoints::run(args).await,
         K8sCommand::Logs(args) => logs::run(args).await,
         K8sCommand::Top(args) => top::run(args).await,
     }
