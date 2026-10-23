@@ -619,7 +619,7 @@ fn check(tokens: &[String], depth: usize) -> Option<String> {
 fn is_shell_wrapper(base: &str) -> bool {
     matches!(
         base,
-        "sh" | "bash" | "zsh" | "dash" | "ash" | "ksh" | "mksh"
+        "sh" | "bash" | "zsh" | "fish" | "dash" | "ash" | "ksh" | "mksh"
     )
 }
 

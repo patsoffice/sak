@@ -61,21 +61,14 @@ pub const HOOK_RULES: &[HookRule] = &[
         guard: Some(grep_reads),
         message: GREP_MSG,
     },
-    // `rg`/`ripgrep` are always reads (no stdin-vs-file ambiguity worth the
-    // guard) — every invocation redirects. The `{tool}` is baked into the
-    // message rather than interpolated.
+    // `rg` is always a read (no stdin-vs-file ambiguity worth the guard) —
+    // every invocation redirects. The historical `ripgrep` spelling has no
+    // upstream binary behind it (`rg` is the real name), so it gets no row.
     HookRule {
         tool: "rg",
         subcommand: &[],
         guard: None,
         message: "Use `sak fs grep <pattern> <path>` instead of `rg` \
-            (pass `-` as <path> to read stdin).",
-    },
-    HookRule {
-        tool: "ripgrep",
-        subcommand: &[],
-        guard: None,
-        message: "Use `sak fs grep <pattern> <path>` instead of `ripgrep` \
             (pass `-` as <path> to read stdin).",
     },
     // `find` emits two messages, so it gets two rules: the metadata-search rule

@@ -726,10 +726,11 @@ fn grep_no_pattern_allows() {
 }
 
 #[test]
-fn ripgrep_blocks() {
+fn rg_blocks() {
+    // Only `rg` gets a row: `ripgrep` has no upstream binary behind it.
     assert!(blocks("rg foo"));
-    assert!(blocks("ripgrep foo"));
     assert!(blocks("rg foo src/"));
+    assert!(allows("ripgrep foo"));
 }
 
 #[test]
@@ -935,6 +936,7 @@ fn shell_dash_c_wrapper_catches() {
     assert!(blocks("sh -c 'cat README.md'"));
     assert!(blocks("bash -c \"grep foo bar\""));
     assert!(blocks("zsh -c 'git status'"));
+    assert!(blocks("fish -c 'cat README.md'"));
     assert!(blocks("/bin/sh -c 'cat /etc/passwd'"));
     // Flag bundles that include `c`.
     assert!(blocks("bash -lc 'cat README.md'"));
@@ -945,6 +947,7 @@ fn shell_without_dash_c_allows() {
     // Running a script file or interactive shell is not an inline read.
     assert!(allows("bash script.sh"));
     assert!(allows("sh deploy.sh arg1 arg2"));
+    assert!(allows("fish script.fish"));
 }
 
 #[test]
