@@ -187,7 +187,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s not-ready kustomization -A          Objects whose Ready condition is not True
   sak k8s events -A --limit 20                Recent cluster events
   sak k8s describe deploy api -n api          Aggregated description of one resource
-  sak k8s logs web-0 -n web --tail 50         Last 50 log lines from a pod",
+  sak k8s logs web-0 -n web --tail 50         Last 50 log lines from a pod
+  sak k8s top pods -A --limit 10              Pod CPU/memory from metrics-server",
     );
     #[cfg(feature = "lxc")]
     s.push_str(

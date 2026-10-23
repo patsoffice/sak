@@ -185,6 +185,8 @@ fn kubectl_reads_block() {
     assert!(blocks("kubectl api-resources"));
     assert!(blocks("kubectl explain pod"));
     assert!(blocks("kubectl config get-contexts"));
+    assert!(blocks("kubectl top pods"));
+    assert!(blocks("kubectl top nodes"));
 }
 
 #[cfg(not(feature = "k8s"))]
@@ -198,6 +200,7 @@ fn kubectl_reads_allow_in_lean_build() {
     assert!(allows("kubectl api-resources"));
     assert!(allows("kubectl explain pod"));
     assert!(allows("kubectl config get-contexts"));
+    assert!(allows("kubectl top pods"));
 }
 
 #[test]
@@ -209,7 +212,6 @@ fn kubectl_writes_allow() {
     assert!(allows("kubectl port-forward svc/x 8080:80"));
     assert!(allows("kubectl rollout restart deploy/foo"));
     // Not yet shadowed by a sak command — passes through.
-    assert!(allows("kubectl top pods"));
     assert!(allows("kubectl version"));
 }
 

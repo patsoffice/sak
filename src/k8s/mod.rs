@@ -37,6 +37,7 @@ pub mod pending;
 pub mod podtable;
 pub mod restarts;
 pub mod schema;
+pub mod top;
 
 use crate::output::Outcome;
 
@@ -72,6 +73,8 @@ pub enum K8sCommand {
     Describe(describe::DescribeArgs),
     /// Fetch container logs from a pod
     Logs(logs::LogsArgs),
+    /// CPU/memory usage from metrics-server
+    Top(top::TopArgs),
 }
 
 /// Dispatch a `sak k8s` subcommand.
@@ -98,5 +101,6 @@ async fn dispatch(cmd: &K8sCommand) -> Result<Outcome> {
         K8sCommand::Events(args) => events::run(args).await,
         K8sCommand::Describe(args) => describe::run(args).await,
         K8sCommand::Logs(args) => logs::run(args).await,
+        K8sCommand::Top(args) => top::run(args).await,
     }
 }

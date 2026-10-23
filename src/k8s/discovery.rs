@@ -235,6 +235,20 @@ const BUILTINS: &[Builtin] = &[
         version: "v1",
         kind: "CustomResourceDefinition",
     },
+    // metrics.k8s.io (metrics-server): fast path for `sak k8s top` and for
+    // `sak k8s get podmetrics|nodemetrics`.
+    Builtin {
+        aliases: &["pm", "podmetrics"],
+        group: "metrics.k8s.io",
+        version: "v1beta1",
+        kind: "PodMetrics",
+    },
+    Builtin {
+        aliases: &["nm", "nodemetrics"],
+        group: "metrics.k8s.io",
+        version: "v1beta1",
+        kind: "NodeMetrics",
+    },
 ];
 
 /// Look up a builtin kind by any of its accepted aliases.
@@ -425,6 +439,22 @@ mod tests {
         let gvk = lookup_builtin("ing").unwrap();
         assert_eq!(gvk.group, "networking.k8s.io");
         assert_eq!(gvk.kind, "Ingress");
+    }
+
+    #[test]
+    fn metrics_aliases_resolve_to_metrics_group() {
+        for alias in ["pm", "podmetrics"] {
+            let gvk = lookup_builtin(alias).unwrap();
+            assert_eq!(gvk.group, "metrics.k8s.io");
+            assert_eq!(gvk.version, "v1beta1");
+            assert_eq!(gvk.kind, "PodMetrics");
+        }
+        for alias in ["nm", "nodemetrics"] {
+            let gvk = lookup_builtin(alias).unwrap();
+            assert_eq!(gvk.group, "metrics.k8s.io");
+            assert_eq!(gvk.version, "v1beta1");
+            assert_eq!(gvk.kind, "NodeMetrics");
+        }
     }
 
     #[test]
