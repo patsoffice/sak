@@ -17,6 +17,7 @@ pub mod table;
 pub mod type_;
 pub mod uniq;
 pub mod validate;
+pub mod values;
 
 use crate::output::Outcome;
 use std::io::{self, BufRead, BufReader, Read};
@@ -48,6 +49,7 @@ pub enum JsonCommand {
     Slice(slice::SliceArgs),
     Sort(sort::SortArgs),
     Uniq(uniq::UniqArgs),
+    Values(values::ValuesArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -72,6 +74,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Slice(args) => slice::slice(args),
         JsonCommand::Sort(args) => sort::run(args),
         JsonCommand::Uniq(args) => uniq::run(args),
+        JsonCommand::Values(args) => values::run(args),
     }
 }
 
