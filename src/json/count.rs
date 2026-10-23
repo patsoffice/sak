@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::Args;
 use serde_json::Value;
 
-use crate::json::{read_json_inputs_maybe_lines, table::render_cell};
+use crate::json::{collect_path_values, read_json_inputs_maybe_lines, table::render_cell};
 use crate::output::BoundedWriter;
 use crate::value::resolve_expression;
 
@@ -57,37 +57,18 @@ pub struct CountArgs {
 /// ascending. Pure over the parsed inputs so it is unit-testable without I/O.
 fn tally(inputs: &[(String, Value)], path: &str, by: Option<&str>) -> Result<Vec<(String, usize)>> {
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for (_name, value) in inputs {
-        // Array roots contribute their elements as records; anything else
-        // contributes the document itself. This makes whole-document arrays
-        // and NDJSON record streams behave identically downstream.
-        let records: Vec<&Value> = match value {
-            Value::Array(elements) => elements.iter().collect(),
-            other => vec![other],
-        };
-        for record in records {
-            let base = match resolve_expression(record, path)? {
-                Some(v) => v,
+    for item in collect_path_values(inputs, path)? {
+        let key_value: Option<&Value> = match by {
+            Some(field) => match resolve_expression(&item, field)? {
+                Some(v) => Some(v),
                 None => continue,
-            };
-            let items: Vec<&Value> = match base {
-                Value::Array(elements) => elements.iter().collect(),
-                other => vec![other],
-            };
-            for item in items {
-                let key_value: Option<&Value> = match by {
-                    Some(field) => match resolve_expression(item, field)? {
-                        Some(v) => Some(v),
-                        None => continue,
-                    },
-                    None => Some(item),
-                };
-                // Missing paths never reach render_cell (skipped above);
-                // explicit nulls render as the `-` token, as in `table`.
-                let key = render_cell(key_value, "-");
-                *counts.entry(key).or_default() += 1;
-            }
-        }
+            },
+            None => Some(&item),
+        };
+        // Missing paths never reach render_cell (skipped above);
+        // explicit nulls render as the `-` token, as in `table`.
+        let key = render_cell(key_value, "-");
+        *counts.entry(key).or_default() += 1;
     }
     let mut out: Vec<(String, usize)> = counts.into_iter().collect();
     out.sort_by(|(ka, ca), (kb, cb)| cb.cmp(ca).then_with(|| ka.cmp(kb)));

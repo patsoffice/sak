@@ -15,6 +15,7 @@ pub mod slice;
 pub mod sort;
 pub mod table;
 pub mod type_;
+pub mod uniq;
 pub mod validate;
 
 use crate::output::Outcome;
@@ -46,6 +47,7 @@ pub enum JsonCommand {
     Tail(slice::TailArgs),
     Slice(slice::SliceArgs),
     Sort(sort::SortArgs),
+    Uniq(uniq::UniqArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -69,6 +71,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Tail(args) => slice::tail(args),
         JsonCommand::Slice(args) => slice::slice(args),
         JsonCommand::Sort(args) => sort::run(args),
+        JsonCommand::Uniq(args) => uniq::run(args),
     }
 }
 
@@ -173,6 +176,29 @@ fn read_ndjson_into<R: BufRead>(
         out.push((format!("{}:{}", name, lineno), value));
     }
     Ok(())
+}
+
+/// Resolve `path` in every record and collect the values, flattening
+/// array results. Array roots contribute their elements as records (so
+/// whole-document arrays behave like NDJSON streams); records where the
+/// path is missing are skipped. Shared by `count` and `uniq`.
+pub fn collect_path_values(inputs: &[(String, Value)], path: &str) -> Result<Vec<Value>> {
+    use crate::value::resolve_expression;
+    let mut out = Vec::new();
+    for (_name, value) in inputs {
+        let records: Vec<&Value> = match value {
+            Value::Array(elements) => elements.iter().collect(),
+            other => vec![other],
+        };
+        for record in records {
+            match resolve_expression(record, path)? {
+                Some(Value::Array(elements)) => out.extend(elements.iter().cloned()),
+                Some(other) => out.push(other.clone()),
+                None => {}
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

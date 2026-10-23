@@ -255,7 +255,7 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 - `sak fs head [-n N] <file> [n]` / `sak fs tail [-n N] <file> [n]` for the first/last N lines (or `--bytes`) instead of `head`/`tail`
 - `sak fs wc [files...]` to count lines/words/bytes (`--lines`/`--words`/`--bytes`) instead of `wc`
 - `sak git status|log|diff|blame|show|ref-resolve|merge-base|changed-files|shortlog|ls-files|cat-file` instead of read-only `git` (`log -1 --stat`, `status -- <path>`, and `diff main...HEAD` all work as they do in git)
-- `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|count|size|head|tail|slice|sort|type|validate|diff` for `*.json`
+- `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|count|size|head|tail|slice|sort|uniq|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak hash sha256|sha1|md5|blake3 <file>` instead of `sha256sum` / `sha1sum` / `md5sum` / `shasum` / `b3sum` / `openssl dgst` (add `--verify <sumfile>` to check)

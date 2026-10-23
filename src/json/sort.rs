@@ -89,7 +89,7 @@ fn scalar_cmp(a: &Value, b: &Value) -> Ordering {
     }
 }
 
-fn value_cmp(a: &Value, b: &Value, numeric: bool) -> Ordering {
+pub(crate) fn value_cmp(a: &Value, b: &Value, numeric: bool) -> Ordering {
     if numeric {
         match (as_number(a), as_number(b)) {
             (Some(x), Some(y)) => {
