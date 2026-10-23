@@ -43,7 +43,8 @@ pub struct ReadArgs {
 
     /// Comma-separated line ranges to drop (e.g., "75-357", "1-10,90-100").
     /// Same syntax as -n per item; composes with -n and preserves the
-    /// original line numbers of the lines that remain.
+    /// original line numbers of the lines that remain. Output is uncapped
+    /// (no 2000-line default) unless --limit is given.
     #[arg(long = "exclude", value_name = "RANGES", allow_hyphen_values = true)]
     pub exclude: Option<String>,
 
@@ -108,6 +109,21 @@ fn is_excluded(line_num: usize, total: usize, ranges: &[(Option<usize>, Option<u
         (Some(s), None) => line_num >= s,
         (None, None) => false, // unreachable: parse_line_range never yields this
     })
+}
+
+/// The output cap for one read. A caller who never passed `--limit` can
+/// still be truncated by the built-in cap, so that case announces itself on
+/// stderr; an explicit `--limit N` is exactly what was asked for and
+/// truncates silently. `--exclude` is the exception: its job is "the file
+/// minus these lines", typically redirected back over the file, so a default
+/// cap would silently drop everything past it (with only a stderr notice).
+/// With `--exclude`, output is uncapped unless `--limit` says otherwise.
+fn output_limit(args: &ReadArgs) -> Limit {
+    match (args.limit, &args.exclude) {
+        (Some(n), _) => Limit::Explicit(n),
+        (None, Some(_)) => Limit::None,
+        (None, None) => Limit::Default(DEFAULT_LIMIT),
+    }
 }
 
 pub fn run(args: &ReadArgs) -> Result<Outcome> {
@@ -234,13 +250,7 @@ pub fn run(args: &ReadArgs) -> Result<Outcome> {
 
     let stdout = io::stdout();
     let handle = stdout.lock();
-    // A caller who never passed `--limit` can still be truncated by the
-    // built-in cap, so that case announces itself on stderr; an explicit
-    // `--limit N` is exactly what was asked for and truncates silently.
-    let limit = args
-        .limit
-        .map(Limit::Explicit)
-        .unwrap_or(Limit::Default(DEFAULT_LIMIT));
+    let limit = output_limit(args);
     let mut writer = BoundedWriter::new(handle, limit);
 
     for (line_num, content) in &lines {
@@ -449,6 +459,33 @@ mod tests {
             offset: 0,
         };
         assert_eq!(run(&args).unwrap(), Outcome::NotFound);
+    }
+
+    #[test]
+    fn exclude_output_is_uncapped_by_default() {
+        // Regression: `read --exclude 75-357 > README.md` wrote only the
+        // first 2000 lines (exit 0, notice on stderr only), losing the rest.
+        let args = |limit: Option<usize>, exclude: Option<&str>| ReadArgs {
+            file: None,
+            lines: None,
+            exclude: exclude.map(String::from),
+            no_line_numbers: true,
+            limit,
+            offset: 0,
+        };
+        assert!(matches!(
+            output_limit(&args(None, Some("1-2"))),
+            Limit::None
+        ));
+        // An explicit --limit still wins, and plain reads keep the default.
+        assert!(matches!(
+            output_limit(&args(Some(5), Some("1-2"))),
+            Limit::Explicit(5)
+        ));
+        assert!(matches!(
+            output_limit(&args(None, None)),
+            Limit::Default(DEFAULT_LIMIT)
+        ));
     }
 
     #[test]
