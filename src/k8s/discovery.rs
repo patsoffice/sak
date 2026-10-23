@@ -249,6 +249,14 @@ const BUILTINS: &[Builtin] = &[
         version: "v1beta1",
         kind: "NodeMetrics",
     },
+    // Same group as `sak k8s endpoints` reads: let the fast path — and
+    // `sak k8s get endpointslices` — skip full discovery for it.
+    Builtin {
+        aliases: &["endpointslice", "endpointslices"],
+        group: "discovery.k8s.io",
+        version: "v1",
+        kind: "EndpointSlice",
+    },
 ];
 
 /// Look up a builtin kind by any of its accepted aliases.
@@ -385,6 +393,18 @@ pub async fn resolve(client: &kube::Client, kind: &str) -> Result<(ApiResource, 
     ))
 }
 
+/// Resolve an already-decomposed group/version/kind to an `ApiResource` with
+/// a single pinned lookup. Used when the caller holds a GVK (e.g. an
+/// `ownerReferences` entry) rather than a user-typed kind string.
+pub async fn resolve_gvk(
+    client: &kube::Client,
+    gvk: &GroupVersionKind,
+) -> Result<(ApiResource, ApiCapabilities)> {
+    kube::discovery::oneshot::pinned_kind(client, gvk)
+        .await
+        .with_context(|| format!("failed to resolve {} via pinned discovery", gvk.kind))
+}
+
 /// Walk the entire cluster discovery tree and return every `(ApiResource,
 /// ApiCapabilities)` pair the apiserver exposes. Used by `sak k8s kinds` —
 /// this is one of the few legitimate uses of full discovery (the user is
@@ -454,6 +474,16 @@ mod tests {
             assert_eq!(gvk.group, "metrics.k8s.io");
             assert_eq!(gvk.version, "v1beta1");
             assert_eq!(gvk.kind, "NodeMetrics");
+        }
+    }
+
+    #[test]
+    fn endpointslice_aliases_resolve_to_discovery_group() {
+        for alias in ["endpointslice", "endpointslices"] {
+            let gvk = lookup_builtin(alias).unwrap();
+            assert_eq!(gvk.group, "discovery.k8s.io");
+            assert_eq!(gvk.version, "v1");
+            assert_eq!(gvk.kind, "EndpointSlice");
         }
     }
 
