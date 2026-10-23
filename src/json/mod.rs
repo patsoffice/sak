@@ -11,6 +11,7 @@ pub mod query;
 pub mod schema;
 pub mod select;
 pub mod size;
+pub mod slice;
 pub mod table;
 pub mod type_;
 pub mod validate;
@@ -40,6 +41,9 @@ pub enum JsonCommand {
     Diff(diff::DiffArgs),
     Count(count::CountArgs),
     Size(size::SizeArgs),
+    Head(slice::HeadArgs),
+    Tail(slice::TailArgs),
+    Slice(slice::SliceArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -59,6 +63,9 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Diff(args) => diff::run(args),
         JsonCommand::Count(args) => count::run(args),
         JsonCommand::Size(args) => size::run(args),
+        JsonCommand::Head(args) => slice::head(args),
+        JsonCommand::Tail(args) => slice::tail(args),
+        JsonCommand::Slice(args) => slice::slice(args),
     }
 }
 

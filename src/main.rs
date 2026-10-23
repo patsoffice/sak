@@ -90,6 +90,9 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json table .issues -f id,title in.json  Array of objects -> TSV rows
   sak json count .issues --by id data.json    Group-by counts over an array
   sak json size data.json                     Byte size, depth, leaf stats
+  sak json head 1 .issues data.json           First element of an array
+  sak json tail 1 .issues data.json           Last element of an array
+  sak json slice 1 .issues data.json          Elements 1 to the end
   sak json flatten data.json                  Flatten to path<TAB>value
   sak json paths data.json                    List leaf paths (no values)
   sak json diff a.json b.json                 Structural diff of two JSON files
