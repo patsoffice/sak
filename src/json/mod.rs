@@ -10,6 +10,7 @@ pub mod paths;
 pub mod query;
 pub mod schema;
 pub mod select;
+pub mod size;
 pub mod table;
 pub mod type_;
 pub mod validate;
@@ -38,6 +39,7 @@ pub enum JsonCommand {
     Validate(validate::ValidateArgs),
     Diff(diff::DiffArgs),
     Count(count::CountArgs),
+    Size(size::SizeArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -56,6 +58,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Validate(args) => validate::run(args),
         JsonCommand::Diff(args) => diff::run(args),
         JsonCommand::Count(args) => count::run(args),
+        JsonCommand::Size(args) => size::run(args),
     }
 }
 
