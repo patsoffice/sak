@@ -2,6 +2,7 @@ pub mod count;
 pub mod diff;
 pub mod exists;
 pub mod flatten;
+pub mod format;
 pub mod grep;
 pub mod hook;
 pub mod keys;
@@ -50,6 +51,8 @@ pub enum JsonCommand {
     Sort(sort::SortArgs),
     Uniq(uniq::UniqArgs),
     Values(values::ValuesArgs),
+    Minify(format::MinifyArgs),
+    Pretty(format::PrettyArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -75,6 +78,8 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Sort(args) => sort::run(args),
         JsonCommand::Uniq(args) => uniq::run(args),
         JsonCommand::Values(args) => values::run(args),
+        JsonCommand::Minify(args) => format::minify(args),
+        JsonCommand::Pretty(args) => format::pretty(args),
     }
 }
 

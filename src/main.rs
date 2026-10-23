@@ -96,6 +96,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json sort .id .issues data.json         Sort an array by a field
   sak json uniq .issues data.json             Distinct values in an array
   sak json values name data.json              Every 'name' in the tree
+  sak json minify data.json                   Compact JSON to one line
+  sak json pretty data.json                   Pretty-print JSON
   sak json flatten data.json                  Flatten to path<TAB>value
   sak json paths data.json                    List leaf paths (no values)
   sak json diff a.json b.json                 Structural diff of two JSON files
