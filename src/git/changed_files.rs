@@ -14,7 +14,9 @@ use crate::output::BoundedWriter;
         <status> TAB <path>.\n\n\
         Simpler than `diff --name-only` when only the file list matters. \
         Status letters follow `git diff --name-status`: A(dded), M(odified), \
-        D(eleted), R(enamed, new path shown), plus T(ypechange) and C(opied).",
+        D(eleted), T(ypechange), and R(enamed, new path shown), detected by \
+        content similarity as git does by default. Copies are not detected; \
+        a copied file shows as A.",
     after_help = "\
 Examples:
   sak git changed-files HEAD~3            Files changed in the last 3 commits
@@ -40,41 +42,10 @@ pub struct ChangedFilesArgs {
 
 pub fn run(args: &ChangedFilesArgs) -> Result<Outcome> {
     let repo = super::open_repo(&args.repo)?;
-
-    // An unresolvable ref here is almost always a typo (same contract as
-    // `diff`): a tool error, not a "no results" lookup.
-    let old = resolve_to_tree(&repo, &args.ref1)?;
-    let new = resolve_to_tree(&repo, &args.ref2)?;
-
-    let diff = repo.diff_tree_to_tree(Some(&old), Some(&new), None)?;
-
-    let mut rows: Vec<(String, String)> = Vec::new();
-    for delta in diff.deltas() {
-        let status = match delta.status() {
-            git2::Delta::Added => "A",
-            git2::Delta::Deleted => "D",
-            git2::Delta::Modified => "M",
-            git2::Delta::Renamed => "R",
-            git2::Delta::Typechange => "T",
-            git2::Delta::Copied => "C",
-            // Tree-to-tree diffs only produce the statuses above; anything
-            // else (Unmodified, Ignored, Untracked, Unreadable, Conflicted)
-            // cannot occur here.
-            _ => continue,
-        };
-        // Renames show the new path (the old one no longer exists).
-        let path = delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        rows.push((status.to_string(), path));
-    }
+    let rows = changed_rows(&repo, &args.ref1, &args.ref2)?;
     if rows.is_empty() {
         return Ok(Outcome::NotFound);
     }
-    rows.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
 
     let stdout = io::stdout();
     let handle = stdout.lock();
@@ -87,6 +58,45 @@ pub fn run(args: &ChangedFilesArgs) -> Result<Outcome> {
     }
     writer.flush()?;
     Ok(Outcome::Found)
+}
+
+/// `(status, path)` rows for the files that differ between two refs, sorted
+/// by path. Split from [`run`] so the rows are testable without stdout.
+fn changed_rows(repo: &git2::Repository, ref1: &str, ref2: &str) -> Result<Vec<(String, String)>> {
+    // An unresolvable ref here is almost always a typo (same contract as
+    // `diff`): a tool error, not a "no results" lookup.
+    let old = resolve_to_tree(repo, ref1)?;
+    let new = resolve_to_tree(repo, ref2)?;
+
+    let mut diff = repo.diff_tree_to_tree(Some(&old), Some(&new), None)?;
+    // libgit2 reports a rename as delete + add unless asked to pair them up;
+    // git's own diff does rename detection by default, so match it.
+    diff.find_similar(Some(git2::DiffFindOptions::new().renames(true)))?;
+
+    let mut rows: Vec<(String, String)> = Vec::new();
+    for delta in diff.deltas() {
+        let status = match delta.status() {
+            git2::Delta::Added => "A",
+            git2::Delta::Deleted => "D",
+            git2::Delta::Modified => "M",
+            git2::Delta::Renamed => "R",
+            git2::Delta::Typechange => "T",
+            // Copy detection is off (see find_similar above), so no Copied
+            // deltas; nor can a tree-to-tree diff produce Unmodified,
+            // Ignored, Untracked, Unreadable, or Conflicted.
+            _ => continue,
+        };
+        // Renames show the new path (the old one no longer exists).
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        rows.push((status.to_string(), path));
+    }
+    rows.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+    Ok(rows)
 }
 
 /// Resolve a user-supplied ref to its tree, or bail naming the ref.
@@ -110,14 +120,51 @@ mod tests {
         crate::git::create_test_commit(&repo, "first file");
         crate::git::create_test_commit(&repo, "second file");
 
-        let args = ChangedFilesArgs {
-            repo: Some(repo.workdir().unwrap().to_path_buf()),
-            ref1: "HEAD~1".to_string(),
-            ref2: "HEAD".to_string(),
-            limit: None,
-        };
-        let result = run(&args).unwrap();
-        assert_eq!(result, Outcome::Found);
+        assert_eq!(
+            changed_rows(&repo, "HEAD~1", "HEAD").unwrap(),
+            [("A".to_string(), "second_file.txt".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_changed_files_detects_renames() {
+        // Regression: without find_similar a rename was D + A, though the
+        // help promised R.
+        let (_dir, repo) = crate::git::init_test_repo();
+        let content = "a file with enough content to be recognisably the same\n".repeat(4);
+        let dir = repo.workdir().unwrap().to_path_buf();
+        std::fs::write(dir.join("old.txt"), &content).unwrap();
+        commit_index(&repo, |index| {
+            index.add_path(std::path::Path::new("old.txt")).unwrap()
+        });
+        std::fs::rename(dir.join("old.txt"), dir.join("new.txt")).unwrap();
+        commit_index(&repo, |index| {
+            index.remove_path(std::path::Path::new("old.txt")).unwrap();
+            index.add_path(std::path::Path::new("new.txt")).unwrap();
+        });
+
+        assert_eq!(
+            changed_rows(&repo, "HEAD~1", "HEAD").unwrap(),
+            [("R".to_string(), "new.txt".to_string())]
+        );
+    }
+
+    /// Apply `stage` to the index and commit it on HEAD.
+    fn commit_index(repo: &git2::Repository, stage: impl FnOnce(&mut git2::Index)) {
+        let mut index = repo.index().unwrap();
+        stage(&mut index);
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = repo.signature().unwrap();
+        let parents: Vec<git2::Commit> = repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .into_iter()
+            .collect();
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, "change", &tree, &parent_refs)
+            .unwrap();
     }
 
     #[test]

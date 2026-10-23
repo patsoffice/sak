@@ -80,7 +80,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak git diff main...HEAD --stat             Size a branch since its fork point
   sak git blame src/main.rs                   Line-by-line authorship
   sak git ref-resolve HEAD                    Resolve a ref to a commit SHA
-  sak git changed-files HEAD                  Files changed between two refs
+  sak git changed-files HEAD~1                Files changed by the last commit
   sak git shortlog                            Summarize history by author
   sak git ls-files                            List tracked files
   sak git cat-file HEAD:src/main.rs           Dump a file at HEAD

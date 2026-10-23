@@ -22,8 +22,6 @@ const EXPECT_NO_RESULTS: &[&str] = &[
     // The fixture repo has nothing staged and no commits past `main`.
     "sak git diff --staged",
     "sak git diff main...HEAD --stat",
-    // Single-commit fixture: HEAD..HEAD is an empty diff.
-    "sak git changed-files HEAD",
     // diff(1) semantics: exit 1 means "the documents differ", which the
     // fixture pairs deliberately do.
     "sak json diff a.json b.json",
@@ -131,19 +129,27 @@ fn fixture() -> tempfile::TempDir {
         .unwrap();
     }
 
-    // A repo whose only branch is `main`, with every fixture committed.
+    // A repo whose only branch is `main`, with every fixture committed over
+    // two commits, so `HEAD~1` examples have a parent to compare against.
     let git =
         git2::Repository::init_opts(d, git2::RepositoryInitOptions::new().initial_head("main"))
             .unwrap();
-    let mut index = git.index().unwrap();
-    index
-        .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
-        .unwrap();
-    index.write().unwrap();
-    let tree = git.find_tree(index.write_tree().unwrap()).unwrap();
     let who = git2::Signature::now("sak test", "test@example.invalid").unwrap();
-    git.commit(Some("HEAD"), &who, &who, "fixtures", &tree, &[])
-        .unwrap();
+    let commit_all = |message: &str| {
+        let mut index = git.index().unwrap();
+        index
+            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree = git.find_tree(index.write_tree().unwrap()).unwrap();
+        let parent = git.head().ok().and_then(|h| h.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        git.commit(Some("HEAD"), &who, &who, message, &tree, &parents)
+            .unwrap();
+    };
+    commit_all("fixtures");
+    write(d, "CHANGELOG.md", "# Changelog\n\n- second commit\n");
+    commit_all("add changelog");
     // Something for `git status` to report.
     write(d, "notes.txt", "untracked\n");
 

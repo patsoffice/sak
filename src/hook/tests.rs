@@ -37,7 +37,14 @@ fn git_blame_blocks() {
 
 #[test]
 fn git_shortlog_blocks() {
-    assert!(blocks("git shortlog -sn"));
+    // Count forms go to `contributors`; `sak git shortlog` has no -s/-n.
+    let msg = classify("git shortlog -sn").unwrap();
+    assert!(msg.contains("sak git contributors"), "{msg}");
+    let msg = classify("git shortlog").unwrap();
+    assert!(msg.contains("sak git shortlog"), "{msg}");
+    // Forms with no sak equivalent pass through.
+    assert!(allows("git shortlog -e"));
+    assert!(allows("git shortlog v1.0..HEAD"));
 }
 
 #[test]
@@ -53,18 +60,27 @@ fn git_rev_parse_single_ref_blocks() {
 #[test]
 fn git_merge_base_blocks() {
     assert!(blocks("git merge-base main feature/x"));
+    // The exit-code test and other flag forms have no sak equivalent.
+    assert!(allows("git merge-base --is-ancestor main HEAD"));
+    assert!(allows("git merge-base --fork-point main"));
 }
 
 #[test]
 fn git_ls_files_blocks() {
     assert!(blocks("git ls-files"));
+    // `sak git ls-files` takes no pathspecs or modes: these stay with git.
+    assert!(allows("git ls-files src/"));
+    assert!(allows("git ls-files '*.rs'"));
+    assert!(allows("git ls-files --others --exclude-standard"));
+    assert!(allows("git ls-files -m"));
 }
 
 #[test]
-fn git_cat_file_single_object_blocks() {
+fn git_cat_file_pretty_print_blocks() {
     assert!(blocks("git cat-file -p HEAD:README.md"));
-    assert!(blocks("git cat-file -t HEAD"));
-    // Batch protocol and bare forms pass through.
+    // Type and existence queries, batch protocol, bare forms pass through.
+    assert!(allows("git cat-file -t HEAD"));
+    assert!(allows("git cat-file -e HEAD"));
     assert!(allows("git cat-file --batch"));
     assert!(allows("git cat-file -p"));
 }

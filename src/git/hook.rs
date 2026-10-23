@@ -48,10 +48,21 @@ pub const HOOK_RULES: &[HookRule] = &[
         guard: None,
         message: "Use `sak git blame` (-L 10,20 supported) instead of `git blame`.",
     },
+    // `shortlog` splits two ways (first match wins): the count forms
+    // (`-s`/`-n`, the common `-sn`) are `sak git contributors`; the bare form
+    // is `sak git shortlog`. Anything else (`-e`, `--group`, a revision
+    // range) has no sak equivalent and passes through.
     HookRule {
         tool: "git",
         subcommand: &[&["shortlog"]],
-        guard: None,
+        guard: Some(git_shortlog_wants_counts),
+        message: "Use `sak git contributors` (commit counts per author) instead of \
+             `git shortlog -sn`.",
+    },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["shortlog"]],
+        guard: Some(no_extra_args),
         message: "Use `sak git shortlog` (-c, --limit supported) instead of `git shortlog`.",
     },
     HookRule {
@@ -63,20 +74,21 @@ pub const HOOK_RULES: &[HookRule] = &[
     HookRule {
         tool: "git",
         subcommand: &[&["merge-base"]],
-        guard: None,
+        guard: Some(git_merge_base_is_two_refs),
         message: "Use `sak git merge-base <ref1> <ref2>` instead of `git merge-base <ref1> <ref2>`.",
     },
     HookRule {
         tool: "git",
         subcommand: &[&["ls-files"]],
-        guard: None,
+        guard: Some(no_extra_args),
         message: "Use `sak git ls-files` instead of `git ls-files`.",
     },
     HookRule {
         tool: "git",
         subcommand: &[&["cat-file"]],
-        guard: Some(git_cat_file_is_single_object),
-        message: "Use `sak git cat-file <ref>` instead of `git cat-file -p <ref>` (--batch* stays with git).",
+        guard: Some(git_cat_file_is_pretty_print),
+        message: "Use `sak git cat-file <ref>` instead of `git cat-file -p <ref>` \
+             (blobs, tags, trees; for a commit use `sak git show <ref>`).",
     },
     HookRule {
         tool: "git",
@@ -164,12 +176,40 @@ fn git_rev_parse_is_single_ref(args: &[String]) -> bool {
     rest.len() == 1 && !rest[0].starts_with('-')
 }
 
-/// `git cat-file -p|-t|-e <ref>`: one mode flag plus one ref. Batch forms
-/// (`--batch`, `--batch-check`) pass through — `sak git cat-file` reads a
-/// single object, not a batch protocol.
-fn git_cat_file_is_single_object(args: &[String]) -> bool {
+/// `git cat-file -p <ref>`: the pretty-print dump `sak git cat-file` mirrors.
+/// `-t` (type) and `-e` (existence, answered by exit code) are different
+/// questions sak doesn't answer, and the batch protocols (`--batch*`) read
+/// many objects; all of them pass through to real git.
+fn git_cat_file_is_pretty_print(args: &[String]) -> bool {
     let rest = &args[1..];
-    rest.len() == 2 && matches!(rest[0].as_str(), "-p" | "-t" | "-e") && !rest[1].starts_with('-')
+    rest.len() == 2 && rest[0] == "-p" && !rest[1].starts_with('-')
+}
+
+/// `git merge-base <ref1> <ref2>`: exactly two refs, no flags. The flag forms
+/// (`--is-ancestor`, an exit-code test; `--fork-point`; `--all`;
+/// `--octopus`) and other arities have no sak equivalent and pass through.
+fn git_merge_base_is_two_refs(args: &[String]) -> bool {
+    let rest = &args[1..];
+    rest.len() == 2 && rest.iter().all(|a| !a.starts_with('-'))
+}
+
+/// The subcommand with nothing after it. Used where the sak command takes
+/// none of git's arguments (`sak git ls-files` has no pathspecs or
+/// `--others`/`-m` modes), so only the bare form can redirect.
+fn no_extra_args(args: &[String]) -> bool {
+    args.len() == 1
+}
+
+/// `git shortlog` asking for counts rather than subjects: `--summary` /
+/// `--numbered`, or a short-flag cluster containing `s` or `n` (`-s`, `-sn`,
+/// `-sne`). That is `sak git contributors`, not `sak git shortlog`.
+fn git_shortlog_wants_counts(args: &[String]) -> bool {
+    args[1..].iter().any(|a| {
+        matches!(a.as_str(), "--summary" | "--numbered")
+            || (a.starts_with('-')
+                && !a.starts_with("--")
+                && a[1..].chars().any(|c| c == 's' || c == 'n'))
+    })
 }
 
 #[cfg(test)]
@@ -227,23 +267,59 @@ mod tests {
     }
 
     #[test]
-    fn cat_file_single_object_matches_batch_doesnt() {
-        assert!(git_cat_file_is_single_object(&a(&[
+    fn cat_file_pretty_print_matches_other_modes_dont() {
+        assert!(git_cat_file_is_pretty_print(&a(&[
             "cat-file",
             "-p",
             "HEAD:README.md"
         ])));
-        assert!(git_cat_file_is_single_object(&a(&[
-            "cat-file", "-t", "HEAD"
+        // `-t` (type) and `-e` (exit-code existence test) aren't what
+        // `sak git cat-file` answers; batch and bare forms decline too.
+        for args in [
+            &["cat-file", "-t", "HEAD"][..],
+            &["cat-file", "-e", "HEAD"][..],
+            &["cat-file", "--batch"][..],
+            &["cat-file", "--batch-check"][..],
+            &["cat-file", "-p"][..],
+            &["cat-file", "HEAD"][..],
+        ] {
+            assert!(!git_cat_file_is_pretty_print(&a(args)), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn merge_base_two_refs_matches_flag_forms_dont() {
+        assert!(git_merge_base_is_two_refs(&a(&[
+            "merge-base",
+            "main",
+            "HEAD"
         ])));
-        // Batch protocol and bare forms decline.
-        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "--batch"])));
-        assert!(!git_cat_file_is_single_object(&a(&[
-            "cat-file",
-            "--batch-check"
-        ])));
-        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "-p"])));
-        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "HEAD"])));
+        for args in [
+            &["merge-base", "--is-ancestor", "main", "HEAD"][..],
+            &["merge-base", "--fork-point", "main"][..],
+            &["merge-base", "--all", "main", "HEAD"][..],
+            &["merge-base", "main"][..],
+            &["merge-base", "a", "b", "c"][..],
+        ] {
+            assert!(!git_merge_base_is_two_refs(&a(args)), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn shortlog_count_forms_are_detected() {
+        for args in [
+            &["shortlog", "-sn"][..],
+            &["shortlog", "-s"][..],
+            &["shortlog", "-n", "-e"][..],
+            &["shortlog", "-sne", "HEAD"][..],
+            &["shortlog", "--summary"][..],
+            &["shortlog", "--numbered"][..],
+        ] {
+            assert!(git_shortlog_wants_counts(&a(args)), "{args:?}");
+        }
+        assert!(!git_shortlog_wants_counts(&a(&["shortlog"])));
+        assert!(!git_shortlog_wants_counts(&a(&["shortlog", "-e"])));
+        assert!(!git_shortlog_wants_counts(&a(&["shortlog", "--email"])));
     }
 
     #[test]
