@@ -21,7 +21,7 @@ use crate::value::{ArrayMode, WalkOpts, flatten_value};
         Format is auto-detected from the file extension or set with `--format`. \
         Reads from stdin if no files are given (requires `--format`).\n\n\
         INI inputs parse to two-level string maps (`section` → `key` → string) \
-        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
+        with section and key names kept as written; INI values are always strings.",
     after_help = "\
 Examples:
   sak config flatten Cargo.toml

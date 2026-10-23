@@ -19,7 +19,7 @@ use crate::output::BoundedWriter;
         Errors are reported to stderr as `filename:line:column: message` (line \
         and column may be omitted when the parser cannot pinpoint a location).\n\n\
         INI inputs parse to two-level string maps (`section` → `key` → string) \
-        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
+        with section and key names kept as written; INI values are always strings.",
     after_help = "\
 Examples:
   sak config validate Cargo.toml

@@ -18,7 +18,7 @@ use crate::value::{format_value, resolve_expression};
         (e.g. `.server.port`) or JSON Pointer syntax (e.g. `/server/port`). \
         Reads from stdin if no files are given (requires `--format`).\n\n\
         INI inputs parse to two-level string maps (`section` → `key` → string) \
-        with lowercased names, so depth- and type-dependent options are trivially flat on INI.",
+        with section and key names kept as written; INI values are always strings.",
     after_help = "\
 Examples:
   sak config query .package.name Cargo.toml

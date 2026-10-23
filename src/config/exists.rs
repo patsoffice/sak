@@ -19,7 +19,7 @@ use crate::value::resolve_expression;
         dot notation (e.g. `.server.port`) and JSON Pointer syntax (e.g. `/server/port`) \
         as `sak config query`. Reads from stdin if no files are given (requires `--format`).\n\n\
         INI inputs parse to two-level string maps (`section` → `key` → string) \
-        with lowercased names, so depth- and type-dependent options are trivially flat on INI.\n\n\
+        with section and key names kept as written; INI values are always strings.\n\n\
         With multiple files, the default is *all*: exit 0 only if every input \
         contains the path. Pass `--any` to flip the semantics (exit 0 if any \
         input contains the path).",

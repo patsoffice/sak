@@ -17,6 +17,7 @@ pub mod exists;
 pub mod flatten;
 pub mod grep;
 pub mod hook;
+pub mod ini;
 pub mod keys;
 pub mod length;
 pub mod merge;
@@ -195,27 +196,13 @@ pub fn parse_one(format: Format, content: &[u8]) -> std::result::Result<Value, P
                 col: None,
                 message: format!("not valid UTF-8: {}", e),
             })?;
-            // Stock configparser defaults, spelled out here because INI has
-            // no spec: `;` and `#` start a comment anywhere on the line, `=`
-            // is the only key/value delimiter, section names and keys are
-            // lowercased, keys before any `[section]` land in a synthetic
-            // `default` section, duplicate keys keep the last value, and a
-            // bare key with no `=` parses as null (distinct from `key =`).
-            let mut parser = configparser::ini::Ini::new();
-            let map = parser.read(s.to_string()).map_err(|e| ParseError {
-                line: None,
+            // The dialect (case kept, `=`/`:` delimiters, whole-line comments
+            // only) is documented on `ini::parse`.
+            ini::parse(s).map_err(|(line, message)| ParseError {
+                line: Some(line),
                 col: None,
-                message: e,
-            })?;
-            let mut root = serde_json::Map::with_capacity(map.len());
-            for (section, props) in map {
-                let mut obj = serde_json::Map::with_capacity(props.len());
-                for (k, v) in props {
-                    obj.insert(k, v.map(Value::String).unwrap_or(Value::Null));
-                }
-                root.insert(section, Value::Object(obj));
-            }
-            Ok(Value::Object(root))
+                message,
+            })
         }
     }
 }
@@ -397,43 +384,18 @@ mod tests {
         assert!(err.col.is_some());
     }
 
+    // The INI dialect itself is tested in `ini.rs`; these pin the wiring.
     #[test]
-    fn parse_ini_sections_and_keys() {
-        let v = parse_one(
-            Format::Ini,
-            b"[server]\nhost = a\nport = 8080\n[db]\nname = main",
-        )
-        .unwrap();
-        assert_eq!(v["server"]["host"], "a");
-        assert_eq!(v["server"]["port"], "8080");
-        assert_eq!(v["db"]["name"], "main");
+    fn parse_ini_through_parse_one() {
+        let v = parse_one(Format::Ini, b"[Server]\nHost = a#b\nport: 8080").unwrap();
+        assert_eq!(v["Server"]["Host"], "a#b");
+        assert_eq!(v["Server"]["port"], "8080");
     }
 
     #[test]
-    fn parse_ini_lowercases_and_last_wins() {
-        // Sections and keys lowercase; later duplicates win; `#` truncates.
-        let v = parse_one(Format::Ini, b"[Server]\nPort = 1 # old\nPORT = 2").unwrap();
-        assert_eq!(v["server"]["port"], "2");
-    }
-
-    #[test]
-    fn parse_ini_sectionless_goes_to_default() {
-        let v = parse_one(Format::Ini, b"top = 1\n[sec]\na = 2").unwrap();
-        assert_eq!(v["default"]["top"], "1");
-        assert_eq!(v["sec"]["a"], "2");
-    }
-
-    #[test]
-    fn parse_ini_bare_key_is_null_and_colon_is_not_a_delimiter() {
-        // No `=` means a valueless key (null); `:` does not split.
-        let v = parse_one(Format::Ini, b"[s]\nflag\nurl: x").unwrap();
-        assert_eq!(v["s"]["flag"], Value::Null);
-        assert_eq!(v["s"]["url: x"], Value::Null);
-    }
-
-    #[test]
-    fn parse_ini_unclosed_section_errors() {
-        assert!(parse_one(Format::Ini, b"[oops\n").is_err());
+    fn parse_ini_error_carries_the_line() {
+        let err = parse_one(Format::Ini, b"[ok]\n[oops\n").unwrap_err();
+        assert_eq!(err.line, Some(2));
     }
 
     #[test]
