@@ -183,8 +183,14 @@ mod tests {
         use kube::Config;
         use kube::client::ClientBuilder;
 
+        // Pin an explicit root so the builder never consults the host's
+        // native roots (absent in sandboxes like `nix build`, where
+        // SSL_CERT_FILE points at /no-cert-file.crt).
+        let pem = include_bytes!("../cert/testdata/sak-test.pem");
+        let ders = crate::cert::extract_ders(pem).expect("test cert parses");
         let cluster_url: http::Uri = "https://192.0.2.1:6443".parse().unwrap();
         let mut config = Config::new(cluster_url);
+        config.root_cert = Some(ders);
         config.proxy_url = Some("http://proxy.example:8080".parse().unwrap());
         let result = ClientBuilder::try_from(config);
         assert!(
