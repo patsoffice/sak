@@ -191,7 +191,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak k8s top pods -A --limit 10              Pod CPU/memory from metrics-server
   sak k8s endpoints kubernetes -n default     Backing endpoints of a Service
   sak k8s owners pod web-0 -n web             Owner chain up to the root
-  sak k8s children deploy api -n api          Immediate children of a resource",
+  sak k8s children deploy api -n api          Immediate children of a resource
+  sak k8s can-i list pods -n default          May I list pods here?",
     );
     #[cfg(feature = "lxc")]
     s.push_str(

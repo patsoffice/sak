@@ -19,6 +19,7 @@
 //! runtime locally and `block_on`s the async dispatcher, so adding `k8s` does
 //! not turn the rest of the binary async.
 
+pub mod can_i;
 pub mod children;
 pub mod client;
 pub mod containers;
@@ -80,6 +81,8 @@ pub enum K8sCommand {
     Owners(owners::OwnersArgs),
     /// List immediate children of a resource
     Children(children::ChildrenArgs),
+    /// RBAC self-check for an action
+    CanI(can_i::CanIArgs),
     /// Fetch container logs from a pod
     Logs(logs::LogsArgs),
     /// CPU/memory usage from metrics-server
@@ -112,6 +115,7 @@ async fn dispatch(cmd: &K8sCommand) -> Result<Outcome> {
         K8sCommand::Endpoints(args) => endpoints::run(args).await,
         K8sCommand::Owners(args) => owners::run(args).await,
         K8sCommand::Children(args) => children::run(args).await,
+        K8sCommand::CanI(args) => can_i::run(args).await,
         K8sCommand::Logs(args) => logs::run(args).await,
         K8sCommand::Top(args) => top::run(args).await,
     }

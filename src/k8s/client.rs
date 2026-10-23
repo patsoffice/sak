@@ -87,6 +87,49 @@ pub async fn pod_logs(
         .with_context(|| format!("failed to fetch logs for pod {namespace}/{pod}"))
 }
 
+/// Ask the apiserver whether the current user may perform an action, via
+/// `SelfSubjectAccessReview`. Returns `(allowed, reason)`.
+///
+/// `create` on this virtual resource is the one legitimate read-only use of
+/// `Api::create` in the entire domain: the review is never persisted, it only
+/// answers the RBAC question. Keep every `.create(` in this module so the
+/// chokepoint grep test continues to prove nothing else writes.
+pub async fn can_i(
+    client: &Client,
+    verb: &str,
+    group: Option<&str>,
+    resource: &str,
+    subresource: Option<&str>,
+    namespace: Option<&str>,
+    name: Option<&str>,
+) -> Result<(bool, Option<String>)> {
+    use k8s_openapi::api::authorization::v1::{
+        ResourceAttributes, SelfSubjectAccessReview, SelfSubjectAccessReviewSpec,
+    };
+    let review = SelfSubjectAccessReview {
+        spec: SelfSubjectAccessReviewSpec {
+            resource_attributes: Some(ResourceAttributes {
+                group: group.map(str::to_string),
+                resource: Some(resource.to_string()),
+                verb: Some(verb.to_string()),
+                subresource: subresource.map(str::to_string),
+                namespace: namespace.map(str::to_string),
+                name: name.map(str::to_string),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let api: Api<SelfSubjectAccessReview> = Api::all(client.clone());
+    let created = api
+        .create(&kube::api::PostParams::default(), &review)
+        .await
+        .context("failed to create SelfSubjectAccessReview")?;
+    let status = created.status.unwrap_or_default();
+    Ok((status.allowed, status.reason))
+}
+
 /// Issue a `GET` against an arbitrary apiserver path and return the response
 /// body as text. Used by `sak k8s schema` to fetch the OpenAPI v3 index and
 /// per-group documents.

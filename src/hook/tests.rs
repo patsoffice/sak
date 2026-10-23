@@ -187,6 +187,7 @@ fn kubectl_reads_block() {
     assert!(blocks("kubectl config get-contexts"));
     assert!(blocks("kubectl top pods"));
     assert!(blocks("kubectl top nodes"));
+    assert!(blocks("kubectl auth can-i list pods"));
 }
 
 #[cfg(not(feature = "k8s"))]
@@ -201,6 +202,7 @@ fn kubectl_reads_allow_in_lean_build() {
     assert!(allows("kubectl explain pod"));
     assert!(allows("kubectl config get-contexts"));
     assert!(allows("kubectl top pods"));
+    assert!(allows("kubectl auth can-i list pods"));
 }
 
 #[test]

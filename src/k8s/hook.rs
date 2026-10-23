@@ -52,6 +52,12 @@ pub const HOOK_RULES: &[HookRule] = &[
     },
     HookRule {
         tool: "kubectl",
+        subcommand: &[&["auth", "can-i"]],
+        guard: None,
+        message: "Use `sak k8s can-i <verb> <resource>` instead of `kubectl auth can-i`.",
+    },
+    HookRule {
+        tool: "kubectl",
         subcommand: &[&["top"]],
         guard: None,
         message: "Use `sak k8s top pods|nodes` instead of `kubectl top`.",
