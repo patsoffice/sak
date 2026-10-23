@@ -19,6 +19,7 @@ pub mod grep;
 pub mod hook;
 pub mod keys;
 pub mod length;
+pub mod merge;
 pub mod paths;
 pub mod query;
 pub mod schema;
@@ -53,6 +54,7 @@ pub enum ConfigCommand {
     Validate(validate::ValidateArgs),
     Diff(diff::DiffArgs),
     Convert(convert::ConvertArgs),
+    Merge(merge::MergeArgs),
 }
 
 pub fn run(cmd: &ConfigCommand) -> Result<Outcome> {
@@ -71,6 +73,7 @@ pub fn run(cmd: &ConfigCommand) -> Result<Outcome> {
         ConfigCommand::Validate(args) => validate::run(args),
         ConfigCommand::Diff(args) => diff::run(args),
         ConfigCommand::Convert(args) => convert::run(args),
+        ConfigCommand::Merge(args) => merge::run(args),
     }
 }
 

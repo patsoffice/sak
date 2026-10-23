@@ -109,6 +109,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak config flatten Info.plist               Flatten any config file
   sak config paths config.yaml                List leaf paths (no values)
   sak config diff a.toml b.yaml               Cross-format structural diff
+  sak config merge config.toml b.yaml         Layer YAML over TOML
   sak config validate config.toml             Check syntax validity
   sak csv headers data.csv                    List CSV column names and indices
   sak csv query -c name,age data.csv          Project columns and filter rows

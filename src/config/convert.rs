@@ -82,7 +82,13 @@ pub fn run(args: &ConvertArgs) -> Result<Outcome> {
 }
 
 /// Serialize `value` as `target` to `w`, ensuring the output ends with a single newline.
-fn emit<W: Write>(value: &Value, target: Format, pretty_json: bool, w: &mut W) -> Result<()> {
+/// Shared with `merge`, which previews a layered merge in the base format.
+pub(crate) fn emit<W: Write>(
+    value: &Value,
+    target: Format,
+    pretty_json: bool,
+    w: &mut W,
+) -> Result<()> {
     match target {
         Format::Json => {
             let s = if pretty_json {

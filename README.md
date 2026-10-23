@@ -256,7 +256,7 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 - `sak fs wc [files...]` to count lines/words/bytes (`--lines`/`--words`/`--bytes`) instead of `wc`
 - `sak git status|log|diff|blame|show|ref-resolve|merge-base|changed-files|shortlog|ls-files|cat-file` instead of read-only `git` (`log -1 --stat`, `status -- <path>`, and `diff main...HEAD` all work as they do in git)
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|count|size|head|tail|slice|sort|uniq|values|minify|pretty|type|validate|diff` for `*.json`
-- `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
+- `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert|merge` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text
 - `sak hash sha256|sha1|md5|blake3 <file>` instead of `sha256sum` / `sha1sum` / `md5sum` / `shasum` / `b3sum` / `openssl dgst` (add `--verify <sumfile>` to check)
 - `sak gh pr-list` / `sak gh pr-view` / `sak gh pr-diff` / `sak gh issue-list` / `sak gh issue-view` / `sak gh run-list` / `sak gh run-view` / `sak gh release-list` / `sak gh release-view` / `sak gh workflow-list` / `sak gh repo-view` / `sak gh api <endpoint>` instead of `gh pr list` / `gh pr view` / `gh pr diff` / `gh issue list` / `gh issue view` / `gh run list` / `gh run view` / `gh release list` / `gh release view` / `gh workflow list` / `gh repo view` / `gh api` / `curl` against the GitHub API

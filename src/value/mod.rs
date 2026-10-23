@@ -2,19 +2,22 @@
 //!
 //! These utilities are shared by every domain that loads structured data into
 //! `serde_json::Value` (currently `json` and `config`). The module is split by
-//! the three independent jobs it does, each with its tests alongside it:
+//! the four independent jobs it does, each with its tests alongside it:
 //!
 //! - [`path`] — parse/resolve input paths (dot notation + JSON Pointer) and
 //!   construct output paths ([`build_path`](path::build_path)).
 //! - [`diff`] — structural diff machinery ([`diff`], [`DiffEntry`], ...).
 //! - [`walk`] — the recursive walkers ([`collect_keys`], [`flatten_value`],
 //!   [`collect_schema`], [`grep`]) and their shared [`WalkOpts`].
+//! - [`merge`] — deep-merge machinery ([`merge`], [`merge_all`],
+//!   [`MergeOptions`], [`ArrayMerge]).
 //!
 //! The handful of small, cross-cutting value helpers ([`type_name`],
 //! [`value_length`], [`format_value`]) live here in the parent. Everything is
 //! re-exported flat, so consumers keep importing from `crate::value::*`.
 
 mod diff;
+mod merge;
 mod path;
 mod walk;
 
@@ -24,6 +27,7 @@ mod walk;
 // items like `PathSegment`/`DiffEntry` that are part of the API but currently
 // only referenced within this module.)
 pub use diff::*;
+pub use merge::*;
 pub use path::*;
 pub use walk::*;
 
