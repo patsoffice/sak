@@ -178,6 +178,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn http_proxy_url_builds_client_stack() {
+        use kube::Config;
+        use kube::client::ClientBuilder;
+
+        let cluster_url: http::Uri = "https://192.0.2.1:6443".parse().unwrap();
+        let mut config = Config::new(cluster_url);
+        config.proxy_url = Some("http://proxy.example:8080".parse().unwrap());
+        let result = ClientBuilder::try_from(config);
+        assert!(
+            result.is_ok(),
+            "http proxy URL should build with kube/http-proxy enabled: {:?}",
+            result.err()
+        );
+    }
+
     /// Live-cluster smoke test for the foundation. Exercises `build_client`,
     /// `discovery::resolve` (fast path via the shortname table), and
     /// `list_dyn` against whichever cluster `KUBECONFIG` points at.
