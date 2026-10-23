@@ -9,7 +9,7 @@
 use crate::output::Outcome;
 use std::io;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Args;
 use kube::api::{ApiResource, ListParams};
 use serde_json::Value;
@@ -27,8 +27,10 @@ use crate::output::BoundedWriter;
         `port` renders as `name=port/protocol` (`port/protocol` when the port is \
         unnamed); `node` is the endpoint's nodeName; `ready` is true/false/unknown; \
         `target` is the targetRef as `Kind/name`. Missing pieces render as `-`.\n\n\
-        Zero EndpointSlices (or zero rows) is exit 1 — a service with no endpoints \
-        is the diagnostic this command reports.",
+        Exit 1 means the Service exists but has no endpoints — the diagnostic \
+        this command reports. A Service that doesn't exist (a typo, the wrong \
+        namespace) is an error (exit 2) naming the namespace searched, so the \
+        two can't be confused.",
     after_help = "\
 Examples:
   sak k8s endpoints kubernetes -n default   Endpoints of the API server service
@@ -163,6 +165,27 @@ pub async fn run(args: &EndpointsArgs) -> Result<Outcome> {
         .namespace
         .clone()
         .unwrap_or_else(|| client.default_namespace().to_string());
+
+    // Confirm the Service exists first: "no EndpointSlices" alone can't tell
+    // a Service with no endpoints (exit 1, the diagnostic) from a typo'd name
+    // or the wrong namespace, which must not read as an outage.
+    let service_ar = ApiResource {
+        group: String::new(),
+        version: "v1".to_string(),
+        api_version: "v1".to_string(),
+        kind: "Service".to_string(),
+        plural: "services".to_string(),
+    };
+    if client::get_dyn(&client, &service_ar, Some(&namespace), &args.service)
+        .await?
+        .is_none()
+    {
+        bail!(
+            "service {:?} not found in namespace {namespace:?}",
+            args.service
+        );
+    }
+
     let lp = ListParams::default().labels(&format!("kubernetes.io/service-name={}", args.service));
     let list = client::list_dyn(&client, &ar, Some(&namespace), &lp).await?;
 

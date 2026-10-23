@@ -187,7 +187,15 @@ fn kubectl_reads_block() {
     assert!(blocks("kubectl config get-contexts"));
     assert!(blocks("kubectl top pods"));
     assert!(blocks("kubectl top nodes"));
+    assert!(blocks("kubectl top pod -A"));
     assert!(blocks("kubectl auth can-i list pods"));
+    // Forms the sak commands can't serve stay with kubectl.
+    assert!(allows("kubectl top pod web-0"));
+    assert!(allows("kubectl top pods --containers"));
+    assert!(allows("kubectl auth can-i --list"));
+    assert!(allows(
+        "kubectl auth can-i list pods --as system:serviceaccount:default:x"
+    ));
 }
 
 #[cfg(not(feature = "k8s"))]

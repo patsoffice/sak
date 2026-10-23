@@ -12,7 +12,8 @@ use std::io;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use kube::api::ListParams;
+use kube::api::ApiResource;
+use kube::core::GroupVersionKind;
 use kube::discovery::Scope;
 use serde_json::Value;
 
@@ -72,26 +73,29 @@ fn next_hop(obj: &Value) -> Option<(String, String, String, String)> {
     Some((group, version, kind.to_string(), name.to_string()))
 }
 
-/// Resolve an owner hop to an `ApiResource`, preferring the builtin fast
-/// path when the kind's registered group/version match the reference
-/// (a bare kind is ambiguous if a CRD shares its name).
+/// Resolve an owner hop to its `ApiResource` and scope. The owner reference
+/// carries the exact group/version/kind, so one pinned lookup is precise for
+/// builtins and CRDs alike (a bare kind would be ambiguous if a CRD shared
+/// its name).
 async fn resolve_hop(
     client: &kube::Client,
     group: &str,
     version: &str,
     kind: &str,
-) -> Result<kube::api::ApiResource> {
-    if let Some(gvk) = discovery::lookup_builtin(kind)
-        && gvk.group == group
-        && gvk.version == version
-    {
-        // Same lookup `resolve` performs on a fast-path hit, without
-        // re-parsing a kind string we already decomposed.
-        let (ar, _caps) = discovery::resolve_gvk(client, &gvk).await?;
-        return Ok(ar);
+) -> Result<(ApiResource, Scope)> {
+    let gvk = GroupVersionKind::gvk(group, version, kind);
+    let (ar, caps) = discovery::resolve_gvk(client, &gvk).await?;
+    Ok((ar, caps.scope))
+}
+
+/// The namespace to fetch an owner in: none for a cluster-scoped owner
+/// kind, the owned resource's namespace otherwise. Pure so the rule is
+/// testable without a cluster.
+fn owner_namespace(scope: &Scope, child_namespace: Option<&str>) -> Option<String> {
+    match scope {
+        Scope::Cluster => None,
+        Scope::Namespaced => child_namespace.map(str::to_string),
     }
-    let (ar, _caps) = discovery::resolve(client, kind).await?;
-    Ok(ar)
 }
 
 pub async fn run(args: &OwnersArgs) -> Result<Outcome> {
@@ -124,10 +128,14 @@ pub async fn run(args: &OwnersArgs) -> Result<Outcome> {
         let Some((group, version, kind, name)) = next_hop(&current) else {
             break;
         };
-        let hop_ar = resolve_hop(&client, &group, &version, &kind)
+        let (hop_ar, hop_scope) = resolve_hop(&client, &group, &version, &kind)
             .await
             .with_context(|| format!("resolving owner {kind}/{name}"))?;
-        match client::get_dyn(&client, &hop_ar, namespace.as_deref(), &name).await? {
+        // A cluster-scoped owner (e.g. the Node that owns a static mirror
+        // pod) lives outside the namespace: looking it up there 404s, which
+        // used to read as "owner deleted" and report no owners at all.
+        let hop_ns = owner_namespace(&hop_scope, namespace.as_deref());
+        match client::get_dyn(&client, &hop_ar, hop_ns.as_deref(), &name).await? {
             Some(obj) => {
                 ancestors.push((hop_ar.kind.clone(), name));
                 current = serde_json::to_value(obj)?;
@@ -156,6 +164,17 @@ pub async fn run(args: &OwnersArgs) -> Result<Outcome> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cluster_scoped_owners_are_fetched_outside_the_namespace() {
+        // Regression: a mirror pod's owner is its Node; fetching the Node in
+        // the pod's namespace 404'd and the walk reported no owners.
+        assert_eq!(owner_namespace(&Scope::Cluster, Some("kube-system")), None);
+        assert_eq!(
+            owner_namespace(&Scope::Namespaced, Some("kube-system")).as_deref(),
+            Some("kube-system")
+        );
+    }
 
     #[test]
     fn hop_reads_first_owner_reference() {

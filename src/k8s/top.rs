@@ -24,11 +24,14 @@ use crate::output::BoundedWriter;
     about = "Show CPU/memory usage from metrics-server",
     long_about = "Show live CPU/memory usage from metrics-server, like `kubectl top`.\n\n\
         `top pods` sums each pod's containers and prints \
-        `POD<TAB>CPU<TAB>MEMORY` (POD is `namespace/name`), sorted by \
-        (namespace, name). `top nodes` prints \
-        `NODE<TAB>CPU<TAB>MEMORY<TAB>CPU%<TAB>MEMORY%`, sorted by name; the \
-        percent columns divide usage by the node's allocatable (a failed or \
-        missing allocatable lookup renders `-` rather than failing).\n\n\
+        `POD<TAB>CPU<TAB>MEMORY` (POD is `namespace/name`). `top nodes` prints \
+        `NODE<TAB>CPU<TAB>MEMORY<TAB>CPU%<TAB>MEMORY%`; the percent columns \
+        divide usage by the node's allocatable (a failed or missing \
+        allocatable lookup renders `-` rather than failing).\n\n\
+        Rows sort by CPU, highest first, so `--limit N` gives the top N \
+        consumers; `--sort-by memory` ranks by memory instead and \
+        `--sort-by name` lists alphabetically. Ties break by name. `pod`/`po` \
+        and `node`/`no` work as in kubectl.\n\n\
         Totals print in kubectl's shape — integer millicores (`250m`) and \
         whole MiB (`128Mi`) — summed across a pod's containers. Requires \
         metrics-server; without its API group the command fails with a \
@@ -36,7 +39,8 @@ use crate::output::BoundedWriter;
     after_help = "\
 Examples:
   sak k8s top pods                             Usage in the current namespace
-  sak k8s top pods -A --limit 10               Top 10 pods cluster-wide
+  sak k8s top pods -A --limit 10               Top 10 pods by CPU cluster-wide
+  sak k8s top pods -A --sort-by memory         Ranked by memory instead
   sak k8s top pods -n kube-system -l app=cilium Filter by namespace and labels
   sak k8s top nodes                            Usage with allocatable percents"
 )]
@@ -48,9 +52,45 @@ pub struct TopArgs {
 #[derive(Subcommand)]
 pub enum TopCommand {
     /// Per-pod CPU/memory summed across containers
+    #[command(visible_aliases = ["pod", "po"])]
     Pods(TopPodsArgs),
     /// Per-node CPU/memory with allocatable percentages
+    #[command(visible_aliases = ["node", "no"])]
     Nodes(TopNodesArgs),
+}
+
+/// Row order for `top`: by usage (highest first), or by name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum SortBy {
+    /// CPU usage, highest first (the default: `--limit N` = top N)
+    #[default]
+    Cpu,
+    /// Memory usage, highest first
+    Memory,
+    /// Name, alphabetically
+    Name,
+}
+
+/// One measured row before formatting: its label (`namespace/name` or a
+/// node name) and raw usage in cores and bytes.
+#[derive(Debug, Clone, PartialEq)]
+struct Usage {
+    label: String,
+    cpu: f64,
+    memory: f64,
+}
+
+/// Order rows per `sort`. Usage sorts descend; ties (and `name`) order by
+/// label so output is deterministic. Pure and unit-tested.
+fn sort_usage(rows: &mut [Usage], sort: SortBy) {
+    rows.sort_by(|a, b| {
+        let by_usage = match sort {
+            SortBy::Cpu => b.cpu.total_cmp(&a.cpu),
+            SortBy::Memory => b.memory.total_cmp(&a.memory),
+            SortBy::Name => std::cmp::Ordering::Equal,
+        };
+        by_usage.then_with(|| a.label.cmp(&b.label))
+    });
 }
 
 #[derive(Args)]
@@ -67,6 +107,10 @@ pub struct TopPodsArgs {
     #[arg(short = 'l', long)]
     pub selector: Option<String>,
 
+    /// Row order: cpu or memory (highest first), or name
+    #[arg(long, value_enum, default_value_t = SortBy::Cpu)]
+    pub sort_by: SortBy,
+
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
@@ -74,6 +118,10 @@ pub struct TopPodsArgs {
 
 #[derive(Args)]
 pub struct TopNodesArgs {
+    /// Row order: cpu or memory (highest first), or name
+    #[arg(long, value_enum, default_value_t = SortBy::Cpu)]
+    pub sort_by: SortBy,
+
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
@@ -254,7 +302,7 @@ async fn run_pods(client: &kube::Client, args: &TopPodsArgs) -> Result<Outcome> 
     }
     let list = client::list_dyn(client, &ar, effective_ns.as_deref(), &lp).await?;
 
-    let mut rows: Vec<(String, String, String, String)> = Vec::new();
+    let mut rows: Vec<Usage> = Vec::new();
     for obj in &list.items {
         let value: Value = serde_json::to_value(obj)?;
         let ns = value
@@ -268,29 +316,30 @@ async fn run_pods(client: &kube::Client, args: &TopPodsArgs) -> Result<Outcome> 
             .and_then(Value::as_str)
             .unwrap_or("");
         let (cpu, memory) = pod_totals(&value);
-        rows.push((
-            ns.to_string(),
-            name.to_string(),
-            format_millicores(cpu),
-            format_mebibytes(memory),
-        ));
+        let label = if ns.is_empty() {
+            name.to_string()
+        } else {
+            format!("{ns}/{name}")
+        };
+        rows.push(Usage { label, cpu, memory });
     }
-    rows.sort();
     if rows.is_empty() {
         return Ok(Outcome::NotFound);
     }
+    sort_usage(&mut rows, args.sort_by);
 
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
     writer.write_decoration("POD\tCPU\tMEMORY")?;
-    for (ns, name, cpu, memory) in &rows {
-        let pod = if ns.is_empty() {
-            name.clone()
-        } else {
-            format!("{ns}/{name}")
-        };
-        if !writer.write_line(&format!("{pod}\t{cpu}\t{memory}"))? {
+    for row in &rows {
+        let line = format!(
+            "{}\t{}\t{}",
+            row.label,
+            format_millicores(row.cpu),
+            format_mebibytes(row.memory)
+        );
+        if !writer.write_line(&line)? {
             break;
         }
     }
@@ -323,7 +372,7 @@ async fn run_nodes(client: &kube::Client, args: &TopNodesArgs) -> Result<Outcome
         Err(_) => HashMap::new(),
     };
 
-    let mut rows: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut rows: Vec<Usage> = Vec::new();
     for obj in &list.items {
         let value: Value = serde_json::to_value(obj)?;
         let name = value
@@ -335,26 +384,32 @@ async fn run_nodes(client: &kube::Client, args: &TopNodesArgs) -> Result<Outcome
         let Some((cpu, memory)) = node_usage(&value) else {
             continue;
         };
-        let (ac, am) = alloc.get(&name).copied().unzip();
-        rows.push((
-            name,
-            format_millicores(cpu),
-            format_mebibytes(memory),
-            percent(cpu, ac),
-            percent(memory, am),
-        ));
+        rows.push(Usage {
+            label: name,
+            cpu,
+            memory,
+        });
     }
-    rows.sort();
     if rows.is_empty() {
         return Ok(Outcome::NotFound);
     }
+    sort_usage(&mut rows, args.sort_by);
 
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
     writer.write_decoration("NODE\tCPU\tMEMORY\tCPU%\tMEMORY%")?;
-    for (name, cpu, memory, cpu_p, mem_p) in &rows {
-        if !writer.write_line(&format!("{name}\t{cpu}\t{memory}\t{cpu_p}\t{mem_p}"))? {
+    for row in &rows {
+        let (ac, am) = alloc.get(&row.label).copied().unzip();
+        let line = format!(
+            "{}\t{}\t{}\t{}\t{}",
+            row.label,
+            format_millicores(row.cpu),
+            format_mebibytes(row.memory),
+            percent(row.cpu, ac),
+            percent(row.memory, am)
+        );
+        if !writer.write_line(&line)? {
             break;
         }
     }
@@ -366,6 +421,54 @@ async fn run_nodes(client: &kube::Client, args: &TopNodesArgs) -> Result<Outcome
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn usage(label: &str, cpu: f64, memory: f64) -> Usage {
+        Usage {
+            label: label.to_string(),
+            cpu,
+            memory,
+        }
+    }
+
+    fn labels(rows: &[Usage]) -> Vec<&str> {
+        rows.iter().map(|r| r.label.as_str()).collect()
+    }
+
+    #[test]
+    fn default_sort_puts_the_heaviest_cpu_first() {
+        // Regression: rows sorted by name, so `--limit 10` ("top 10") gave
+        // the first ten alphabetically, not the heaviest.
+        let mut rows = vec![
+            usage("a/idle", 0.001, 900.0),
+            usage("z/busy", 2.0, 100.0),
+            usage("m/mid", 0.5, 500.0),
+            usage("b/tie", 0.5, 1.0),
+        ];
+        sort_usage(&mut rows, SortBy::Cpu);
+        assert_eq!(labels(&rows), ["z/busy", "b/tie", "m/mid", "a/idle"]);
+        sort_usage(&mut rows, SortBy::Memory);
+        assert_eq!(labels(&rows), ["a/idle", "m/mid", "z/busy", "b/tie"]);
+        sort_usage(&mut rows, SortBy::Name);
+        assert_eq!(labels(&rows), ["a/idle", "b/tie", "m/mid", "z/busy"]);
+    }
+
+    #[test]
+    fn singular_and_short_aliases_parse() {
+        use clap::Parser;
+        #[derive(Parser)]
+        struct Cli {
+            #[command(subcommand)]
+            command: TopCommand,
+        }
+        for word in ["pods", "pod", "po"] {
+            let cli = Cli::try_parse_from(["top", word]).unwrap();
+            assert!(matches!(cli.command, TopCommand::Pods(_)), "{word}");
+        }
+        for word in ["nodes", "node", "no"] {
+            let cli = Cli::try_parse_from(["top", word]).unwrap();
+            assert!(matches!(cli.command, TopCommand::Nodes(_)), "{word}");
+        }
+    }
 
     #[test]
     fn parse_millicores_and_plain() {
