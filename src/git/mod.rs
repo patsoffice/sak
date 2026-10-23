@@ -1,10 +1,16 @@
 pub mod blame;
 pub mod branch;
+pub mod cat_file;
+pub mod changed_files;
 pub mod contributors;
 pub mod diff;
 pub mod hook;
 pub mod log;
+pub mod ls_files;
+pub mod merge_base;
+pub mod ref_resolve;
 pub mod remote;
+pub mod shortlog;
 pub mod show;
 pub mod stash;
 pub mod status;
@@ -30,6 +36,24 @@ pub enum GitCommand {
     #[command(name = "stash-list")]
     StashList(stash::StashArgs),
     Contributors(contributors::ContributorsArgs),
+    /// Resolve a ref to a commit SHA plus metadata
+    #[command(name = "ref-resolve")]
+    RefResolve(ref_resolve::RefResolveArgs),
+    /// Find the common ancestor of two refs
+    #[command(name = "merge-base")]
+    MergeBase(merge_base::MergeBaseArgs),
+    /// List files changed between two refs
+    #[command(name = "changed-files")]
+    ChangedFiles(changed_files::ChangedFilesArgs),
+    /// Summarize commits by author
+    #[command(name = "shortlog")]
+    Shortlog(shortlog::ShortlogArgs),
+    /// List tracked files
+    #[command(name = "ls-files")]
+    LsFiles(ls_files::LsFilesArgs),
+    /// Dump a raw git object
+    #[command(name = "cat-file")]
+    CatFile(cat_file::CatFileArgs),
 }
 
 pub fn run(cmd: &GitCommand) -> Result<Outcome> {
@@ -44,6 +68,12 @@ pub fn run(cmd: &GitCommand) -> Result<Outcome> {
         GitCommand::Remote(args) => remote::run(args),
         GitCommand::StashList(args) => stash::run(args),
         GitCommand::Contributors(args) => contributors::run(args),
+        GitCommand::RefResolve(args) => ref_resolve::run(args),
+        GitCommand::MergeBase(args) => merge_base::run(args),
+        GitCommand::ChangedFiles(args) => changed_files::run(args),
+        GitCommand::Shortlog(args) => shortlog::run(args),
+        GitCommand::LsFiles(args) => ls_files::run(args),
+        GitCommand::CatFile(args) => cat_file::run(args),
     }
 }
 
@@ -121,6 +151,33 @@ pub fn init_test_repo() -> (tempfile::TempDir, Repository) {
             .expect("set email");
     }
     (dir, repo)
+}
+
+/// Create a commit with `message` on the current HEAD, adding a uniquely
+/// named file so consecutive calls don't collide. Returns the new OID.
+/// Shared by command tests instead of each duplicating the helper.
+#[cfg(test)]
+pub fn create_test_commit(repo: &Repository, message: &str) -> git2::Oid {
+    use std::fs;
+    let dir = repo.workdir().expect("workdir");
+    let filename = format!("{}.txt", message.replace(' ', "_"));
+    fs::write(dir.join(&filename), message).expect("write file");
+    let mut index = repo.index().expect("index");
+    index
+        .add_path(std::path::Path::new(&filename))
+        .expect("add path");
+    index.write().expect("write index");
+    let tree_oid = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_oid).expect("find tree");
+    let sig = repo.signature().expect("signature");
+    let parents: Vec<git2::Commit> = if let Ok(head) = repo.head() {
+        vec![head.peel_to_commit().expect("peel head")]
+    } else {
+        vec![]
+    };
+    let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)
+        .expect("commit")
 }
 
 #[cfg(test)]

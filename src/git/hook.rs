@@ -52,7 +52,31 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "git",
         subcommand: &[&["shortlog"]],
         guard: None,
-        message: "Use `sak git contributors` instead of `git shortlog`.",
+        message: "Use `sak git shortlog` (-c, --limit supported) instead of `git shortlog`.",
+    },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["rev-parse"]],
+        guard: Some(git_rev_parse_is_single_ref),
+        message: "Use `sak git ref-resolve <ref>` instead of `git rev-parse <ref>`.",
+    },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["merge-base"]],
+        guard: None,
+        message: "Use `sak git merge-base <ref1> <ref2>` instead of `git merge-base <ref1> <ref2>`.",
+    },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["ls-files"]],
+        guard: None,
+        message: "Use `sak git ls-files` instead of `git ls-files`.",
+    },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["cat-file"]],
+        guard: Some(git_cat_file_is_single_object),
+        message: "Use `sak git cat-file <ref>` instead of `git cat-file -p <ref>` (--batch* stays with git).",
     },
     HookRule {
         tool: "git",
@@ -131,6 +155,23 @@ fn git_remote_is_listing(args: &[String]) -> bool {
         )
 }
 
+/// `git rev-parse <ref>`: exactly one positional that isn't a flag.
+/// Flag-only probes (`--git-dir`, `--is-inside-work-tree`) and multi-arg
+/// plumbing (`--short HEAD`, `--verify HEAD --`) pass through to real git —
+/// only the bare single-ref form maps onto `sak git ref-resolve`.
+fn git_rev_parse_is_single_ref(args: &[String]) -> bool {
+    let rest = &args[1..];
+    rest.len() == 1 && !rest[0].starts_with('-')
+}
+
+/// `git cat-file -p|-t|-e <ref>`: one mode flag plus one ref. Batch forms
+/// (`--batch`, `--batch-check`) pass through — `sak git cat-file` reads a
+/// single object, not a batch protocol.
+fn git_cat_file_is_single_object(args: &[String]) -> bool {
+    let rest = &args[1..];
+    rest.len() == 2 && matches!(rest[0].as_str(), "-p" | "-t" | "-e") && !rest[1].starts_with('-')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,6 +202,48 @@ mod tests {
         assert!(!git_tag_is_listing(&a(&["tag", "-a", "v1.0", "-m", "hi"])));
         assert!(!git_tag_is_listing(&a(&["tag", "v1.0"])));
         assert!(!git_tag_is_listing(&a(&["tag", "-d", "v0.9"])));
+    }
+
+    #[test]
+    fn rev_parse_single_ref_matches_plumbing_doesnt() {
+        assert!(git_rev_parse_is_single_ref(&a(&["rev-parse", "HEAD"])));
+        assert!(git_rev_parse_is_single_ref(&a(&["rev-parse", "main"])));
+        // Flag-only probes and multi-arg plumbing decline.
+        assert!(!git_rev_parse_is_single_ref(&a(&["rev-parse"])));
+        assert!(!git_rev_parse_is_single_ref(&a(&[
+            "rev-parse",
+            "--git-dir"
+        ])));
+        assert!(!git_rev_parse_is_single_ref(&a(&[
+            "rev-parse",
+            "--short",
+            "HEAD"
+        ])));
+        assert!(!git_rev_parse_is_single_ref(&a(&[
+            "rev-parse",
+            "HEAD",
+            "--"
+        ])));
+    }
+
+    #[test]
+    fn cat_file_single_object_matches_batch_doesnt() {
+        assert!(git_cat_file_is_single_object(&a(&[
+            "cat-file",
+            "-p",
+            "HEAD:README.md"
+        ])));
+        assert!(git_cat_file_is_single_object(&a(&[
+            "cat-file", "-t", "HEAD"
+        ])));
+        // Batch protocol and bare forms decline.
+        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "--batch"])));
+        assert!(!git_cat_file_is_single_object(&a(&[
+            "cat-file",
+            "--batch-check"
+        ])));
+        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "-p"])));
+        assert!(!git_cat_file_is_single_object(&a(&["cat-file", "HEAD"])));
     }
 
     #[test]

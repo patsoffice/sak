@@ -22,6 +22,8 @@ const EXPECT_NO_RESULTS: &[&str] = &[
     // The fixture repo has nothing staged and no commits past `main`.
     "sak git diff --staged",
     "sak git diff main...HEAD --stat",
+    // Single-commit fixture: HEAD..HEAD is an empty diff.
+    "sak git changed-files HEAD",
     // diff(1) semantics: exit 1 means "the documents differ", which the
     // fixture pairs deliberately do.
     "sak json diff a.json b.json",

@@ -254,7 +254,7 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 - `sak fs stat <path...>` for size/perms/mtime/type metadata (`--format json`) instead of `stat`
 - `sak fs head [-n N] <file> [n]` / `sak fs tail [-n N] <file> [n]` for the first/last N lines (or `--bytes`) instead of `head`/`tail`
 - `sak fs wc [files...]` to count lines/words/bytes (`--lines`/`--words`/`--bytes`) instead of `wc`
-- `sak git status|log|diff|blame|show` instead of read-only `git` (`log -1 --stat`, `status -- <path>`, and `diff main...HEAD` all work as they do in git)
+- `sak git status|log|diff|blame|show|ref-resolve|merge-base|changed-files|shortlog|ls-files|cat-file` instead of read-only `git` (`log -1 --stat`, `status -- <path>`, and `diff main...HEAD` all work as they do in git)
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|type|validate|diff` for `*.json`
 - `sak config query|exists|keys|flatten|paths|grep|length|schema|type|validate|diff|convert` for TOML, YAML, plist, JSON
 - `sak csv headers|query|stats|validate` for `*.csv` and other delimited text

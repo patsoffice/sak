@@ -41,6 +41,35 @@ fn git_shortlog_blocks() {
 }
 
 #[test]
+fn git_rev_parse_single_ref_blocks() {
+    assert!(blocks("git rev-parse HEAD"));
+    assert!(blocks("git rev-parse main"));
+    // Flag-only probes and multi-arg plumbing pass through.
+    assert!(allows("git rev-parse --git-dir"));
+    assert!(allows("git rev-parse --short HEAD"));
+    assert!(allows("git rev-parse HEAD --"));
+}
+
+#[test]
+fn git_merge_base_blocks() {
+    assert!(blocks("git merge-base main feature/x"));
+}
+
+#[test]
+fn git_ls_files_blocks() {
+    assert!(blocks("git ls-files"));
+}
+
+#[test]
+fn git_cat_file_single_object_blocks() {
+    assert!(blocks("git cat-file -p HEAD:README.md"));
+    assert!(blocks("git cat-file -t HEAD"));
+    // Batch protocol and bare forms pass through.
+    assert!(allows("git cat-file --batch"));
+    assert!(allows("git cat-file -p"));
+}
+
+#[test]
 fn git_branch_list_blocks() {
     assert!(blocks("git branch"));
     assert!(blocks("git branch -a"));

@@ -78,6 +78,11 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak git diff --staged                       Show staged changes
   sak git diff main...HEAD --stat             Size a branch since its fork point
   sak git blame src/main.rs                   Line-by-line authorship
+  sak git ref-resolve HEAD                    Resolve a ref to a commit SHA
+  sak git changed-files HEAD                  Files changed between two refs
+  sak git shortlog                            Summarize history by author
+  sak git ls-files                            List tracked files
+  sak git cat-file HEAD:src/main.rs           Dump a file at HEAD
   sak json query .name data.json              Extract a JSON value
   sak json keys --types data.json             List keys with value types
   sak json select .name,.age data.json        Project a subset of fields
