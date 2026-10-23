@@ -12,6 +12,7 @@ pub mod schema;
 pub mod select;
 pub mod size;
 pub mod slice;
+pub mod sort;
 pub mod table;
 pub mod type_;
 pub mod validate;
@@ -44,6 +45,7 @@ pub enum JsonCommand {
     Head(slice::HeadArgs),
     Tail(slice::TailArgs),
     Slice(slice::SliceArgs),
+    Sort(sort::SortArgs),
 }
 
 pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
@@ -66,6 +68,7 @@ pub fn run(cmd: &JsonCommand) -> Result<Outcome> {
         JsonCommand::Head(args) => slice::head(args),
         JsonCommand::Tail(args) => slice::tail(args),
         JsonCommand::Slice(args) => slice::slice(args),
+        JsonCommand::Sort(args) => sort::run(args),
     }
 }
 

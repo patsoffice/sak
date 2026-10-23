@@ -93,6 +93,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak json head 1 .issues data.json           First element of an array
   sak json tail 1 .issues data.json           Last element of an array
   sak json slice 1 .issues data.json          Elements 1 to the end
+  sak json sort .id .issues data.json         Sort an array by a field
   sak json flatten data.json                  Flatten to path<TAB>value
   sak json paths data.json                    List leaf paths (no values)
   sak json diff a.json b.json                 Structural diff of two JSON files
