@@ -51,11 +51,7 @@ pub const READ_ONLY_VERBS: &[(&str, Option<&str>)] = &[
     ("template", None), // pure local render, no cluster writes
     ("search", None),   // search repo / search hub
     ("lint", None),     // chart linting, no mutations
-    ("verify", None),   // chart signature verification
-    ("version", None),
-    ("env", None),
     ("dependency", Some("list")),
-    ("plugin", Some("list")),
     ("repo", Some("list")),
 ];
 
@@ -263,6 +259,26 @@ mod tests {
         assert!(!verb_allowed("dependency", Some("build")));
         // Unknown verbs are rejected outright.
         assert!(!verb_allowed("install", None));
+    }
+
+    #[test]
+    fn rejects_allowlist_entries_without_commands() {
+        // `verify`, `version`, `env`, and `plugin list` were dropped from the
+        // allowlist: no sak command stands behind them (sak-llm-5svf).
+        // Re-adding any of them must come with the command, not silently.
+        for (verb, subverb) in [
+            ("verify", None),
+            ("version", None),
+            ("env", None),
+            ("plugin", Some("list")),
+        ] {
+            let err = invoke(verb, subverb, &[], Conn::default()).unwrap_err();
+            assert!(
+                err.to_string().contains("not in the read-only allowlist"),
+                "{} should be rejected, got: {err}",
+                display_verb(verb, subverb)
+            );
+        }
     }
 
     #[test]

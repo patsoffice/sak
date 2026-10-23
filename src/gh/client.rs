@@ -49,23 +49,15 @@ pub use crate::local_bin::Output;
 pub const READ_ONLY_VERBS: &[(&str, Option<&str>)] = &[
     ("pr", Some("list")),
     ("pr", Some("view")),
-    ("pr", Some("status")),
     ("pr", Some("diff")),
-    ("pr", Some("checks")),
     ("issue", Some("list")),
     ("issue", Some("view")),
-    ("issue", Some("status")),
     ("run", Some("list")),
     ("run", Some("view")),
     ("release", Some("list")),
     ("release", Some("view")),
-    ("repo", Some("list")),
     ("repo", Some("view")),
     ("workflow", Some("list")),
-    ("workflow", Some("view")),
-    ("search", None),
-    ("status", None),
-    ("auth", Some("status")),
     ("api", None),
 ];
 
@@ -921,26 +913,29 @@ mod tests {
     }
 
     #[test]
-    fn allows_verbless_noun() {
-        // `search` and `status` are noun-only in the allowlist.
-        // We can't assert spawn, but we can confirm the allowlist check
-        // accepts a verbless invocation.
-        // Reuse the same guard-vs-spawn discrimination as
-        // accepts_explicit_get.
-        for (noun, verb) in [("search", Some("code")), ("status", None)] {
-            match invoke(noun, verb, &[]) {
-                Ok(_) => {}
-                Err(e) => {
-                    let msg = e.to_string();
-                    assert!(
-                        !msg.contains("not in the read-only allowlist"),
-                        "allowlist rejected `gh {} {:?}`: {}",
-                        noun,
-                        verb,
-                        msg
-                    );
-                }
-            }
+    fn rejects_allowlist_entries_without_commands() {
+        // `pr status` / `pr checks`, `issue status`, `repo list`,
+        // `workflow view`, `search`, `status`, and `auth status` were dropped
+        // from the allowlist: no sak command stands behind them
+        // (sak-llm-5svf). Re-adding any of them must come with the command,
+        // not silently.
+        for (noun, verb) in [
+            ("pr", Some("status")),
+            ("pr", Some("checks")),
+            ("issue", Some("status")),
+            ("repo", Some("list")),
+            ("workflow", Some("view")),
+            ("search", None),
+            ("status", None),
+            ("auth", Some("status")),
+        ] {
+            let err = invoke(noun, verb, &[]).unwrap_err();
+            assert!(
+                err.to_string().contains("not in the read-only allowlist"),
+                "gh {} {:?} should be rejected, got: {err}",
+                noun,
+                verb
+            );
         }
     }
 }

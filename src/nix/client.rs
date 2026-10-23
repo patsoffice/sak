@@ -41,10 +41,10 @@ pub use crate::local_bin::Output;
 /// no fallthrough, no env-var override.
 ///
 /// A `None` subverb means the *whole verb family* is read-only — e.g.
-/// `nix path-info`, `nix eval`, and `nix why-depends` take their arguments
-/// directly with no read/write subverb split. A `Some(sv)` entry locks the
-/// verb to that one read-only subverb: `nix flake show` is allowed but `nix
-/// flake update` is not, because `flake` has no `None` entry.
+/// `nix path-info` and `nix eval` take their arguments directly with no
+/// read/write subverb split. A `Some(sv)` entry locks the verb to that one
+/// read-only subverb: `nix flake show` is allowed but `nix flake update`
+/// is not, because `flake` has no `None` entry.
 ///
 /// Adding a new entry is a deliberate change: every verb here must be strictly
 /// read-only (no builds, no store writes, no profile/registry mutations, no
@@ -53,15 +53,12 @@ pub use crate::local_bin::Output;
 pub const READ_ONLY_VERBS: &[(&str, Option<&str>)] = &[
     ("flake", Some("show")),
     ("flake", Some("metadata")),
-    ("flake", Some("info")),
     ("path-info", None),
     ("derivation", Some("show")),
     ("profile", Some("list")),
     ("registry", Some("list")),
     ("eval", None),
     ("store", Some("info")),
-    ("store", Some("ls")),
-    ("why-depends", None),
 ];
 
 /// The single `nix` spawner. All subprocesses go through the shared
@@ -263,19 +260,37 @@ mod tests {
         // no-subverb form.
         assert!(verb_allowed("path-info", None));
         assert!(verb_allowed("eval", None));
-        assert!(verb_allowed("why-depends", None));
         // Pinned-subverb verbs admit only their listed read subverbs.
         assert!(verb_allowed("flake", Some("show")));
         assert!(verb_allowed("flake", Some("metadata")));
         assert!(!verb_allowed("flake", Some("update")));
         assert!(!verb_allowed("flake", None));
         assert!(verb_allowed("store", Some("info")));
-        assert!(verb_allowed("store", Some("ls")));
         assert!(!verb_allowed("store", Some("delete")));
         assert!(verb_allowed("profile", Some("list")));
         assert!(!verb_allowed("profile", Some("install")));
         // Unknown verbs are rejected outright.
         assert!(!verb_allowed("build", None));
+    }
+
+    #[test]
+    fn rejects_allowlist_entries_without_commands() {
+        // `flake info` (deprecated alias of `flake metadata`), `store ls`,
+        // and `why-depends` were dropped from the allowlist: no sak command
+        // stands behind them (sak-llm-5svf). Re-adding any of them must come
+        // with the command, not silently.
+        for (verb, subverb) in [
+            ("flake", Some("info")),
+            ("store", Some("ls")),
+            ("why-depends", None),
+        ] {
+            let err = invoke(verb, subverb, &[]).unwrap_err();
+            assert!(
+                err.to_string().contains("not in the read-only allowlist"),
+                "{} should be rejected, got: {err}",
+                display_verb(verb, subverb)
+            );
+        }
     }
 
     #[test]
