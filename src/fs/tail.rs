@@ -134,6 +134,7 @@ pub fn run(args: &TailArgs) -> Result<Outcome> {
             return read_run(&ReadArgs {
                 file,
                 lines: Some(format!("{start}-")),
+                exclude: None,
                 no_line_numbers: args.no_line_numbers,
                 limit: None,
                 offset: 0,
@@ -159,6 +160,7 @@ pub fn run(args: &TailArgs) -> Result<Outcome> {
     let read_args = ReadArgs {
         file,
         lines: Some(format!("-{n}")),
+        exclude: None,
         no_line_numbers: args.no_line_numbers,
         // Explicit (not `read`'s built-in cap), so hitting it is silent —
         // `tail` truncating to n lines is the whole point of the command.

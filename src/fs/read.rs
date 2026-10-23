@@ -29,6 +29,8 @@ Examples:
   sak fs read src/main.rs -n 100-          Read from line 100 to end
   sak fs read src/main.rs -n -20           Read last 20 lines
   sak fs read src/main.rs --offset 10 --limit 5   Skip 10 lines, show 5
+  sak fs read src/main.rs --exclude 75-357  Drop lines 75-357, emit the rest
+  sak fs read data.txt --exclude 1-10,90-100   Drop several ranges
   some-cmd | sak fs read                   Read piped stdin (file omitted)"
 )]
 pub struct ReadArgs {
@@ -38,6 +40,12 @@ pub struct ReadArgs {
     /// Line range to read (e.g., "1-50", "100-", "-20")
     #[arg(short = 'n', long = "lines", allow_hyphen_values = true)]
     pub lines: Option<String>,
+
+    /// Comma-separated line ranges to drop (e.g., "75-357", "1-10,90-100").
+    /// Same syntax as -n per item; composes with -n and preserves the
+    /// original line numbers of the lines that remain.
+    #[arg(long = "exclude", value_name = "RANGES", allow_hyphen_values = true)]
+    pub exclude: Option<String>,
 
     /// Omit line numbers from output
     #[arg(long = "no-line-numbers")]
@@ -81,6 +89,27 @@ fn parse_line_range(spec: &str) -> Result<(Option<usize>, Option<usize>)> {
     }
 }
 
+/// Parse a comma-separated list of line range specs, each in the same
+/// syntax [`parse_line_range`] accepts ("1-50", "100-", "-20", "42").
+fn parse_exclude_ranges(spec: &str) -> Result<Vec<(Option<usize>, Option<usize>)>> {
+    spec.split(',')
+        .map(|item| {
+            parse_line_range(item).with_context(|| format!("invalid range in --exclude: {item:?}"))
+        })
+        .collect()
+}
+
+/// True when 1-based `line_num` falls inside any of `ranges`. `total` is the
+/// input's line count, which the "-N" (last-N-lines) form is relative to.
+fn is_excluded(line_num: usize, total: usize, ranges: &[(Option<usize>, Option<usize>)]) -> bool {
+    ranges.iter().any(|(start, end)| match (*start, *end) {
+        (None, Some(n)) => line_num + n > total, // last n lines
+        (Some(s), Some(e)) => line_num >= s && line_num <= e,
+        (Some(s), None) => line_num >= s,
+        (None, None) => false, // unreachable: parse_line_range never yields this
+    })
+}
+
 pub fn run(args: &ReadArgs) -> Result<Outcome> {
     // An omitted file reads piped stdin; a file arg of "-" always reads stdin
     // (cat/grep convention); anything else is a path.
@@ -98,7 +127,41 @@ pub fn run(args: &ReadArgs) -> Result<Outcome> {
     };
 
     // Determine what lines to output
-    let lines: Vec<(usize, String)> = if let Some(ref spec) = args.lines {
+    // Exclusion needs the whole input (the "-N" form counts back from the
+    // end), so this path buffers everything; without --exclude the
+    // streaming selection below is used instead.
+    let lines: Vec<(usize, String)> = if let Some(ref exclude_spec) = args.exclude {
+        let all: Vec<(usize, String)> = reader
+            .lines()
+            .enumerate()
+            .map(|(i, l)| Ok((i + 1, l?)))
+            .collect::<Result<Vec<_>, io::Error>>()
+            .context("error reading file")?;
+        let total = all.len();
+        // Same selection semantics as the streaming path, then drop excluded.
+        let selected: Vec<(usize, String)> = if let Some(ref spec) = args.lines {
+            let (start, end) = parse_line_range(spec)?;
+            match (start, end) {
+                (None, Some(n)) => {
+                    let skip = total.saturating_sub(n);
+                    all.into_iter().skip(skip).collect()
+                }
+                (Some(start), Some(end)) => all
+                    .into_iter()
+                    .filter(|(num, _)| *num >= start && *num <= end)
+                    .collect(),
+                (Some(start), None) => all.into_iter().filter(|(num, _)| *num >= start).collect(),
+                (None, None) => unreachable!(),
+            }
+        } else {
+            all.into_iter().skip(args.offset).collect()
+        };
+        let ranges = parse_exclude_ranges(exclude_spec)?;
+        selected
+            .into_iter()
+            .filter(|(num, _)| !is_excluded(*num, total, &ranges))
+            .collect()
+    } else if let Some(ref spec) = args.lines {
         let (start, end) = parse_line_range(spec)?;
         match (start, end) {
             (None, Some(n)) => {
@@ -278,6 +341,7 @@ mod tests {
         let args = ReadArgs {
             file: Some(file_path),
             lines: Some("3-5".to_string()),
+            exclude: None,
             no_line_numbers: true,
             limit: None,
             offset: 0,
@@ -301,11 +365,113 @@ mod tests {
         let args = ReadArgs {
             file: Some(file_path),
             lines: Some("-3".to_string()),
+            exclude: None,
             no_line_numbers: true,
             limit: None,
             offset: 0,
         };
         let exit = run(&args).unwrap();
         assert_eq!(exit, Outcome::Found);
+    }
+
+    #[test]
+    fn test_clap_parses_exclude_forms() {
+        let cli = ReadCli::try_parse_from(["read", "f.txt", "--exclude", "1-10,90-100"]).unwrap();
+        assert_eq!(cli.args.exclude.as_deref(), Some("1-10,90-100"));
+        // A leading hyphen must still parse as the flag's value.
+        let cli = ReadCli::try_parse_from(["read", "f.txt", "--exclude", "-5"]).unwrap();
+        assert_eq!(cli.args.exclude.as_deref(), Some("-5"));
+    }
+
+    #[test]
+    fn test_parse_exclude_ranges() {
+        let ranges = parse_exclude_ranges("1-10,90-100").unwrap();
+        assert_eq!(ranges, vec![(Some(1), Some(10)), (Some(90), Some(100))]);
+        let ranges = parse_exclude_ranges("42").unwrap();
+        assert_eq!(ranges, vec![(Some(42), Some(42))]);
+        let ranges = parse_exclude_ranges("100-,-5").unwrap();
+        assert_eq!(ranges, vec![(Some(100), None), (None, Some(5))]);
+        assert!(parse_exclude_ranges("1-10,abc").is_err());
+        assert!(parse_exclude_ranges("").is_err());
+    }
+
+    #[test]
+    fn test_is_excluded() {
+        let ranges = parse_exclude_ranges("3-5,8-").unwrap();
+        assert!(!is_excluded(1, 10, &ranges));
+        assert!(is_excluded(3, 10, &ranges));
+        assert!(is_excluded(5, 10, &ranges));
+        assert!(!is_excluded(7, 10, &ranges));
+        assert!(is_excluded(8, 10, &ranges));
+        assert!(is_excluded(10, 10, &ranges));
+    }
+
+    #[test]
+    fn test_is_excluded_last_n() {
+        // "-3" of 10 lines drops 8, 9, 10 however many lines came before.
+        let ranges = parse_exclude_ranges("-3").unwrap();
+        assert!(!is_excluded(7, 10, &ranges));
+        assert!(is_excluded(8, 10, &ranges));
+        assert!(is_excluded(10, 10, &ranges));
+        // Asking for more lines than exist drops everything.
+        assert!(is_excluded(1, 3, &ranges));
+    }
+
+    #[test]
+    fn test_read_exclude() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        {
+            let mut f = File::create(&file_path).unwrap();
+            for i in 1..=10 {
+                writeln!(f, "line {}", i).unwrap();
+            }
+        }
+
+        let args = ReadArgs {
+            file: Some(file_path.clone()),
+            lines: None,
+            exclude: Some("3-5".to_string()),
+            no_line_numbers: true,
+            limit: None,
+            offset: 0,
+        };
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
+
+        // Excluding everything is an empty result, not an error.
+        let args = ReadArgs {
+            file: Some(file_path),
+            lines: None,
+            exclude: Some("1-".to_string()),
+            no_line_numbers: true,
+            limit: None,
+            offset: 0,
+        };
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
+    }
+
+    #[test]
+    fn test_read_exclude_composes_with_lines() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        {
+            let mut f = File::create(&file_path).unwrap();
+            for i in 1..=10 {
+                writeln!(f, "line {}", i).unwrap();
+            }
+        }
+
+        // -n selects 1-6, --exclude drops 2-3 of the original numbering.
+        let args = ReadArgs {
+            file: Some(file_path),
+            lines: Some("1-6".to_string()),
+            exclude: Some("2-3".to_string()),
+            no_line_numbers: true,
+            limit: None,
+            offset: 0,
+        };
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 }

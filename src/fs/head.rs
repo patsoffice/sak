@@ -76,6 +76,7 @@ pub fn run(args: &HeadArgs) -> Result<Outcome> {
     let read_args = ReadArgs {
         file,
         lines: Some(format!("1-{n}")),
+        exclude: None,
         no_line_numbers: args.no_line_numbers,
         // Explicit (not `read`'s built-in cap), so hitting it is silent —
         // `head` truncating to n lines is the whole point of the command.
