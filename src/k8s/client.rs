@@ -19,11 +19,121 @@ use kube::{Api, Client};
 /// 1. `KUBECONFIG` env var (or `~/.kube/config`),
 /// 2. In-cluster service account if running inside a pod.
 ///
-/// Wraps [`kube::Client::try_default`].
+/// Same sources as [`kube::Client::try_default`], plus kubectl's `NO_PROXY`
+/// handling for an environment-supplied proxy (see [`bypass_env_proxy`]).
 pub async fn build_client() -> Result<Client> {
-    Client::try_default()
+    // `Client::try_default()` is infer-then-build; doing the two steps here
+    // leaves room to apply NO_PROXY, which kube does not implement.
+    let mut config = kube::Config::infer()
         .await
-        .context("failed to build kubernetes client (kubeconfig or in-cluster)")
+        .context("failed to build kubernetes client (kubeconfig or in-cluster)")?;
+    let env_proxy = env_var_either("HTTPS_PROXY", "https_proxy");
+    let no_proxy = env_var_either("NO_PROXY", "no_proxy");
+    if bypass_env_proxy(
+        config.proxy_url.as_ref(),
+        env_proxy.as_deref(),
+        no_proxy.as_deref(),
+        &config.cluster_url,
+    ) {
+        config.proxy_url = None;
+    }
+    Client::try_from(config).context("failed to build kubernetes client (kubeconfig or in-cluster)")
+}
+
+/// First non-empty value of an upper- or lower-case environment variable.
+fn env_var_either(upper: &str, lower: &str) -> Option<String> {
+    [upper, lower]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .find(|v| !v.trim().is_empty())
+}
+
+/// Whether to drop the client's proxy so the cluster is reached directly.
+///
+/// kube takes its proxy from the kubeconfig's `proxy-url`, else from
+/// `HTTPS_PROXY`, but never consults `NO_PROXY`. kubectl does (Go's
+/// `http.ProxyFromEnvironment`), so a cluster listed in `NO_PROXY` would be
+/// reached directly by kubectl but pushed through the proxy by sak. Only an
+/// environment-sourced proxy is dropped: a `proxy-url` written into the
+/// kubeconfig is an explicit per-cluster choice and always wins (it is
+/// recognised by not being the `HTTPS_PROXY` value). Pure and unit-tested.
+fn bypass_env_proxy(
+    proxy_url: Option<&http::Uri>,
+    env_proxy: Option<&str>,
+    no_proxy: Option<&str>,
+    cluster_url: &http::Uri,
+) -> bool {
+    let (Some(proxy), Some(env_proxy), Some(no_proxy)) = (proxy_url, env_proxy, no_proxy) else {
+        return false;
+    };
+    let from_env = env_proxy
+        .trim()
+        .parse::<http::Uri>()
+        .is_ok_and(|env| &env == proxy);
+    let Some(host) = cluster_url.host() else {
+        return false;
+    };
+    let port = cluster_url.port_u16().or(match cluster_url.scheme_str() {
+        Some("http") => Some(80),
+        _ => Some(443),
+    });
+    from_env && no_proxy_matches(no_proxy, host, port)
+}
+
+/// Go's `NO_PROXY` rules (`golang.org/x/net/http/httpproxy`): comma or space
+/// separated entries; `*` matches everything; an IP literal or CIDR range
+/// matches addresses; a domain matches itself and its subdomains, with or
+/// without a leading `.`; an entry with `:port` only matches that port.
+/// Matching is case-insensitive.
+fn no_proxy_matches(no_proxy: &str, host: &str, port: Option<u16>) -> bool {
+    let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    let host_ip: Option<std::net::IpAddr> = host.parse().ok();
+    no_proxy
+        .split([',', ' '])
+        .map(|e| e.trim().to_ascii_lowercase())
+        .filter(|e| !e.is_empty())
+        .any(|entry| {
+            if entry == "*" {
+                return true;
+            }
+            if let Some((net, bits)) = entry.split_once('/') {
+                return match (host_ip, net.parse(), bits.parse::<u32>()) {
+                    (Some(ip), Ok(net), Ok(bits)) => cidr_contains(net, bits, ip),
+                    _ => false,
+                };
+            }
+            // Split an optional `:port`, leaving bare IPv6 literals intact.
+            let (name, entry_port) = match entry.rsplit_once(':') {
+                Some((n, p)) if !n.contains(':') || n.starts_with('[') => {
+                    (n.trim_matches(['[', ']']), p.parse::<u16>().ok())
+                }
+                _ => (entry.trim_matches(['[', ']']), None),
+            };
+            if entry_port.is_some() && entry_port != port {
+                return false;
+            }
+            if let (Some(ip), Ok(entry_ip)) = (host_ip, name.parse::<std::net::IpAddr>()) {
+                return ip == entry_ip;
+            }
+            let domain = name.trim_start_matches('.');
+            host == domain || host.ends_with(&format!(".{domain}"))
+        })
+}
+
+/// Whether `ip` falls in `net/bits` (same address family only).
+fn cidr_contains(net: std::net::IpAddr, bits: u32, ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match (net, ip) {
+        (IpAddr::V4(n), IpAddr::V4(i)) if bits <= 32 => {
+            let mask = u32::MAX.checked_shl(32 - bits).unwrap_or(0);
+            (u32::from(n) & mask) == (u32::from(i) & mask)
+        }
+        (IpAddr::V6(n), IpAddr::V6(i)) if bits <= 128 => {
+            let mask = u128::MAX.checked_shl(128 - bits).unwrap_or(0);
+            (u128::from(n) & mask) == (u128::from(i) & mask)
+        }
+        _ => false,
+    }
 }
 
 /// List resources of a kind, scoped to a namespace or across all namespaces.
@@ -151,6 +261,8 @@ pub async fn request_text(client: &Client, path: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::{bypass_env_proxy, no_proxy_matches};
+
     /// Tokens that must not appear in any `src/k8s/*.rs` file other than
     /// `client.rs`. The directory walk and comment-skip mechanics live in
     /// [`crate::test_support::assert_no_forbidden_tokens`].
@@ -176,6 +288,61 @@ mod tests {
             FORBIDDEN_TOKENS,
             "kube::Api / mutation methods must be confined to src/k8s/client.rs",
         );
+    }
+
+    #[test]
+    fn no_proxy_follows_go_rules() {
+        let m = |entries: &str, host: &str| no_proxy_matches(entries, host, Some(6443));
+        assert!(m("*", "anything.example"));
+        // Domains match themselves and subdomains, with or without the dot.
+        assert!(m("corp.example", "k8s.corp.example"));
+        assert!(m(".corp.example", "k8s.corp.example"));
+        assert!(m("corp.example", "corp.example"));
+        assert!(!m("corp.example", "notcorp.example"));
+        assert!(m("Corp.Example", "K8S.corp.example"));
+        // IP literals and CIDR ranges, v4 and v6.
+        assert!(m("192.168.1.10", "192.168.1.10"));
+        assert!(m("10.0.0.0/8,192.168.0.0/16", "192.168.1.10"));
+        assert!(!m("10.0.0.0/8", "192.168.1.10"));
+        assert!(m("fd00::/8", "[fd00::1]"));
+        assert!(m("::1", "[::1]"));
+        // A port in the entry must match; mixed separators are fine.
+        assert!(m("localhost, 192.168.1.10:6443", "192.168.1.10"));
+        assert!(!m("192.168.1.10:443", "192.168.1.10"));
+        assert!(!m("", "192.168.1.10"));
+    }
+
+    #[test]
+    fn env_proxy_is_bypassed_only_for_no_proxy_hosts() {
+        // Regression: kube honours HTTPS_PROXY but not NO_PROXY, so with
+        // http-proxy enabled an internal cluster went through the proxy
+        // where kubectl connects directly.
+        let cluster: http::Uri = "https://192.168.1.10:6443".parse().unwrap();
+        let proxy: http::Uri = "http://proxy.corp:3128".parse().unwrap();
+        let env = Some("http://proxy.corp:3128");
+        assert!(bypass_env_proxy(
+            Some(&proxy),
+            env,
+            Some("192.168.0.0/16"),
+            &cluster
+        ));
+        assert!(!bypass_env_proxy(
+            Some(&proxy),
+            env,
+            Some("10.0.0.0/8"),
+            &cluster
+        ));
+        assert!(!bypass_env_proxy(Some(&proxy), env, None, &cluster));
+        // A kubeconfig proxy-url (not the HTTPS_PROXY value) always wins.
+        let kubeconfig_proxy: http::Uri = "http://bastion:8080".parse().unwrap();
+        assert!(!bypass_env_proxy(
+            Some(&kubeconfig_proxy),
+            env,
+            Some("192.168.0.0/16"),
+            &cluster
+        ));
+        // No proxy configured: nothing to bypass.
+        assert!(!bypass_env_proxy(None, env, Some("*"), &cluster));
     }
 
     #[test]
