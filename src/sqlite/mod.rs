@@ -21,6 +21,7 @@
 pub mod client;
 pub mod count;
 pub mod dump;
+pub mod explain;
 pub mod hook;
 pub mod info;
 pub mod query;
@@ -37,6 +38,7 @@ use clap::Subcommand;
 pub enum SqliteCommand {
     Count(count::CountArgs),
     Dump(dump::DumpArgs),
+    Explain(explain::ExplainArgs),
     Info(info::InfoArgs),
     Query(query::QueryArgs),
     Schema(schema::SchemaArgs),
@@ -48,6 +50,7 @@ pub fn run(cmd: &SqliteCommand) -> Result<Outcome> {
     match cmd {
         SqliteCommand::Count(args) => count::run(args),
         SqliteCommand::Dump(args) => dump::run(args),
+        SqliteCommand::Explain(args) => explain::run(args),
         SqliteCommand::Info(args) => info::run(args),
         SqliteCommand::Query(args) => query::run(args),
         SqliteCommand::Schema(args) => schema::run(args),

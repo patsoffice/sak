@@ -219,6 +219,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak sqlite schema app.db                    Show database schema
   sak sqlite count app.db users               Count rows in a table
   sak sqlite query app.db 'SELECT * FROM users'   Run a read-only query
+  sak sqlite explain app.db 'SELECT * FROM users'  Show the query plan
   sak sqlite dump app.db users                Dump rows without hand SQL
   sak sqlite info app.db                      Database-level metadata",
     );

@@ -265,7 +265,7 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 - `sak k8s get|images|env|schema|top|endpoints|owners|children|can-i` instead of `kubectl` reads
 - `sak lxc list|info|config|images` instead of `lxc` reads
 - `sak docker list|info|config|images|logs` instead of `docker` reads
-- `sak sqlite tables|schema|query|info` instead of `sqlite3` reads
+- `sak sqlite tables|schema|query|info|explain` instead of `sqlite3` reads
 - `sak prom alerts|query|query-range|histogram|targets|rules|labels|label-values|series|metadata|tsdb-stats|flags|config|am alerts|am silences`
   instead of `curl + jq + base64` against a Prometheus or Alertmanager API
 - `sak loki query|query-range|labels|label-values|series` instead of `curl + jq` against a Grafana Loki LogQL API

@@ -54,13 +54,18 @@ pub enum OutputFormat {
     Tsv,
 }
 
-pub fn run(args: &QueryArgs) -> Result<Outcome> {
-    if !is_read_statement(&args.sql) {
+pub(crate) fn ensure_read_statement(sql: &str) -> Result<()> {
+    if !is_read_statement(sql) {
         return Err(anyhow!(
             "only SELECT, WITH, EXPLAIN, and PRAGMA statements are allowed (after \
              stripping leading whitespace and SQL comments)"
         ));
     }
+    Ok(())
+}
+
+pub fn run(args: &QueryArgs) -> Result<Outcome> {
+    ensure_read_statement(&args.sql)?;
 
     let conn = client::open_readonly(&args.db)?;
     let (columns, rows) = client::query_rows_typed(&conn, &args.sql)?;

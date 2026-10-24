@@ -17,7 +17,7 @@ pub const HOOK_RULES: &[HookRule] = &[HookRule {
     tool: "sqlite3",
     subcommand: &[],
     guard: Some(sqlite_has_read_marker),
-    message: "Use `sak sqlite tables/schema/count/query/dump/info <db>` \
+    message: "Use `sak sqlite tables/schema/count/query/dump/info/explain <db>` \
          instead of `sqlite3` for reads.",
 }];
 
