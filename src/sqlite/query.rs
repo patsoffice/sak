@@ -115,29 +115,32 @@ const KEYWORD_SEPARATORS: &[u8] = b" \t\n\r(";
 /// "attempt to write a readonly database" message from sqlite.
 pub(crate) fn is_read_statement(sql: &str) -> bool {
     let stripped = strip_leading_comments_and_ws(sql);
-    if stripped.is_empty() {
-        return false;
+    READ_STATEMENT_KEYWORDS
+        .iter()
+        .any(|kw| strip_keyword(stripped, kw).is_some())
+}
+
+/// `s` without a leading case-insensitive keyword `kw`, or `None` when `s`
+/// doesn't start with it. The next char must be a separator (or end of
+/// string) so that identifiers like `selected_at` aren't accepted.
+pub(crate) fn strip_keyword<'a>(s: &'a str, kw: &str) -> Option<&'a str> {
+    let head = s.get(..kw.len())?;
+    if !head.eq_ignore_ascii_case(kw) {
+        return None;
     }
-    let lower = stripped.to_ascii_lowercase();
-    for &kw in READ_STATEMENT_KEYWORDS {
-        if let Some(rest) = lower.strip_prefix(kw) {
-            // Next char must be a separator (or end of string) so that
-            // identifiers like `selected_at` aren't accepted.
-            match rest.as_bytes().first() {
-                None => return true,
-                Some(c) if KEYWORD_SEPARATORS.contains(c) => return true,
-                _ => {}
-            }
-        }
+    let rest = &s[kw.len()..];
+    match rest.as_bytes().first() {
+        None => Some(rest),
+        Some(c) if KEYWORD_SEPARATORS.contains(c) => Some(rest),
+        _ => None,
     }
-    false
 }
 
 /// Trim leading whitespace and SQL line/block comments. Stops at the first
 /// character that is neither whitespace nor the start of a comment. An
 /// unterminated block comment collapses the rest of the input to "" so the
 /// statement gate rejects it as empty.
-fn strip_leading_comments_and_ws(sql: &str) -> &str {
+pub(crate) fn strip_leading_comments_and_ws(sql: &str) -> &str {
     let mut s = sql.trim_start();
     loop {
         if let Some(rest) = s.strip_prefix("--") {

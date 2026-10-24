@@ -2,7 +2,7 @@ use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Args;
 
 use super::client;
@@ -17,8 +17,9 @@ use crate::output::BoundedWriter;
         (if any) each table access uses. The plan of last resort when a \
         query is slow.\n\n\
         The statement goes through the same read-only gate as `sak sqlite \
-        query` (SELECT, WITH, EXPLAIN, or PRAGMA only), then runs wrapped on \
-        the read-only connection. `--bytecode` runs plain `EXPLAIN <sql>` \
+        query` (SELECT or WITH; a leading `EXPLAIN` or `EXPLAIN QUERY PLAN` \
+        is dropped, and PRAGMA is refused since it has no plan), then runs \
+        wrapped on the read-only connection. `--bytecode` runs plain `EXPLAIN <sql>` \
         instead — the lower-level VDBE program (addr/opcode/p1..p5/comment \
         columns) rather than the query-plan summary \
         (id/parent/notused/detail). Column names always come from the \
@@ -33,7 +34,7 @@ pub struct ExplainArgs {
     /// Path to the SQLite database file
     pub db: PathBuf,
 
-    /// SQL statement to plan (must begin with SELECT, WITH, EXPLAIN, or PRAGMA)
+    /// SQL statement to plan (SELECT or WITH; a leading EXPLAIN is ignored)
     pub sql: String,
 
     /// Show the VDBE bytecode program instead of the query-plan summary
@@ -59,13 +60,35 @@ pub(crate) fn plan_rows(
     sql: &str,
     bytecode: bool,
 ) -> Result<(Vec<String>, Vec<Vec<rusqlite::types::Value>>)> {
-    super::query::ensure_read_statement(sql)?;
+    let sql = plan_target(sql)?;
     let wrapped = if bytecode {
         format!("EXPLAIN {sql}")
     } else {
         format!("EXPLAIN QUERY PLAN {sql}")
     };
     client::query_rows_typed(conn, &wrapped)
+}
+
+/// The statement to plan. A leading `EXPLAIN` or `EXPLAIN QUERY PLAN` is
+/// dropped, since the wrapper adds its own and SQLite rejects a doubled one.
+/// `PRAGMA` passes the read gate but has no query plan, so it's refused
+/// rather than answered with an empty plan.
+fn plan_target(sql: &str) -> Result<&str> {
+    use super::query::{strip_keyword, strip_leading_comments_and_ws as skip_ws};
+    let mut body = skip_ws(sql);
+    if let Some(rest) = strip_keyword(body, "explain") {
+        body = skip_ws(rest);
+        if let Some(rest) = strip_keyword(body, "query").map(skip_ws)
+            && let Some(rest) = strip_keyword(rest, "plan")
+        {
+            body = skip_ws(rest);
+        }
+    }
+    if strip_keyword(body, "pragma").is_some() {
+        bail!("PRAGMA statements have no query plan; run them with `sak sqlite query`");
+    }
+    super::query::ensure_read_statement(body)?;
+    Ok(body)
 }
 
 pub fn run(args: &ExplainArgs) -> Result<Outcome> {
@@ -159,6 +182,56 @@ mod tests {
             vec!["addr", "opcode", "p1", "p2", "p3", "p4", "p5", "comment"]
         );
         assert!(!rows.is_empty());
+    }
+
+    #[test]
+    fn leading_explain_is_dropped_not_doubled() {
+        // Regression: the gate accepted `EXPLAIN …`, then wrapping produced
+        // `EXPLAIN QUERY PLAN EXPLAIN …`, a syntax error.
+        let tmp = seeded_db();
+        for sql in [
+            "EXPLAIN QUERY PLAN SELECT * FROM users WHERE email = 'a@x'",
+            "explain query plan SELECT * FROM users WHERE email = 'a@x'",
+            "-- note\nEXPLAIN SELECT * FROM users WHERE email = 'a@x'",
+        ] {
+            let (cols, rows) = plan(tmp.path(), sql, false);
+            assert_eq!(cols, vec!["id", "parent", "notused", "detail"], "{sql}");
+            assert!(
+                details(&rows).iter().any(|d| d.contains("idx_users_email")),
+                "{sql}"
+            );
+        }
+        let (cols, _) = plan(tmp.path(), "EXPLAIN SELECT * FROM users", true);
+        assert_eq!(cols[1], "opcode");
+    }
+
+    #[test]
+    fn plan_target_strips_and_gates() {
+        assert_eq!(plan_target("SELECT 1").unwrap(), "SELECT 1");
+        assert_eq!(plan_target("EXPLAIN  SELECT 1").unwrap(), "SELECT 1");
+        assert_eq!(
+            plan_target("EXPLAIN QUERY /* c */ PLAN WITH x AS (SELECT 1) SELECT * FROM x").unwrap(),
+            "WITH x AS (SELECT 1) SELECT * FROM x"
+        );
+        // `explained` is an identifier, not the keyword.
+        assert!(plan_target("explained").is_err());
+        // An EXPLAIN-wrapped write is still a write.
+        assert!(plan_target("EXPLAIN DELETE FROM users").is_err());
+        assert!(plan_target("EXPLAIN").is_err());
+    }
+
+    #[test]
+    fn pragma_is_refused_with_a_pointer_to_query() {
+        // Regression: PRAGMA passed the gate and yielded an empty plan (exit 1).
+        let tmp = seeded_db();
+        let conn = client::open_readonly(tmp.path()).unwrap();
+        for sql in [
+            "PRAGMA table_info(users)",
+            "EXPLAIN PRAGMA table_info(users)",
+        ] {
+            let err = plan_rows(&conn, sql, false).unwrap_err().to_string();
+            assert!(err.contains("sak sqlite query"), "{sql}: {err}");
+        }
     }
 
     #[test]
