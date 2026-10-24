@@ -55,15 +55,20 @@ fn env_var_either(upper: &str, lower: &str) -> Option<String> {
 /// `http.ProxyFromEnvironment`), so a cluster listed in `NO_PROXY` would be
 /// reached directly by kubectl but pushed through the proxy by sak. Only an
 /// environment-sourced proxy is dropped: a `proxy-url` written into the
-/// kubeconfig is an explicit per-cluster choice and always wins (it is
-/// recognised by not being the `HTTPS_PROXY` value). Pure and unit-tested.
+/// kubeconfig is an explicit per-cluster choice and always wins. It is
+/// recognised by not being the `HTTPS_PROXY` value, so a `proxy-url` that
+/// happens to equal `HTTPS_PROXY` is treated as environment-sourced.
+///
+/// Like Go, a loopback cluster (`localhost`, `127.0.0.0/8`, `::1`) is always
+/// reached directly, `NO_PROXY` or not — the kind/minikube case. Pure and
+/// unit-tested.
 fn bypass_env_proxy(
     proxy_url: Option<&http::Uri>,
     env_proxy: Option<&str>,
     no_proxy: Option<&str>,
     cluster_url: &http::Uri,
 ) -> bool {
-    let (Some(proxy), Some(env_proxy), Some(no_proxy)) = (proxy_url, env_proxy, no_proxy) else {
+    let (Some(proxy), Some(env_proxy)) = (proxy_url, env_proxy) else {
         return false;
     };
     let from_env = env_proxy
@@ -77,14 +82,24 @@ fn bypass_env_proxy(
         Some("http") => Some(80),
         _ => Some(443),
     });
-    from_env && no_proxy_matches(no_proxy, host, port)
+    from_env
+        && (is_loopback_host(host) || no_proxy.is_some_and(|np| no_proxy_matches(np, host, port)))
+}
+
+/// Go's `httpproxy` never proxies `localhost` or a loopback address.
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_matches(['[', ']']);
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.to_canonical().is_loopback())
 }
 
 /// Go's `NO_PROXY` rules (`golang.org/x/net/http/httpproxy`): comma or space
 /// separated entries; `*` matches everything; an IP literal or CIDR range
-/// matches addresses; a domain matches itself and its subdomains, with or
-/// without a leading `.`; an entry with `:port` only matches that port.
-/// Matching is case-insensitive.
+/// matches addresses; `corp.example` matches itself and its subdomains, while
+/// `.corp.example` and `*.corp.example` match subdomains only; an entry with
+/// `:port` only matches that port. Matching is case-insensitive.
 fn no_proxy_matches(no_proxy: &str, host: &str, port: Option<u16>) -> bool {
     let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
     let host_ip: Option<std::net::IpAddr> = host.parse().ok();
@@ -115,8 +130,15 @@ fn no_proxy_matches(no_proxy: &str, host: &str, port: Option<u16>) -> bool {
             if let (Some(ip), Ok(entry_ip)) = (host_ip, name.parse::<std::net::IpAddr>()) {
                 return ip == entry_ip;
             }
-            let domain = name.trim_start_matches('.');
-            host == domain || host.ends_with(&format!(".{domain}"))
+            // Go drops the `*` of `*.domain`; a leading `.` means subdomains only.
+            let name = name
+                .strip_prefix('*')
+                .filter(|n| n.starts_with('.'))
+                .unwrap_or(name);
+            match name.strip_prefix('.') {
+                Some(_) => host.ends_with(name),
+                None => host == name || host.ends_with(&format!(".{name}")),
+            }
         })
 }
 
@@ -300,6 +322,10 @@ mod tests {
         assert!(m("corp.example", "corp.example"));
         assert!(!m("corp.example", "notcorp.example"));
         assert!(m("Corp.Example", "K8S.corp.example"));
+        // `*.` and a leading `.` match subdomains only, as in Go.
+        assert!(m("*.corp.example", "k8s.corp.example"));
+        assert!(!m("*.corp.example", "corp.example"));
+        assert!(!m(".corp.example", "corp.example"));
         // IP literals and CIDR ranges, v4 and v6.
         assert!(m("192.168.1.10", "192.168.1.10"));
         assert!(m("10.0.0.0/8,192.168.0.0/16", "192.168.1.10"));
@@ -343,6 +369,35 @@ mod tests {
         ));
         // No proxy configured: nothing to bypass.
         assert!(!bypass_env_proxy(None, env, Some("*"), &cluster));
+    }
+
+    #[test]
+    fn loopback_cluster_bypasses_env_proxy_without_no_proxy() {
+        // Regression: Go never proxies localhost/loopback, so kubectl reaches
+        // a kind or minikube cluster directly with only HTTPS_PROXY set.
+        let proxy: http::Uri = "http://proxy.corp:3128".parse().unwrap();
+        let env = Some("http://proxy.corp:3128");
+        for url in [
+            "https://127.0.0.1:6443",
+            "https://127.5.0.1:6443",
+            "https://localhost:6443",
+            "https://[::1]:6443",
+        ] {
+            let cluster: http::Uri = url.parse().unwrap();
+            assert!(bypass_env_proxy(Some(&proxy), env, None, &cluster), "{url}");
+        }
+        // A kubeconfig proxy-url still wins over loopback.
+        let kubeconfig_proxy: http::Uri = "http://bastion:8080".parse().unwrap();
+        let local: http::Uri = "https://127.0.0.1:6443".parse().unwrap();
+        assert!(!bypass_env_proxy(
+            Some(&kubeconfig_proxy),
+            env,
+            None,
+            &local
+        ));
+        // A non-loopback cluster with no NO_PROXY stays proxied.
+        let remote: http::Uri = "https://192.168.1.10:6443".parse().unwrap();
+        assert!(!bypass_env_proxy(Some(&proxy), env, None, &remote));
     }
 
     #[test]
