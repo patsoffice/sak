@@ -39,7 +39,9 @@ use regex::Regex;
         `null`. Strings compare as text and numbers numerically (`3` matches \
         `3.0`); mixed types never order. A regex runs against a string's own \
         text and any other value's compact JSON form. A path that resolves to \
-        nothing never equals (`=` false, `!=` true) and never orders. \
+        nothing never equals (`=` false, `!=` true) and never orders. A JSON \
+        Pointer path keeps its `~0`/`~1` escapes, so keys containing `/` or \
+        `.` are reachable: `--where '/labels/app.kubernetes.io~1name = \"web\"'`. \
         Filtering everything out is exit 1, like an empty array.\n\n\
         Exit codes follow sak convention: 0 = at least one row emitted, 1 = the \
         array was empty (no rows), 2 = error (bad path, non-array, parse error).",
@@ -166,14 +168,21 @@ pub(crate) struct WherePred {
 
 /// Split a predicate into path, operator, and raw literal. The operator is
 /// the first `=`, `!=`, `~`, `!~`, `<`, `<=`, `>`, `>=` outside a
-/// double-quoted string, so literals like `"a=b"` stay intact.
+/// double-quoted string, so literals like `"a=b"` stay intact. In a JSON
+/// Pointer path, `~0` and `~1` are the escapes for `~` and `/`, not the
+/// regex operator, so `/labels/app.kubernetes.io~1name = "x"` splits at `=`.
 fn split_where(spec: &str) -> Result<(&str, WhereOp, &str)> {
     let bytes = spec.as_bytes();
+    let pointer = spec.trim_start().starts_with('/');
     let mut in_str = false;
     let mut escaped = false;
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
+        if pointer && b == b'~' && matches!(bytes.get(i + 1), Some(b'0' | b'1')) {
+            i += 2;
+            continue;
+        }
         if in_str {
             if escaped {
                 escaped = false;
@@ -233,6 +242,10 @@ fn split_at(spec: &str, at: usize, width: usize, op: WhereOp) -> Result<(&str, W
 /// dot-path / JSON-Pointer syntax as `--fields` addresses the element.
 pub(crate) fn parse_where(spec: &str) -> Result<WherePred> {
     let (path, op, raw) = split_where(spec)?;
+    // Resolving against `null` checks the path's syntax now, so a malformed
+    // path is an argument error even when there are no elements to test.
+    resolve_expression(&Value::Null, path)
+        .with_context(|| format!("invalid path in --where {spec:?}"))?;
     let literal: Value = serde_json::from_str(raw).with_context(|| {
         format!(
             "invalid literal in --where {spec:?}: expected \"string\", number, true, false, or null"
@@ -331,6 +344,20 @@ pub(crate) fn eval_where(pred: &WherePred, element: &Value) -> Result<bool> {
     })
 }
 
+/// Keep the elements that satisfy every predicate (they AND together).
+fn filter_elements<'a>(elements: Vec<&'a Value>, preds: &[WherePred]) -> Result<Vec<&'a Value>> {
+    let mut kept = Vec::with_capacity(elements.len());
+    'elements: for element in elements {
+        for pred in preds {
+            if !eval_where(pred, element)? {
+                continue 'elements;
+            }
+        }
+        kept.push(element);
+    }
+    Ok(kept)
+}
+
 pub fn run(args: &TableArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.fields)?;
     let mut preds = Vec::with_capacity(args.where_exprs.len());
@@ -372,20 +399,7 @@ pub fn run(args: &TableArgs) -> Result<Outcome> {
     // Filtering before the empty check keeps the exit contract (no rows →
     // exit 1, header suppressed) and the `--limit` accounting unchanged.
     if !preds.is_empty() {
-        let mut kept = Vec::with_capacity(elements.len());
-        for element in elements {
-            let mut ok = true;
-            for pred in &preds {
-                if !eval_where(pred, element)? {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
-                kept.push(element);
-            }
-        }
-        elements = kept;
+        elements = filter_elements(elements, &preds)?;
     }
 
     let stdout = io::stdout();
@@ -671,9 +685,28 @@ mod tests {
             ".a = unquoted",
             ".a ~ 1",
             ".a ~ \"(\"",
+            ".a.\"b\" = 1", // malformed path rejected at parse time
         ] {
             assert!(parse_where(spec).is_err(), "{spec}");
         }
+    }
+
+    #[test]
+    fn parse_where_pointer_escapes_are_not_operators() {
+        // Regression: `~1` (escaped `/`) in a JSON Pointer split as `~`.
+        let pred = parse_where("/labels/app.kubernetes.io~1name = \"web\"").unwrap();
+        assert_eq!(
+            (pred.path.as_str(), pred.op),
+            ("/labels/app.kubernetes.io~1name", WhereOp::Eq)
+        );
+        let pred = parse_where("/a~0b~1c != 1").unwrap();
+        assert_eq!((pred.path.as_str(), pred.op), ("/a~0b~1c", WhereOp::NotEq));
+        // The regex operator still works after an escaped segment.
+        let pred = parse_where("/a~1b ~ \"x\"").unwrap();
+        assert_eq!((pred.path.as_str(), pred.op), ("/a~1b", WhereOp::Match));
+        let el = json!({"labels": {"app.kubernetes.io/name": "web"}});
+        let pred = parse_where("/labels/app.kubernetes.io~1name = \"web\"").unwrap();
+        assert!(eval_where(&pred, &el).unwrap());
     }
 
     #[test]
@@ -735,6 +768,31 @@ mod tests {
         // Two predicates AND together: only id 1 survives.
         let args = where_args(p, &[".priority < 3", ".status = \"open\""]);
         assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    #[test]
+    fn filter_elements_ands_predicates() {
+        let doc = json!([
+            {"id": 1, "priority": 1, "status": "open"},
+            {"id": 2, "priority": 5, "status": "open"},
+            {"id": 3, "priority": 1, "status": "closed"}
+        ]);
+        let preds = [
+            parse_where(".priority < 3").unwrap(),
+            parse_where(".status = \"open\"").unwrap(),
+        ];
+        let kept = filter_elements(doc.as_array().unwrap().iter().collect(), &preds).unwrap();
+        let ids: Vec<_> = kept.iter().map(|e| e["id"].clone()).collect();
+        assert_eq!(ids, vec![json!(1)]);
+    }
+
+    #[test]
+    fn run_where_bad_path_is_error_on_empty_input() {
+        // A malformed path is an argument error even with nothing to filter.
+        let (_d, p) = write_tmp(r#"{"issues":[]}"#);
+        let args = where_args(p, &[".a.\"b\" = 1"]);
+        let err = run(&args).unwrap_err().to_string();
+        assert!(err.contains("invalid path in --where"), "{err}");
     }
 
     #[test]
