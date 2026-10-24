@@ -12,8 +12,9 @@ use crate::output::BoundedWriter;
 #[command(
     about = "Last-touched timestamp per file",
     long_about = "Dead-code triage: last-touched unix timestamp and age in days \
-        per file, oldest first. The walk records each file's newest touch and \
-        stops once every tracked file has one, so old files never pay for a \
+        per file in HEAD, oldest first (deleted files don't appear). The walk \
+        records each file's newest touch and stops once every file has one, \
+        so old files never pay for a \
         full-history scan.\n\n\
         `--since` bounds the walk to recent history (files untouched in range \
         don't appear); positional paths filter to a subtree.",
@@ -59,25 +60,26 @@ pub(crate) fn file_ages(
     let rel = |p: &Path| super::churn::relativize(workdir.as_deref(), p);
     let filters: Vec<PathBuf> = filters.iter().map(|f| rel(f)).collect();
 
-    // Completion set: tracked files under the filters. An empty set (no
-    // filters match, or nothing tracked) ends the walk at once.
-    let index = repo.index()?;
-    let mut remaining: HashSet<PathBuf> = index
-        .iter()
-        .map(|e| PathBuf::from(String::from_utf8_lossy(&e.path).into_owned()))
+    // Completion set: the files in HEAD's tree under the filters. HEAD, not
+    // the index: a bare repo has no index, and a staged-only file has no
+    // history to find. An empty set (no commits, or no filter matches) has
+    // nothing to report, so skip the walk.
+    let mut remaining: HashSet<PathBuf> = head_files(repo)?
+        .into_iter()
         .filter(|p| filters.is_empty() || filters.iter().any(|f| p.starts_with(f)))
         .collect();
+    if remaining.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    // First-seen-wins on a newest-first walk keeps each file's newest touch.
+    // Only files still in HEAD count: a deleted file's last delta is its
+    // deletion. Removing a path on its first (newest, since the walk is
+    // newest-first) touch keeps that touch and ignores older ones.
     let mut touched: HashMap<PathBuf, i64> = HashMap::new();
     super::walk::for_each_file_delta(repo, include_merges, since, |commit, path| {
-        if !filters.is_empty() && !filters.iter().any(|f| path.starts_with(f)) {
-            return true;
+        if remaining.remove(path) {
+            touched.insert(path.to_path_buf(), commit.time().seconds());
         }
-        touched
-            .entry(path.to_path_buf())
-            .or_insert_with(|| commit.time().seconds());
-        remaining.remove(path);
         !remaining.is_empty()
     })?;
 
@@ -90,6 +92,23 @@ pub(crate) fn file_ages(
         .collect();
     out.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
     Ok(out)
+}
+
+/// Every non-directory entry (files, symlinks, submodules) in HEAD's tree,
+/// repo-relative. An unborn HEAD has none.
+fn head_files(repo: &git2::Repository) -> Result<Vec<PathBuf>> {
+    let Some(tree) = repo.head().ok().and_then(|h| h.peel_to_tree().ok()) else {
+        return Ok(Vec::new());
+    };
+    let mut files = Vec::new();
+    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        if entry.kind() != Some(git2::ObjectType::Tree) {
+            let name = String::from_utf8_lossy(entry.name_bytes());
+            files.push(PathBuf::from(format!("{root}{name}")));
+        }
+        git2::TreeWalkResult::Ok
+    })?;
+    Ok(files)
 }
 
 pub fn run(args: &AgeArgs) -> Result<Outcome> {
@@ -148,6 +167,80 @@ mod tests {
         let ages = file_ages(&repo, false, None, &[], 1000 + 3 * 86400 + 10).unwrap();
         assert_eq!(ages.len(), 1);
         assert_eq!(ages[0].2, 3);
+    }
+
+    /// Commit the removal of `name` at `time_secs` on HEAD.
+    fn commit_delete(repo: &git2::Repository, name: &str, time_secs: i64) {
+        std::fs::remove_file(repo.workdir().unwrap().join(name)).unwrap();
+        let mut index = repo.index().unwrap();
+        index.remove_path(Path::new(name)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::new(
+            "Test User",
+            "test@example.com",
+            &git2::Time::new(time_secs, 0),
+        )
+        .unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "delete", &tree, &[&parent])
+            .unwrap();
+    }
+
+    fn names(ages: Vec<(PathBuf, i64, i64)>) -> Vec<String> {
+        ages.into_iter()
+            .map(|(p, _, _)| p.display().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn deleted_files_are_not_reported() {
+        // Regression: the deletion delta recorded `gone.txt` as the newest file.
+        let (_dir, repo) = crate::git::init_test_repo();
+        crate::git::commit_file(&repo, "keep.txt", "v1", "keep", 1000);
+        crate::git::commit_file(&repo, "gone.txt", "v1", "gone", 2000);
+        commit_delete(&repo, "gone.txt", 3000);
+        assert_eq!(
+            names(file_ages(&repo, false, None, &[], 4000).unwrap()),
+            vec!["keep.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn tracked_set_comes_from_head_not_the_index() {
+        // Regression: the index stood in for "tracked files", so a bare repo
+        // (no index) stopped after one arbitrary delta and a staged-only file
+        // kept the walk from ever finishing early.
+        let (dir, repo) = crate::git::init_test_repo();
+        crate::git::commit_file(&repo, "a.txt", "v1", "a", 1000);
+        crate::git::commit_file(&repo, "src/b.txt", "v1", "b", 2000);
+        std::fs::write(dir.path().join("staged.txt"), "s").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("staged.txt")).unwrap();
+        index.write().unwrap();
+        let want = vec!["a.txt".to_string(), "src/b.txt".to_string()];
+        assert_eq!(
+            names(file_ages(&repo, false, None, &[], 3000).unwrap()),
+            want
+        );
+
+        let bare_dir = tempfile::tempdir().unwrap();
+        let bare = git2::build::RepoBuilder::new()
+            .bare(true)
+            .clone(dir.path().to_str().unwrap(), bare_dir.path())
+            .unwrap();
+        assert_eq!(
+            names(file_ages(&bare, false, None, &[], 3000).unwrap()),
+            want
+        );
+    }
+
+    #[test]
+    fn unmatched_filter_reports_nothing() {
+        let (_dir, repo) = crate::git::init_test_repo();
+        crate::git::commit_file(&repo, "a.txt", "v1", "a", 1000);
+        let ages = file_ages(&repo, false, None, &[PathBuf::from("nomatch")], 2000).unwrap();
+        assert!(ages.is_empty());
     }
 
     #[test]
