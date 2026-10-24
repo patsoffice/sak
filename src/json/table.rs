@@ -2,13 +2,14 @@ use crate::output::Outcome;
 use std::io;
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde_json::Value;
 
 use crate::json::read_json_inputs_maybe_lines;
 use crate::output::{BoundedWriter, collapse_ws};
 use crate::value::{format_value, resolve_expression, type_name};
+use regex::Regex;
 
 #[derive(Args)]
 #[command(
@@ -31,6 +32,15 @@ use crate::value::{format_value, resolve_expression, type_name};
         rather than one wrapped document; `<array-path>` is resolved against \
         each line and the result becomes that line's row. With the default `.` \
         path each line is itself a row. Multiple input files are concatenated.\n\n\
+        With `--where '<path> <op> <literal>'`, only elements matching every \
+        predicate earn a row; the flag repeats and predicates AND together. \
+        Operators are `=`, `!=`, `~` (regex), `!~`, `<`, `<=`, `>`, `>=`; the \
+        literal is a JSON string (double-quoted), number, `true`, `false`, or \
+        `null`. Strings compare as text and numbers numerically (`3` matches \
+        `3.0`); mixed types never order. A regex runs against a string's own \
+        text and any other value's compact JSON form. A path that resolves to \
+        nothing never equals (`=` false, `!=` true) and never orders. \
+        Filtering everything out is exit 1, like an empty array.\n\n\
         Exit codes follow sak convention: 0 = at least one row emitted, 1 = the \
         array was empty (no rows), 2 = error (bad path, non-array, parse error).",
     after_help = "\
@@ -41,7 +51,9 @@ Examples:
   sak json table .rows -f a,b --header data.json         Emit a header row
   sak json table .rows -f a,b --missing NULL data.json   Custom missing token
   cat events.ndjson | sak json table --lines -f level,msg
-                                                        NDJSON: each line is a row"
+                                                        NDJSON: each line is a row
+  sak json table .issues -f id,title --where '.priority < 3'
+  sak json table .issues -f id,title --where '.status = \"open\"'"
 )]
 pub struct TableArgs {
     /// Path to the array of objects (dot notation or JSON Pointer; default `.`)
@@ -70,6 +82,10 @@ pub struct TableArgs {
     /// Maximum number of output lines
     #[arg(long)]
     pub limit: Option<usize>,
+
+    /// Keep only elements matching `<path> <op> <literal>`; repeatable, ANDed
+    #[arg(long = "where", value_name = "EXPR")]
+    pub where_exprs: Vec<String>,
 }
 
 /// Parse the comma-separated `--fields` argument into trimmed field paths. Each
@@ -124,8 +140,203 @@ pub(crate) fn project_row(
         .collect()
 }
 
+/// Comparison operator in a `--where` predicate.
+#[derive(Debug, PartialEq)]
+pub(crate) enum WhereOp {
+    Eq,
+    NotEq,
+    Match,
+    NotMatch,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+/// One parsed `--where '<path> <op> <literal>'` predicate. The regex is
+/// compiled at parse time so a bad pattern is an argument error, not a
+/// per-row failure.
+#[derive(Debug)]
+pub(crate) struct WherePred {
+    path: String,
+    op: WhereOp,
+    literal: Value,
+    regex: Option<Regex>,
+}
+
+/// Split a predicate into path, operator, and raw literal. The operator is
+/// the first `=`, `!=`, `~`, `!~`, `<`, `<=`, `>`, `>=` outside a
+/// double-quoted string, so literals like `"a=b"` stay intact.
+fn split_where(spec: &str) -> Result<(&str, WhereOp, &str)> {
+    let bytes = spec.as_bytes();
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_str = true;
+            i += 1;
+            continue;
+        }
+        if i + 1 < bytes.len() {
+            let two = match &bytes[i..i + 2] {
+                b"!=" => Some(WhereOp::NotEq),
+                b"!~" => Some(WhereOp::NotMatch),
+                b"<=" => Some(WhereOp::Lte),
+                b">=" => Some(WhereOp::Gte),
+                _ => None,
+            };
+            if let Some(op) = two {
+                return split_at(spec, i, 2, op);
+            }
+        }
+        let one = match b {
+            b'=' => Some(WhereOp::Eq),
+            b'~' => Some(WhereOp::Match),
+            b'<' => Some(WhereOp::Lt),
+            b'>' => Some(WhereOp::Gt),
+            _ => None,
+        };
+        if let Some(op) = one {
+            return split_at(spec, i, 1, op);
+        }
+        i += 1;
+    }
+    bail!("invalid --where {spec:?}: expected `<path> <op> <literal>`")
+}
+
+fn split_at(spec: &str, at: usize, width: usize, op: WhereOp) -> Result<(&str, WhereOp, &str)> {
+    // Split points are ASCII operator bytes, hence char boundaries.
+    let path = spec[..at].trim();
+    let raw = spec[at + width..].trim();
+    if path.is_empty() || raw.is_empty() {
+        bail!("invalid --where {spec:?}: expected `<path> <op> <literal>`");
+    }
+    Ok((path, op, raw))
+}
+
+/// Parse one `--where` expression. The literal is a JSON value — a
+/// double-quoted string (with the usual escapes), a number, `true`, `false`,
+/// or `null` — so `"a=b"` and `"say \"hi\""` parse as written. The same
+/// dot-path / JSON-Pointer syntax as `--fields` addresses the element.
+pub(crate) fn parse_where(spec: &str) -> Result<WherePred> {
+    let (path, op, raw) = split_where(spec)?;
+    let literal: Value = serde_json::from_str(raw).with_context(|| {
+        format!(
+            "invalid literal in --where {spec:?}: expected \"string\", number, true, false, or null"
+        )
+    })?;
+    let regex = match op {
+        WhereOp::Match | WhereOp::NotMatch => {
+            let pat = literal
+                .as_str()
+                .with_context(|| format!("invalid --where {spec:?}: `~` needs a string literal"))?;
+            Some(Regex::new(pat).with_context(|| format!("invalid regex in --where {spec:?}"))?)
+        }
+        _ => None,
+    };
+    Ok(WherePred {
+        path: path.to_string(),
+        op,
+        literal,
+        regex,
+    })
+}
+
+/// Numeric comparison across JSON number representations, so `3` matches
+/// `3.0`. Falls back to f64 when the operands fit no common integer type.
+fn num_cmp(a: &serde_json::Number, b: &serde_json::Number) -> Option<std::cmp::Ordering> {
+    if let (Some(x), Some(y)) = (a.as_i64(), b.as_i64()) {
+        return x.partial_cmp(&y);
+    }
+    if let (Some(x), Some(y)) = (a.as_u64(), b.as_u64()) {
+        return x.partial_cmp(&y);
+    }
+    a.as_f64()?.partial_cmp(&b.as_f64()?)
+}
+
+fn eq_value(actual: Option<&Value>, expected: &Value) -> bool {
+    match (actual, expected) {
+        (Some(Value::Number(a)), Value::Number(b)) => {
+            num_cmp(a, b) == Some(std::cmp::Ordering::Equal)
+        }
+        (Some(v), e) => v == e,
+        (None, _) => false,
+    }
+}
+
+fn ord_value(actual: Option<&Value>, expected: &Value) -> Option<std::cmp::Ordering> {
+    match (actual, expected) {
+        (Some(Value::Number(a)), Value::Number(b)) => num_cmp(a, b),
+        (Some(Value::String(a)), Value::String(b)) => a.partial_cmp(b),
+        _ => None,
+    }
+}
+
+/// Text a `~` match runs against: a string's own text, anything else's
+/// compact JSON form (so `1` matches `~ "^1$"`).
+fn where_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Evaluate a parsed predicate against one array element. A path that
+/// doesn't resolve never equals (`=` false, `!=` true) and never orders.
+pub(crate) fn eval_where(pred: &WherePred, element: &Value) -> Result<bool> {
+    use std::cmp::Ordering;
+    let actual = resolve_expression(element, &pred.path)?;
+    Ok(match pred.op {
+        WhereOp::Eq => eq_value(actual, &pred.literal),
+        WhereOp::NotEq => !eq_value(actual, &pred.literal),
+        WhereOp::Match => match actual {
+            Some(v) => pred
+                .regex
+                .as_ref()
+                .expect("regex compiled at parse")
+                .is_match(&where_text(v)),
+            None => false,
+        },
+        WhereOp::NotMatch => match actual {
+            Some(v) => !pred
+                .regex
+                .as_ref()
+                .expect("regex compiled at parse")
+                .is_match(&where_text(v)),
+            None => true,
+        },
+        WhereOp::Lt => ord_value(actual, &pred.literal) == Some(Ordering::Less),
+        WhereOp::Lte => matches!(
+            ord_value(actual, &pred.literal),
+            Some(Ordering::Less | Ordering::Equal)
+        ),
+        WhereOp::Gt => ord_value(actual, &pred.literal) == Some(Ordering::Greater),
+        WhereOp::Gte => matches!(
+            ord_value(actual, &pred.literal),
+            Some(Ordering::Greater | Ordering::Equal)
+        ),
+    })
+}
+
 pub fn run(args: &TableArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.fields)?;
+    let mut preds = Vec::with_capacity(args.where_exprs.len());
+    for spec in &args.where_exprs {
+        preds.push(parse_where(spec)?);
+    }
     // `sak json table --fields a,b rows.json` puts the file in the
     // array-path slot; a lone existing file there is the input, path `.`.
     let (path, files) = crate::input::path_or_file(Some(&args.array_path), &args.files);
@@ -155,6 +366,26 @@ pub fn run(args: &TableArgs) -> Result<Outcome> {
                 None => bail!("path {:?} did not resolve in {}", array_path, name),
             }
         }
+    }
+
+    // Predicates AND: an element must satisfy every `--where` to earn a row.
+    // Filtering before the empty check keeps the exit contract (no rows →
+    // exit 1, header suppressed) and the `--limit` accounting unchanged.
+    if !preds.is_empty() {
+        let mut kept = Vec::with_capacity(elements.len());
+        for element in elements {
+            let mut ok = true;
+            for pred in &preds {
+                if !eval_where(pred, element)? {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                kept.push(element);
+            }
+        }
+        elements = kept;
     }
 
     let stdout = io::stdout();
@@ -293,6 +524,7 @@ mod tests {
             missing: "-".to_string(),
             lines: false,
             limit: None,
+            where_exprs: vec![],
         };
         assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
@@ -308,6 +540,7 @@ mod tests {
             missing: "-".to_string(),
             lines: false,
             limit: None,
+            where_exprs: vec![],
         };
         assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
@@ -323,6 +556,7 @@ mod tests {
             missing: "-".to_string(),
             lines: false,
             limit: None,
+            where_exprs: vec![],
         };
         // Empty array → no rows, header suppressed, exit 1.
         assert_eq!(run(&args).unwrap(), Outcome::NotFound);
@@ -339,6 +573,7 @@ mod tests {
             missing: "-".to_string(),
             lines: false,
             limit: None,
+            where_exprs: vec![],
         };
         let err = run(&args).unwrap_err().to_string();
         assert!(err.contains("expected a JSON array"), "{err}");
@@ -355,6 +590,7 @@ mod tests {
             missing: "-".to_string(),
             lines: false,
             limit: None,
+            where_exprs: vec![],
         };
         let err = run(&args).unwrap_err().to_string();
         assert!(err.contains("did not resolve"), "{err}");
@@ -372,7 +608,147 @@ mod tests {
             missing: "-".to_string(),
             lines: true,
             limit: None,
+            where_exprs: vec![],
         };
         assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    fn where_args(p: PathBuf, wheres: &[&str]) -> TableArgs {
+        TableArgs {
+            array_path: ".issues".to_string(),
+            files: vec![p],
+            fields: "id,title".to_string(),
+            header: false,
+            missing: "-".to_string(),
+            lines: false,
+            limit: None,
+            where_exprs: wheres.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn parse_where_operators() {
+        use WhereOp::*;
+        for (spec, path, op) in [
+            (".a = 1", ".a", Eq),
+            (".a != 1", ".a", NotEq),
+            (".a ~ \"x\"", ".a", Match),
+            (".a !~ \"x\"", ".a", NotMatch),
+            (".a < 1", ".a", Lt),
+            (".a <= 1", ".a", Lte),
+            (".a > 1", ".a", Gt),
+            (".a >= 1", ".a", Gte),
+            ("/a/b = true", "/a/b", Eq),
+        ] {
+            let pred = parse_where(spec).unwrap();
+            assert_eq!((pred.path.as_str(), pred.op), (path, op), "{spec}");
+        }
+    }
+
+    #[test]
+    fn parse_where_literals() {
+        assert_eq!(parse_where(".a = 1").unwrap().literal, json!(1));
+        assert_eq!(parse_where(".a = 1.5").unwrap().literal, json!(1.5));
+        assert_eq!(parse_where(".a = \"x\"").unwrap().literal, json!("x"));
+        assert_eq!(parse_where(".a = true").unwrap().literal, json!(true));
+        assert_eq!(parse_where(".a = null").unwrap().literal, Value::Null);
+        // Operator-looking content inside quotes stays literal.
+        assert_eq!(parse_where(".a = \"a=b\"").unwrap().literal, json!("a=b"));
+        assert_eq!(
+            parse_where(".a = \"say \\\"hi\\\"\"").unwrap().literal,
+            json!("say \"hi\"")
+        );
+    }
+
+    #[test]
+    fn parse_where_rejects() {
+        for spec in [
+            "",
+            ".a",
+            ".a =",
+            "= 1",
+            ".a foo 1",
+            ".a = unquoted",
+            ".a ~ 1",
+            ".a ~ \"(\"",
+        ] {
+            assert!(parse_where(spec).is_err(), "{spec}");
+        }
+    }
+
+    #[test]
+    fn eval_where_equality() {
+        let el = json!({"n": 3, "f": 3.5, "s": "x", "b": true, "z": null});
+        let t = |spec: &str| eval_where(&parse_where(spec).unwrap(), &el).unwrap();
+        assert!(t(".n = 3"));
+        assert!(t(".n = 3.0")); // cross-representation numeric equality
+        assert!(!t(".n = 4"));
+        assert!(t(".n != 4"));
+        assert!(!t(".missing = 1"));
+        assert!(t(".missing != 1"));
+        assert!(t(".s = \"x\""));
+        assert!(!t(".s = \"y\""));
+        assert!(!t(".n = \"3\"")); // strict across types
+        assert!(t(".f = 3.5"));
+        assert!(t(".b = true"));
+        assert!(!t(".b = false"));
+        assert!(t(".z = null"));
+        assert!(!t(".missing = null"));
+    }
+
+    #[test]
+    fn eval_where_ordering() {
+        let el = json!({"n": 3, "s": "b"});
+        let t = |spec: &str| eval_where(&parse_where(spec).unwrap(), &el).unwrap();
+        assert!(t(".n < 4"));
+        assert!(t(".n <= 3"));
+        assert!(!t(".n <= 2"));
+        assert!(t(".n > 2"));
+        assert!(t(".n >= 3"));
+        assert!(!t(".n > 3"));
+        assert!(t(".s > \"a\""));
+        assert!(t(".s <= \"b\""));
+        assert!(!t(".s < 1")); // mixed types never order
+        assert!(!t(".n < \"x\""));
+        assert!(!t(".missing < 1"));
+    }
+
+    #[test]
+    fn eval_where_regex() {
+        let el = json!({"title": "feat(nix): x", "n": 42});
+        let t = |spec: &str| eval_where(&parse_where(spec).unwrap(), &el).unwrap();
+        assert!(t(".title ~ \"^feat\""));
+        assert!(!t(".title ~ \"^fix\""));
+        assert!(t(".title !~ \"^fix\""));
+        assert!(!t(".title !~ \"^feat\""));
+        assert!(t(".n ~ \"^4\"")); // non-strings match compact JSON
+        assert!(!t(".missing ~ \"x\""));
+        assert!(t(".missing !~ \"x\""));
+        assert!(t("/title ~ \"nix\"")); // JSON Pointer path works too
+    }
+
+    #[test]
+    fn run_where_filters_before_projection() {
+        let (_d, p) = write_tmp(
+            r#"{"issues":[{"id":1,"priority":1,"status":"open","title":"a"},{"id":2,"priority":5,"status":"open","title":"b"},{"id":3,"priority":1,"status":"closed","title":"c"}]}"#,
+        );
+        // Two predicates AND together: only id 1 survives.
+        let args = where_args(p, &[".priority < 3", ".status = \"open\""]);
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
+    }
+
+    #[test]
+    fn run_where_matching_nothing_is_not_found() {
+        let (_d, p) = write_tmp(r#"{"issues":[{"id":1}]}"#);
+        let args = where_args(p, &[".id > 9"]);
+        assert_eq!(run(&args).unwrap(), Outcome::NotFound);
+    }
+
+    #[test]
+    fn run_where_bad_expression_is_error() {
+        let (_d, p) = write_tmp(r#"{"issues":[{"id":1}]}"#);
+        let args = where_args(p, &[".id ~~ 1"]);
+        let err = run(&args).unwrap_err().to_string();
+        assert!(err.contains("--where"), "{err}");
     }
 }
