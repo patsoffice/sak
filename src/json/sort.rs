@@ -312,12 +312,18 @@ mod tests {
     }
 
     #[test]
-    fn run_named_file_needs_no_stdin() {
-        // Pass the file explicitly: promoting a lone path-slot file
-        // to the input depends on the ambient stdin shape
-        // (sak-llm-m187); see the slice.rs test.
+    fn run_lone_file_positional_is_input() {
+        // `sak json sort .id a.json`: the file lands in the path slot and is
+        // promoted to the input, independent of stdin (sak-llm-m187).
         let (_d, p) = write_tmp("a.json", r#"[{"id":1}]"#);
-        assert_eq!(run(&sort_args(p, false)).unwrap(), Outcome::Found);
+        let args = SortArgs {
+            field: ".id".to_string(),
+            path: Some(p.display().to_string()),
+            files: vec![],
+            reverse: false,
+            numeric: false,
+        };
+        assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
     #[test]
