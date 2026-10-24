@@ -69,20 +69,22 @@ pub struct TableArgs {
     pub limit: Option<usize>,
 }
 
-pub fn run(args: &TableArgs) -> Result<Outcome> {
-    let fields = parse_fields(&args.fields)?;
-    // `sak config table --fields a,b Cargo.lock` puts the file in the
-    // array-path slot; a lone existing file there is the input, path `.`.
-    let (path, files) = crate::input::path_or_file(Some(&args.array_path), &args.files);
-    let array_path = path.unwrap_or_else(|| ".".to_string());
-    let inputs = read_config_inputs(&files, args.format)?;
-
+/// Resolve the array and render every element to its TSV row. Separated
+/// from [`run`] so tests can assert the rows (and the `--missing` token)
+/// instead of only the exit [`Outcome`]; [`run`] only adds the header,
+/// stdout emission (and `--limit`) on top.
+fn table_rows(
+    inputs: &[(String, Value)],
+    array_path: &str,
+    fields: &[String],
+    missing: &str,
+) -> Result<Vec<String>> {
     // Gather every row source up front (refs into `inputs`, which outlives this
     // loop) so an empty result can suppress the header, matching `k8s get
     // --columns`.
     let mut elements: Vec<&Value> = Vec::new();
-    for (name, value) in &inputs {
-        match resolve_expression(value, &array_path)? {
+    for (name, value) in inputs {
+        match resolve_expression(value, array_path)? {
             Some(Value::Array(items)) => elements.extend(items.iter()),
             Some(other) => bail!(
                 "expected an array at {:?} in {}, found {}",
@@ -94,11 +96,28 @@ pub fn run(args: &TableArgs) -> Result<Outcome> {
         }
     }
 
+    let mut rows = Vec::new();
+    for element in elements {
+        let row = project_row(element, fields, missing)?;
+        rows.push(row.join("\t"));
+    }
+    Ok(rows)
+}
+
+pub fn run(args: &TableArgs) -> Result<Outcome> {
+    let fields = parse_fields(&args.fields)?;
+    // `sak config table --fields a,b Cargo.lock` puts the file in the
+    // array-path slot; a lone existing file there is the input, path `.`.
+    let (path, files) = crate::input::path_or_file(Some(&args.array_path), &args.files);
+    let array_path = path.unwrap_or_else(|| ".".to_string());
+    let inputs = read_config_inputs(&files, args.format)?;
+    let rows = table_rows(&inputs, &array_path, &fields, &args.missing)?;
+
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
 
-    if elements.is_empty() {
+    if rows.is_empty() {
         writer.flush()?;
         return Ok(Outcome::NotFound);
     }
@@ -108,9 +127,8 @@ pub fn run(args: &TableArgs) -> Result<Outcome> {
     }
 
     let mut wrote_any = false;
-    for element in elements {
-        let row = project_row(element, &fields, &args.missing)?;
-        if !writer.write_line(&row.join("\t"))? {
+    for row in &rows {
+        if !writer.write_line(row)? {
             break;
         }
         wrote_any = true;
@@ -154,6 +172,17 @@ mod tests {
             "a.toml",
             "[[pkgs]]\nname = \"a\"\nversion = \"1\"\n[[pkgs]]\nname = \"b\"\nversion = \"2\"\n",
         );
+        let inputs = read_config_inputs(std::slice::from_ref(&p), None).unwrap();
+        assert_eq!(
+            table_rows(
+                &inputs,
+                ".pkgs",
+                &["name".to_string(), "version".to_string()],
+                "-"
+            )
+            .unwrap(),
+            vec!["a\t1".to_string(), "b\t2".to_string()]
+        );
         assert_eq!(
             run(&args_for(".pkgs", "name,version", p)).unwrap(),
             Outcome::Found
@@ -192,6 +221,17 @@ mod tests {
     #[test]
     fn run_missing_field_uses_token() {
         let (_d, p) = write_tmp("a.toml", "[[pkgs]]\nname = \"a\"\n");
+        let inputs = read_config_inputs(std::slice::from_ref(&p), None).unwrap();
+        assert_eq!(
+            table_rows(
+                &inputs,
+                ".pkgs",
+                &["name".to_string(), "version".to_string()],
+                "NULL"
+            )
+            .unwrap(),
+            vec!["a\tNULL".to_string()]
+        );
         let mut args = args_for(".pkgs", "name,version", p);
         args.missing = "NULL".to_string();
         assert_eq!(run(&args).unwrap(), Outcome::Found);

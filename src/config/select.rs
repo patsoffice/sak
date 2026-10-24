@@ -7,7 +7,7 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::config::{Format, read_config_inputs};
-use crate::json::select::{parse_fields, project};
+use crate::json::select::{Field, parse_fields, project};
 use crate::output::BoundedWriter;
 
 #[derive(Args)]
@@ -58,43 +58,55 @@ pub struct SelectArgs {
     pub limit: Option<usize>,
 }
 
+/// Project every object input to its output lines. Separated from [`run`]
+/// so tests can assert the projected object instead of only the exit
+/// [`Outcome`]; [`run`] only adds stdout emission (and `--limit`) on top.
+fn selected_lines(
+    inputs: &[(String, Value)],
+    fields: &[Field],
+    null_missing: bool,
+    pretty: bool,
+) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    for (_name, value) in inputs {
+        if !value.is_object() {
+            continue;
+        }
+        let projected = project(value, fields, null_missing)?;
+        if projected.is_empty() && !null_missing {
+            continue;
+        }
+        let out = Value::Object(projected);
+        let formatted = if pretty {
+            serde_json::to_string_pretty(&out).unwrap_or_default()
+        } else {
+            serde_json::to_string(&out).unwrap_or_default()
+        };
+        lines.extend(formatted.split('\n').map(str::to_string));
+    }
+    Ok(lines)
+}
+
 pub fn run(args: &SelectArgs) -> Result<Outcome> {
     let fields = parse_fields(&args.paths)?;
     let inputs = read_config_inputs(&args.files, args.format)?;
+    let lines = selected_lines(&inputs, &fields, args.null_missing, args.pretty)?;
 
     let stdout = io::stdout();
     let handle = stdout.lock();
     let mut writer = BoundedWriter::new(handle, args.limit);
 
-    let mut found_any = false;
-    for (_name, value) in &inputs {
-        if !value.is_object() {
-            continue;
-        }
-        let projected = project(value, &fields, args.null_missing)?;
-        if projected.is_empty() && !args.null_missing {
-            continue;
-        }
-        found_any = true;
-        let out = Value::Object(projected);
-        let formatted = if args.pretty {
-            serde_json::to_string_pretty(&out).unwrap_or_default()
-        } else {
-            serde_json::to_string(&out).unwrap_or_default()
-        };
-        for line in formatted.split('\n') {
-            if !writer.write_line(line)? {
-                writer.flush()?;
-                return Ok(Outcome::Found);
-            }
+    for line in &lines {
+        if !writer.write_line(line)? {
+            break;
         }
     }
 
     writer.flush()?;
-    if found_any {
-        Ok(Outcome::Found)
-    } else {
+    if lines.is_empty() {
         Ok(Outcome::NotFound)
+    } else {
+        Ok(Outcome::Found)
     }
 }
 
@@ -131,8 +143,19 @@ mod tests {
     #[test]
     fn run_yaml_alias_and_missing() {
         let (_d, p) = write_tmp("a.yaml", "user:\n  id: 7\n  name: alice\n");
+        let fields = parse_fields("id=.user.id,name=.user.name,nope=.nope").unwrap();
+        let inputs = read_config_inputs(std::slice::from_ref(&p), None).unwrap();
+        // Aliases rename, missing is silently omitted without --null-missing.
+        assert_eq!(
+            selected_lines(&inputs, &fields, false, false).unwrap(),
+            vec![r#"{"id":7,"name":"alice"}"#.to_string()]
+        );
+        // ... and surfaces as null with --null-missing.
+        assert_eq!(
+            selected_lines(&inputs, &fields, true, false).unwrap(),
+            vec![r#"{"id":7,"name":"alice","nope":null}"#.to_string()]
+        );
         let mut args = args_for("id=.user.id,name=.user.name,nope=.nope", p);
-        // Missing silently omitted without --null-missing.
         assert_eq!(run(&args).unwrap(), Outcome::Found);
         args.null_missing = true;
         assert_eq!(run(&args).unwrap(), Outcome::Found);

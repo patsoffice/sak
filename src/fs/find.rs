@@ -244,7 +244,10 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146097 + doe - 719468
 }
 
-pub fn run(args: &FindArgs) -> Result<Outcome> {
+/// Walk `args.path` and return the canonicalized base plus every entry
+/// satisfying every predicate, sorted. Separated from [`run`] so tests can
+/// assert the matched set instead of only the exit [`Outcome`].
+fn find_matches(args: &FindArgs) -> Result<(PathBuf, Vec<PathBuf>)> {
     let size_pred = match &args.size {
         Some(s) => Some(SizePred::parse(s).with_context(|| format!("invalid --size: {s}"))?),
         None => None,
@@ -339,6 +342,11 @@ pub fn run(args: &FindArgs) -> Result<Outcome> {
     }
 
     matches.sort();
+    Ok((base, matches))
+}
+
+pub fn run(args: &FindArgs) -> Result<Outcome> {
+    let (base, matches) = find_matches(args)?;
 
     if matches.is_empty() {
         return Ok(Outcome::NotFound);
@@ -518,6 +526,9 @@ mod tests {
         };
         // Only new.txt is strictly newer than ref.txt (the reference itself
         // is excluded — strictly, not >=).
+        let (base, matches) = find_matches(&args).unwrap();
+        let names: Vec<String> = matches.iter().map(|p| relative_path(p, &base)).collect();
+        assert_eq!(names, vec!["new.txt".to_string()]);
         assert_eq!(run(&args).unwrap(), Outcome::Found);
     }
 
