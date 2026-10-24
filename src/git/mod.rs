@@ -1,7 +1,10 @@
+pub mod age;
+pub mod ahead_behind;
 pub mod blame;
 pub mod branch;
 pub mod cat_file;
 pub mod changed_files;
+pub mod churn;
 pub mod contributors;
 pub mod diff;
 pub mod hook;
@@ -15,6 +18,7 @@ pub mod show;
 pub mod stash;
 pub mod status;
 pub mod tags;
+pub mod walk;
 
 use crate::output::Outcome;
 use std::path::PathBuf;
@@ -25,6 +29,9 @@ use git2::Repository;
 
 #[derive(Subcommand)]
 pub enum GitCommand {
+    AheadBehind(ahead_behind::AheadBehindArgs),
+    Churn(churn::ChurnArgs),
+    Age(age::AgeArgs),
     Status(status::StatusArgs),
     Diff(diff::DiffArgs),
     Log(log::LogArgs),
@@ -58,6 +65,9 @@ pub enum GitCommand {
 
 pub fn run(cmd: &GitCommand) -> Result<Outcome> {
     match cmd {
+        GitCommand::AheadBehind(args) => ahead_behind::run(args),
+        GitCommand::Churn(args) => churn::run(args),
+        GitCommand::Age(args) => age::run(args),
         GitCommand::Status(args) => status::run(args),
         GitCommand::Diff(args) => diff::run(args),
         GitCommand::Log(args) => log::run(args),
@@ -151,6 +161,61 @@ pub fn init_test_repo() -> (tempfile::TempDir, Repository) {
             .expect("set email");
     }
     (dir, repo)
+}
+
+/// Commit `content` as file `name` with `message` at `time_secs` (unix) on
+/// the current HEAD. Unlike [`create_test_commit`], the caller picks the
+/// file, its bytes, and the timestamp, so tests can build exact histories
+/// (same-file retouches, known mtimes). Shared by command tests.
+#[cfg(test)]
+pub fn commit_file(
+    repo: &Repository,
+    name: &str,
+    content: &str,
+    message: &str,
+    time_secs: i64,
+) -> git2::Oid {
+    commit_file_on(repo, name, content, message, time_secs, "HEAD")
+}
+
+/// [`commit_file`] onto an explicit ref (a branch name like
+/// `"refs/heads/feature"`), for building branched histories in tests.
+#[cfg(test)]
+pub fn commit_file_on(
+    repo: &Repository,
+    name: &str,
+    content: &str,
+    message: &str,
+    time_secs: i64,
+    update_ref: &str,
+) -> git2::Oid {
+    use std::fs;
+    let dir = repo.workdir().expect("workdir");
+    if let Some(parent) = std::path::Path::new(name).parent() {
+        fs::create_dir_all(dir.join(parent)).expect("create parent dirs");
+    }
+    fs::write(dir.join(name), content).expect("write file");
+    let mut index = repo.index().expect("index");
+    index
+        .add_path(std::path::Path::new(name))
+        .expect("add path");
+    index.write().expect("write index");
+    let tree_oid = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_oid).expect("find tree");
+    let sig = git2::Signature::new(
+        "Test User",
+        "test@example.com",
+        &git2::Time::new(time_secs, 0),
+    )
+    .expect("signature");
+    let target = repo
+        .revparse_single(update_ref)
+        .ok()
+        .and_then(|obj| obj.peel_to_commit().ok());
+    let parents: Vec<git2::Commit> = target.into_iter().collect();
+    let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+    repo.commit(Some(update_ref), &sig, &sig, message, &tree, &parent_refs)
+        .expect("commit")
 }
 
 /// Create a commit with `message` on the current HEAD, adding a uniquely

@@ -84,6 +84,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak git shortlog                            Summarize history by author
   sak git ls-files                            List tracked files
   sak git cat-file HEAD:src/main.rs           Dump a file at HEAD
+  sak git ahead-behind HEAD HEAD~1            Ahead/behind commit counts
   sak json query .name data.json              Extract a JSON value
   sak json keys --types data.json             List keys with value types
   sak json select .name,.age data.json        Project a subset of fields

@@ -58,8 +58,9 @@ pub fn run(args: &MergeBaseArgs) -> Result<Outcome> {
 }
 
 /// Resolve a user-supplied ref to a commit OID, or bail with a message
-/// naming the offending ref.
-fn resolve_to_commit(repo: &git2::Repository, reference: &str) -> Result<git2::Oid> {
+/// naming the offending ref. Shared with `ahead-behind`, which resolves the
+/// same way.
+pub(crate) fn resolve_to_commit(repo: &git2::Repository, reference: &str) -> Result<git2::Oid> {
     let obj = repo
         .revparse_single(reference)
         .with_context(|| format!("cannot resolve '{reference}'"))?;
