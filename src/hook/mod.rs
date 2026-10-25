@@ -7,10 +7,14 @@
 //!
 //! - exit 0 → allow the command to run
 //! - exit 2 + stderr message → block; the message is fed back to the model
+//! - exit 0 + "ask" JSON on stdout (Claude Code) → the user approves or
+//!   denies a blocked command that carries the inline bypass marker
 //!
-//! No subcommand here makes any change to disk or the network. This domain is
-//! pure command-string classification.
+//! Classification is pure command-string work with no network access. The
+//! one disk write is [`bypass_log`]'s append to sak's own state file when a
+//! model asks to bypass.
 
+mod bypass_log;
 pub mod claude_code;
 pub mod muse_code;
 pub mod rule;
@@ -48,15 +52,23 @@ pub fn run(cmd: &HookCommand) -> Result<Outcome> {
 ///
 /// Both harnesses share the decision skeleton: env-var bypass, `--check`
 /// passthrough, TTY fail-open, stdin read, empty/malformed fail-open,
-/// empty-command allow, `classify` → block. Only the stdin payload envelope
-/// differs, so each adapter passes its own `extract_command` (stdin text →
-/// shell command; `None` means fail open) and its subcommand name for the
-/// TTY hint. A third harness adds an extractor, not a third copy of this
-/// flow — the TTY fail-open once had to be fixed in both files identically.
+/// empty-command allow, [`claude_code::decide`] → allow / block / escalate.
+/// Only the stdin payload envelope differs, so each adapter passes its own
+/// `extract_command` (stdin text → shell command; `None` means fail open) and
+/// its subcommand name for the TTY hint. A third harness adds an extractor,
+/// not a third copy of this flow — the TTY fail-open once had to be fixed in
+/// both files identically.
+///
+/// `ask` renders the harness's "ask the user" response for an escalated
+/// command (printed to stdout with exit 0). A harness without one passes
+/// `None`, and an escalation is refused like a block: the model wrote the
+/// marker, so it never gets a silent pass. Escalations from a real payload
+/// are logged; `--check` runs are debugging and aren't.
 pub(crate) fn run_hook(
     check: Option<&str>,
     harness: &str,
     extract_command: impl FnOnce(&str) -> Option<String>,
+    ask: Option<fn(&str) -> String>,
 ) -> Result<Outcome> {
     if std::env::var("SAK_HOOK_BYPASS").is_ok_and(|v| claude_code::is_bypass_value(&v)) {
         return Ok(Outcome::Found);
@@ -93,10 +105,35 @@ pub(crate) fn run_hook(
         return Ok(Outcome::Found);
     }
 
-    if let Some(msg) = claude_code::classify(&command) {
-        eprintln!("{msg}");
-        return Ok(Outcome::Partial);
+    match claude_code::decide(&command) {
+        claude_code::Decision::Allow => Ok(Outcome::Found),
+        claude_code::Decision::Block(msg) => {
+            eprintln!("{msg}");
+            Ok(Outcome::Partial)
+        }
+        claude_code::Decision::Escalate(msg) => {
+            if check.is_none() {
+                bypass_log::record(harness, &command, &msg);
+            }
+            match ask {
+                Some(render) => {
+                    println!("{}", render(&msg));
+                    Ok(Outcome::Found)
+                }
+                None => {
+                    eprintln!("{}", refused_bypass_message(&msg));
+                    Ok(Outcome::Partial)
+                }
+            }
+        }
     }
+}
 
-    Ok(Outcome::Found)
+/// What a model hears when it writes the bypass marker under a harness with
+/// no way to ask the user: the redirect again, and that the call is theirs.
+fn refused_bypass_message(rule_message: &str) -> String {
+    format!(
+        "{rule_message} SAK_HOOK_BYPASS is reserved for the user. If sak can't do \
+         what you need, say what's missing and ask the user to run the command."
+    )
 }

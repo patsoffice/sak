@@ -21,7 +21,8 @@ pub struct HookRule {
     /// conditional redirects (git's list-only `branch`, GET-only `gh api`, the
     /// pure-only `nix eval`, ...).
     pub guard: Option<fn(&[String]) -> bool>,
-    /// Redirect message shown to the model. The engine appends the bypass hint.
+    /// Redirect message shown to the model, as-is. Name the sak replacement;
+    /// never mention `SAK_HOOK_BYPASS` (see `block` in `claude_code`).
     pub message: &'static str,
 }
 

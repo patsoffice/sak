@@ -3,8 +3,10 @@
 //! Reads the Claude Code `PreToolUse` JSON payload from stdin and decides
 //! whether the about-to-run Bash command should be redirected to a `sak`
 //! equivalent. Exits 0 to allow, exits 2 with a stderr message to block.
-//! Prefix the Bash command with `SAK_HOOK_BYPASS=1` (or export it in the hook
-//! process's own environment) to disable the hook for one call.
+//! A blocked command carrying an inline `SAK_HOOK_BYPASS=1` marker is
+//! escalated to the user with Claude Code's "ask" decision rather than
+//! allowed; only `SAK_HOOK_BYPASS=1` exported into the hook process's own
+//! environment disables the hook outright.
 //!
 //! Configure in `~/.claude/settings.json`:
 //!
@@ -47,12 +49,15 @@ use super::shell_text::{strip_heredocs, strip_redirections};
         data (only an unquoted body's `$(…)` / backticks are checked), output \
         redirection targets (`> out.txt`) are not reads, and `< file` is a \
         read of that file.\n\n\
-        Prefix the Bash command with SAK_HOOK_BYPASS=1 to disable the hook for \
-        one call. The marker is honored wherever it appears as an env \
-        assignment (leading the command, after `env`/`sudo`, inside `sh -c`), \
-        and it disables the hook for the whole command — including later \
-        pipeline segments, which shell scoping would not cover. Exporting \
-        SAK_HOOK_BYPASS=1 into the hook process's own environment works too.",
+        A redirected command carrying a SAK_HOOK_BYPASS=1 assignment (leading \
+        the command, after `env`/`sudo`, inside `sh -c`; it covers the whole \
+        command) is not allowed outright: the hook answers with Claude Code's \
+        \"ask\" decision, so you approve or deny that call, and appends it to \
+        the bypass log ($XDG_STATE_HOME/sak/hook-bypass.jsonl, default \
+        ~/.local/state/sak/hook-bypass.jsonl) to show which sak gaps drive \
+        bypasses. Exporting SAK_HOOK_BYPASS=1 into the hook process's own \
+        environment (your shell or settings.json — not something the model can \
+        set) disables the hook outright.",
     after_help = "\
 Configure in ~/.claude/settings.json:
 
@@ -70,8 +75,8 @@ Configure in ~/.claude/settings.json:
 Examples:
   sak hook claude-code                   Read JSON payload from stdin (normal use)
   sak hook claude-code --check 'git log' Test a command directly (no stdin)
-  SAK_HOOK_BYPASS=1 git status           One-shot escape hatch
-  SAK_HOOK_BYPASS=1 git log | wc -l      Escape hatch covers the whole pipeline"
+  sak json table --lines -f ts,command ~/.local/state/sak/hook-bypass.jsonl
+                                         Review logged bypass requests"
 )]
 pub struct ClaudeCodeArgs {
     /// Classify this command string directly instead of reading stdin.
@@ -104,17 +109,37 @@ struct ToolInput {
 // mapping. The alternative would have been a fourth Outcome variant just
 // for hook, which we explicitly didn't add.
 pub fn run(args: &ClaudeCodeArgs) -> Result<Outcome> {
-    super::run_hook(args.check.as_deref(), "claude-code", |buf| {
-        let payload: HookPayload = serde_json::from_str(buf).ok()?;
-        // Only intercept Bash tool calls.
-        if payload.tool_name != "Bash" {
-            return None;
-        }
-        Some(payload.tool_input.command)
-    })
+    super::run_hook(
+        args.check.as_deref(),
+        "claude-code",
+        |buf| {
+            let payload: HookPayload = serde_json::from_str(buf).ok()?;
+            // Only intercept Bash tool calls.
+            if payload.tool_name != "Bash" {
+                return None;
+            }
+            Some(payload.tool_input.command)
+        },
+        Some(ask_json),
+    )
 }
 
-const BYPASS_HINT: &str = " Set SAK_HOOK_BYPASS=1 to override.";
+/// Render Claude Code's "ask" decision: exit 0 with this JSON on stdout makes
+/// the harness prompt the user to approve the call instead of running it.
+/// The reason is shown to the user, so it names the sak equivalent the
+/// model is skipping — that's what they're approving.
+pub(crate) fn ask_json(rule_message: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": format!(
+                "SAK_HOOK_BYPASS: the model wants to skip sak's redirect. {rule_message}"
+            ),
+        }
+    })
+    .to_string()
+}
 
 /// Cap on how deep the classifier recurses through nested composition
 /// (substitutions, subshells, `sh -c` scripts, wrapper chains). A real command
@@ -127,35 +152,55 @@ const MAX_DEPTH: usize = 12;
 /// (`(…)`, `{ …; }`), a `sh -c '…'` script, a wrapper prefix (`sudo`, `env`,
 /// `xargs`, `timeout`, …), or a `find … -exec …` clause is still caught. At each
 /// level it splits on shell separators (`|`, `||`, `&&`, `;`, `&`) while
-/// respecting quotes, then evaluates each piece. First block wins.
+/// respecting quotes, then evaluates each piece. First block wins. Pure rule
+/// matching: the inline bypass marker is [`decide`]'s concern.
 pub(crate) fn classify(command: &str) -> Option<String> {
-    if bypass_requested(command) {
-        return None;
-    }
     classify_depth(command, 0)
 }
 
+/// What the hook does with one command.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Decision {
+    Allow,
+    /// A rule matched: block, feeding this redirect message to the model.
+    Block(String),
+    /// A rule matched, but the command carries the inline `SAK_HOOK_BYPASS`
+    /// marker. The model wrote that marker, so it doesn't get to decide: the
+    /// harness asks the user (or, without an ask protocol, refuses). Carries
+    /// the rule's message.
+    Escalate(String),
+}
+
+/// Classify `command` and apply the inline bypass marker. A marker on a
+/// command no rule blocks changes nothing, so it's a plain allow.
+pub(crate) fn decide(command: &str) -> Decision {
+    match classify(command) {
+        None => Decision::Allow,
+        Some(msg) if bypass_requested(command) => Decision::Escalate(msg),
+        Some(msg) => Decision::Block(msg),
+    }
+}
+
 /// Values of `SAK_HOOK_BYPASS` that turn the hook off. Shared by the
-/// process-environment check in [`run`] and the in-command scan in
-/// [`bypass_requested`] so the two can never disagree about what "set" means.
+/// process-environment check in [`super::run_hook`] and the in-command scan
+/// in [`bypass_requested`] so the two can never disagree about what "set"
+/// means.
 pub(crate) fn is_bypass_value(value: &str) -> bool {
     matches!(value, "1" | "true" | "yes")
 }
 
-/// Whether the command carries an inline `SAK_HOOK_BYPASS=1` escape hatch.
+/// Whether the command carries an inline `SAK_HOOK_BYPASS=1` marker.
 ///
-/// The hook runs as its own process, so the documented `SAK_HOOK_BYPASS=1 git
-/// status` form never reaches our *environment* — the assignment is just the
-/// first token of the command string the harness hands us, and
-/// [`strip_env_assignments`] would otherwise drop it before matching. Scanning
-/// for it here is what makes the documented invocation work.
+/// The hook runs as its own process, so `SAK_HOOK_BYPASS=1 git status` never
+/// reaches our *environment* — the assignment is just the first token of the
+/// command string the harness hands us, and [`strip_env_assignments`] would
+/// otherwise drop it before matching. Scanning for it here is what lets
+/// [`decide`] see it.
 ///
-/// A marker anywhere in the command disables the hook for the **whole**
-/// command, not only the segment it prefixes. Shell scoping would confine it to
-/// one pipeline segment, which is the wrong shape for an escape hatch — the
-/// reads people need to unblock are usually pipelines like
-/// `SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l`, where the blocking rule
-/// can fire on a later segment than the one carrying the assignment.
+/// A marker anywhere in the command covers the **whole** command, not only
+/// the segment it prefixes. Shell scoping would confine it to one pipeline
+/// segment, but the blocking rule often fires on a later segment
+/// (`SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l`).
 fn bypass_requested(command: &str) -> bool {
     bypass_depth(command, 0)
 }
@@ -464,8 +509,11 @@ fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+/// A rule's redirect message, as fed back to the model. Deliberately no
+/// mention of `SAK_HOOK_BYPASS`: advertising the escape hatch on every
+/// refusal taught models to reach for it instead of the sak command.
 fn block(msg: &str) -> Option<String> {
-    Some(format!("{}{}", msg, BYPASS_HINT))
+    Some(msg.to_string())
 }
 
 /// Aggregate every domain's `HOOK_RULES` table. The always-on domains
@@ -995,10 +1043,35 @@ mod engine_tests {
     ];
 
     #[test]
+    fn ask_json_is_a_pretooluse_ask_decision() {
+        let v: serde_json::Value =
+            serde_json::from_str(&ask_json("Use `sak git status`.")).unwrap();
+        let out = &v["hookSpecificOutput"];
+        assert_eq!(out["hookEventName"], "PreToolUse");
+        assert_eq!(out["permissionDecision"], "ask");
+        let reason = out["permissionDecisionReason"].as_str().unwrap();
+        assert!(reason.contains("sak git status"), "{reason}");
+    }
+
+    #[test]
+    fn inline_bypass_asks_rather_than_blocks() {
+        // Exit 0 with the ask JSON on stdout: the harness prompts the user.
+        // Exit 2 would block outright, and a bare exit 0 would allow.
+        let bypass = ClaudeCodeArgs {
+            check: Some("SAK_HOOK_BYPASS=1 git status".to_string()),
+        };
+        assert!(matches!(run(&bypass).unwrap(), Outcome::Found));
+        let plain = ClaudeCodeArgs {
+            check: Some("git status".to_string()),
+        };
+        assert!(matches!(run(&plain).unwrap(), Outcome::Partial));
+    }
+
+    #[test]
     fn subcommand_alternatives_block_and_carry_message() {
         assert_eq!(
             apply_registries(&[DEMO], "demo", &args(&["list"])),
-            Some(format!("Use `sak demo list`.{BYPASS_HINT}"))
+            Some("Use `sak demo list`.".to_string())
         );
         assert!(apply_registries(&[DEMO], "demo", &args(&["ls", "-A"])).is_some());
     }

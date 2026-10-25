@@ -200,15 +200,16 @@ That's the whole hook. `sak hook claude-code` reads Claude Code's `PreToolUse` J
 
 When the rule fires, the hook exits 2 with a stderr message naming the `sak` equivalent (Claude Code surfaces that message back to the model, which then auto-corrects). Otherwise it exits 0 and the command runs.
 
-If you really need to bypass the hook for one call, prefix your Bash invocation with `SAK_HOOK_BYPASS=1`:
+The redirect message never mentions a bypass, because models that were told about one used it instead of `sak`. There are two escape hatches, and only one is open to the model:
+
+- **Inline marker — you decide.** A redirected command carrying `SAK_HOOK_BYPASS=1` (leading the command, after an `env`/`sudo`/`xargs`/`timeout` wrapper, or inside `sh -c '…'`; it covers the whole command, later pipeline segments included) isn't allowed outright. Under Claude Code the hook answers with the PreToolUse `"ask"` decision, so you're prompted to approve or deny that one call, with the `sak` equivalent shown as the reason. Muse Code has no ask decision, so there the call is refused.
+- **Exported variable — off entirely.** `SAK_HOOK_BYPASS=1` in the hook process's own environment (your shell before launching the agent, or `env` in `settings.json`) disables the hook. The model can't set it: the hook is a separate process, so an assignment in the command string never reaches its environment.
+
+Every inline bypass request is appended to `$XDG_STATE_HOME/sak/hook-bypass.jsonl` (default `~/.local/state/sak/hook-bypass.jsonl`) — time, harness, working directory, command, and the redirect it tried to skip — so you can see which `sak` gaps push models to it. It's the only file sak writes, and a failed write never changes the decision. `--check` runs aren't logged.
 
 ```bash
-SAK_HOOK_BYPASS=1 git status                    # bypass for this one call
-SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l  # covers the whole pipeline
-env SAK_HOOK_BYPASS=1 git status                # `env` form works too
+sak json table --lines -f ts,command,rule ~/.local/state/sak/hook-bypass.jsonl
 ```
-
-The marker is read out of the command string itself (the hook is a separate process, so the assignment never lands in its environment), and it disables the hook for the **whole** command — including pipeline segments after the one it prefixes, which is where a blocking read usually hides. It's honored wherever it appears as an env assignment: leading the command, after an `env`/`sudo`/`xargs`/`timeout` wrapper, or inside a `sh -c '…'` script. Exporting `SAK_HOOK_BYPASS=1` into the hook process's own environment disables the hook wholesale.
 
 To debug the rule set from the shell (no stdin payload needed):
 

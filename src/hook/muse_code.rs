@@ -3,8 +3,10 @@
 //! Reads the Muse Code `PreToolUse` JSON payload from stdin and decides
 //! whether the about-to-run shell command should be redirected to a `sak`
 //! equivalent. Exits 0 to allow, exits 2 with a stderr message to block.
-//! Prefix the shell command with `SAK_HOOK_BYPASS=1` (or export it in the hook
-//! process's own environment) to disable the hook for one call.
+//! Muse has no "ask the user" decision, so a blocked command carrying an
+//! inline `SAK_HOOK_BYPASS=1` marker is refused (and logged) rather than
+//! allowed; only `SAK_HOOK_BYPASS=1` exported into the hook process's own
+//! environment disables the hook.
 //!
 //! The decision protocol is the same shape as Claude Code's: exit 0 allows,
 //! exit 2 plus a stderr message blocks and the message is fed back to the
@@ -52,9 +54,12 @@ use crate::output::Outcome;
         read can't hide behind a pipeline, a substitution (`$(…)` / backticks), \
         a subshell or brace group, a `sh -c '…'` script, a wrapper prefix \
         (sudo/env/xargs/timeout/nice/…), or a `find … -exec …` clause.\n\n\
-        Prefix the shell command with SAK_HOOK_BYPASS=1 to disable the hook for \
-        one call. Exporting SAK_HOOK_BYPASS=1 into the hook process's own \
-        environment works too.",
+        Muse has no \"ask the user\" decision, so a redirected command carrying \
+        an inline SAK_HOOK_BYPASS=1 assignment is refused, not allowed, and \
+        appended to the bypass log ($XDG_STATE_HOME/sak/hook-bypass.jsonl, \
+        default ~/.local/state/sak/hook-bypass.jsonl). Exporting \
+        SAK_HOOK_BYPASS=1 into the hook process's own environment disables \
+        the hook.",
     after_help = "\
 Configure the project tier in <project-root>/.muse/hooks.json:
 
@@ -75,8 +80,7 @@ Start a new session to reload hook configuration.
 
 Examples:
   sak hook muse-code                   Read JSON payload from stdin (normal use)
-  sak hook muse-code --check 'git log' Test a command directly (no stdin)
-  SAK_HOOK_BYPASS=1 git status         One-shot escape hatch"
+  sak hook muse-code --check 'git log' Test a command directly (no stdin)"
 )]
 pub struct MuseCodeArgs {
     /// Classify this command string directly instead of reading stdin.
@@ -163,7 +167,13 @@ pub fn run(args: &MuseCodeArgs) -> Result<Outcome> {
         return Ok(Outcome::Found);
     }
 
-    super::run_hook(args.check.as_deref(), "muse-code", command_from_payload)
+    // No ask protocol: an escalated bypass is refused (see `run_hook`).
+    super::run_hook(
+        args.check.as_deref(),
+        "muse-code",
+        command_from_payload,
+        None,
+    )
 }
 
 /// Extract the shell command from a raw Muse `PreToolUse` stdin payload.
@@ -265,6 +275,17 @@ mod tests {
             emit_config: None,
         };
         assert!(matches!(run(&allow).unwrap(), Outcome::Found));
+    }
+
+    #[test]
+    fn inline_bypass_is_refused_without_an_ask_protocol() {
+        // Muse can't ask the user, and the model wrote the marker, so a
+        // bypassed read is blocked like any other.
+        let bypass = MuseCodeArgs {
+            check: Some("SAK_HOOK_BYPASS=1 git status".to_string()),
+            emit_config: None,
+        };
+        assert!(matches!(run(&bypass).unwrap(), Outcome::Partial));
     }
 
     #[test]

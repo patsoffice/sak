@@ -1,4 +1,4 @@
-use super::claude_code::classify;
+use super::claude_code::{Decision, classify, decide};
 
 fn blocks(cmd: &str) -> bool {
     classify(cmd).is_some()
@@ -6,6 +6,16 @@ fn blocks(cmd: &str) -> bool {
 
 fn allows(cmd: &str) -> bool {
     classify(cmd).is_none()
+}
+
+/// The inline bypass marker turned a block into an escalation to the user.
+fn escalates(cmd: &str) -> bool {
+    matches!(decide(cmd), Decision::Escalate(_))
+}
+
+/// A rule blocks and the marker (if any) doesn't count.
+fn decides_block(cmd: &str) -> bool {
+    matches!(decide(cmd), Decision::Block(_))
 }
 
 // ── git read-only ─────────────────────────────────────────────
@@ -1087,51 +1097,73 @@ fn composition_around_non_targets_allows() {
 // ── SAK_HOOK_BYPASS escape hatch ──────────────────────────────
 
 #[test]
-fn bypass_marker_allows_documented_form() {
-    // The exact invocation the rejection message tells the caller to use. The
-    // hook is its own process, so this assignment only ever reaches us as part
-    // of the command string — regressing it leaves no escape hatch at all.
-    assert!(allows("SAK_HOOK_BYPASS=1 git status --short"));
-    assert!(allows("SAK_HOOK_BYPASS=1 git diff --stat main...HEAD"));
-    assert!(allows("SAK_HOOK_BYPASS=1 cat /etc/passwd"));
+fn bypass_marker_escalates_instead_of_allowing() {
+    // The model writes the marker, so it never earns a silent pass: the
+    // harness asks the user. The hook is its own process, so this assignment
+    // only ever reaches us as part of the command string.
+    assert!(escalates("SAK_HOOK_BYPASS=1 git status --short"));
+    assert!(escalates("SAK_HOOK_BYPASS=1 git diff --stat main...HEAD"));
+    assert!(escalates("SAK_HOOK_BYPASS=1 cat /etc/passwd"));
+    // The escalation carries the redirect, so the user sees the alternative.
+    match decide("SAK_HOOK_BYPASS=1 git status") {
+        Decision::Escalate(msg) => assert!(msg.contains("sak git status"), "{msg}"),
+        other => panic!("expected escalation, got {other:?}"),
+    }
+}
+
+#[test]
+fn bypass_marker_on_an_unblocked_command_changes_nothing() {
+    assert_eq!(decide("SAK_HOOK_BYPASS=1 cargo build"), Decision::Allow);
 }
 
 #[test]
 fn bypass_marker_covers_whole_pipeline() {
     // Shell scoping would confine the assignment to the first segment, but the
     // hook blocks on any segment — so the marker has to cover all of them.
-    assert!(allows("SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l"));
-    assert!(allows("SAK_HOOK_BYPASS=1 echo hi && git status"));
+    assert!(escalates(
+        "SAK_HOOK_BYPASS=1 git log --oneline a..b | wc -l"
+    ));
+    assert!(escalates("SAK_HOOK_BYPASS=1 echo hi && git status"));
     // Trailing marker also counts — it's a marker, not a scoped assignment.
-    assert!(allows("echo hi | SAK_HOOK_BYPASS=1 grep foo"));
+    assert!(escalates("echo hi | SAK_HOOK_BYPASS=1 grep foo"));
 }
 
 #[test]
 fn bypass_marker_survives_wrappers_and_composition() {
-    assert!(allows("env SAK_HOOK_BYPASS=1 git status"));
-    assert!(allows("env -u FOO SAK_HOOK_BYPASS=1 git status"));
-    assert!(allows("sudo SAK_HOOK_BYPASS=1 cat /etc/shadow"));
-    assert!(allows("sh -c 'SAK_HOOK_BYPASS=1 git status'"));
-    assert!(allows("sudo env SAK_HOOK_BYPASS=1 grep foo bar"));
-    assert!(allows("echo $(SAK_HOOK_BYPASS=1 cat README.md)"));
+    assert!(escalates("env SAK_HOOK_BYPASS=1 git status"));
+    assert!(escalates("env -u FOO SAK_HOOK_BYPASS=1 git status"));
+    assert!(escalates("sudo SAK_HOOK_BYPASS=1 cat /etc/shadow"));
+    assert!(escalates("sh -c 'SAK_HOOK_BYPASS=1 git status'"));
+    assert!(escalates("sudo env SAK_HOOK_BYPASS=1 grep foo bar"));
+    assert!(escalates("echo $(SAK_HOOK_BYPASS=1 cat README.md)"));
 }
 
 #[test]
-fn bypass_marker_accepts_documented_and_truthy_values() {
-    assert!(allows("SAK_HOOK_BYPASS=1 git status"));
-    assert!(allows("SAK_HOOK_BYPASS=true git status"));
-    assert!(allows("SAK_HOOK_BYPASS=yes git status"));
+fn bypass_marker_accepts_truthy_values() {
+    assert!(escalates("SAK_HOOK_BYPASS=1 git status"));
+    assert!(escalates("SAK_HOOK_BYPASS=true git status"));
+    assert!(escalates("SAK_HOOK_BYPASS=yes git status"));
 }
 
 #[test]
 fn bypass_marker_requires_an_on_value() {
-    // An off/garbage value must not silently disable the hook.
-    assert!(blocks("SAK_HOOK_BYPASS=0 git status"));
-    assert!(blocks("SAK_HOOK_BYPASS= git status"));
-    assert!(blocks("SAK_HOOK_BYPASSED=1 git status"));
+    // An off/garbage value is no marker: a plain block, not an escalation.
+    assert!(decides_block("SAK_HOOK_BYPASS=0 git status"));
+    assert!(decides_block("SAK_HOOK_BYPASS= git status"));
+    assert!(decides_block("SAK_HOOK_BYPASSED=1 git status"));
     // A lookalike that isn't an env assignment: `grep` reading a file whose
     // pattern happens to spell the marker is still a redirectable read.
-    assert!(blocks("grep SAK_HOOK_BYPASS=1 README.md"));
+    assert!(decides_block("grep SAK_HOOK_BYPASS=1 README.md"));
+}
+
+#[test]
+fn redirect_messages_never_advertise_the_bypass() {
+    // Regression: every refusal ended "Set SAK_HOOK_BYPASS=1 to override.",
+    // which taught models to reach for the escape hatch.
+    for cmd in ["git status", "cat README.md", "grep foo bar", "head -5 f"] {
+        let msg = classify(cmd).unwrap();
+        assert!(!msg.contains("SAK_HOOK_BYPASS"), "{cmd}: {msg}");
+    }
 }
 
 // ── empty / weird input ───────────────────────────────────────
@@ -1163,7 +1195,7 @@ fn heredoc_bodies_are_data() {
     assert!(blocks("cat > out.md <<EOF\nconfig: $(cat secret.txt)\nEOF"));
     assert!(blocks("cat > out.md <<EOF\nlog: `git log -1`\nEOF"));
     // A heredoc-carried bypass marker is data, not an escape hatch.
-    assert!(blocks(
+    assert!(decides_block(
         "cat > d.md <<'EOF'\nSAK_HOOK_BYPASS=1\nEOF\ngit status"
     ));
 }
