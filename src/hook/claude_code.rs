@@ -469,8 +469,8 @@ fn block(msg: &str) -> Option<String> {
 }
 
 /// Aggregate every domain's `HOOK_RULES` table. The always-on domains
-/// (`fs`, `git`, `json`, `config`, `cert`, `hash`, `nix`, `gh`, `helm`,
-/// `talos`, `linux`) are listed unconditionally; the cargo-feature-gated
+/// (`fs`, `git`, `json`, `config`, `cert`, `hash`, `base64`, `nix`, `gh`,
+/// `helm`, `talos`, `linux`) are listed unconditionally; the cargo-feature-gated
 /// domains (`k8s`, `docker`, `lxc`, `sqlite`) are `#[cfg]` per-element so a
 /// `--no-default-features` binary drops their rules entirely — it never
 /// suggests a command it doesn't ship.
@@ -482,6 +482,7 @@ fn registries() -> &'static [&'static [HookRule]] {
         crate::config::hook::HOOK_RULES,
         crate::cert::hook::HOOK_RULES,
         crate::hash::hook::HOOK_RULES,
+        crate::base64::hook::HOOK_RULES,
         crate::nix::hook::HOOK_RULES,
         crate::gh::hook::HOOK_RULES,
         crate::helm::hook::HOOK_RULES,

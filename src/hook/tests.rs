@@ -901,6 +901,24 @@ fn sum_tools_suggest_matching_algo() {
     assert!(classify("sha256sum f").unwrap().contains("sak hash sha256"));
 }
 
+// ── base64 ──────────────────────────────────────────────────────
+
+#[test]
+fn base64_reads_block() {
+    assert!(blocks("base64 -d secret.b64"));
+    assert!(blocks("base64 --decode secret.b64"));
+    assert!(blocks("base64 data.bin"));
+    assert!(
+        classify("base64 -d f")
+            .unwrap()
+            .contains("sak base64 decode")
+    );
+    // An encode (no decode flag) is pointed at `encode`, not `decode`.
+    let msg = classify("echo hi | base64").unwrap();
+    assert!(msg.contains("sak base64 encode"), "{msg}");
+    assert!(!msg.contains("sak base64 decode"), "{msg}");
+}
+
 // ── sqlite3 ───────────────────────────────────────────────────
 //
 // Gated on `feature = "sqlite"`. Writes pass through unconditionally

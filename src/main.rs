@@ -1,3 +1,4 @@
+mod base64;
 mod cert;
 mod config;
 mod csv;
@@ -123,6 +124,8 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak hash sha256 file.tar.gz                 SHA-256 of a file (or stdin)
   sak hash blake3 *.iso                       BLAKE3 of several files
   sak hash sha256 --verify SHA256SUMS         Verify files against a sumfile
+  sak base64 decode secret.b64                Decode base64 (or stdin)
+  sak base64 encode data.bin                  Encode bytes to base64
   sak talos certs                             Cert inventory across all Talos nodes
   sak talos read /etc/os-release              Fan-out file read across nodes
   sak talos get members --node 192.168.1.10   COSI resource from one node
@@ -296,6 +299,9 @@ enum Command {
     /// Cryptographic hashing of files / stdin (sha256, sha1, md5, blake3)
     #[command(subcommand)]
     Hash(hash::HashCommand),
+    /// Base64 encode / decode of files / stdin (read-only)
+    #[command(subcommand)]
+    Base64(base64::Base64Command),
     /// Talos Linux cluster operations (read-only, shells out to talosctl)
     #[command(subcommand)]
     Talos(talos::TalosCommand),
@@ -352,6 +358,7 @@ fn main() -> ExitCode {
         Command::Csv(cmd) => csv::run(cmd),
         Command::Cert(cmd) => cert::run(cmd),
         Command::Hash(cmd) => hash::run(cmd),
+        Command::Base64(cmd) => base64::run(cmd),
         Command::Talos(cmd) => talos::run(cmd),
         Command::Gh(cmd) => gh::run(cmd),
         Command::Helm(cmd) => helm::run(cmd),

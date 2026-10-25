@@ -119,6 +119,8 @@ fn fixture() -> tempfile::TempDir {
         .unwrap();
     assert!(sums.status.success(), "hashing the sumfile fixture failed");
     write(d, "SHA256SUMS", sums.stdout);
+    write(d, "secret.b64", "aGVsbG8gd29ybGQ=\n");
+    write(d, "data.bin", b"\x00\x01\x02binary\n");
 
     #[cfg(feature = "sqlite")]
     {
