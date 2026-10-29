@@ -1,6 +1,6 @@
 [package]
 name = "sak"
-version = "0.21.1"
+version = "0.21.2"
 edition = "2024"
 description = "Swiss Army Knife for LLMs - read-only file operations"
 
@@ -97,13 +97,17 @@ serde_json = { version = "1", features = ["arbitrary_precision"] }
 toml = "0.8"
 serde_yaml = "0.9"
 plist = "1.6"
-# cert domain (always on — pure Rust, no native deps, no network). x509-parser
-# brings nom + asn1-rs + oid-registry for ASN.1/DER decoding; sha2 is used for
+# cert domain (always on — no network). x509-parser brings nom + asn1-rs +
+# oid-registry for ASN.1/DER decoding, plus `ring` behind the `verify` feature
+# for `verify-chain` signature checks. ring is the cert domain's one native
+# dependency (C/assembly, needs a C compiler); the default build already has
+# it through rustls, so it only adds to `--no-default-features`. sha2 is used for
 # fingerprints; base64 (also used by `sqlite`) is needed to strip the base64
 # wrapping on `client-certificate-data` style fields. The combined footprint
 # is on the order of `serde_yaml`, so this lives alongside json/config rather
 # than behind an opt-in cargo feature.
-x509-parser = "0.16"
+x509-parser = { version = "0.16", features = ["verify"] }
+oid-registry = "0.7"
 sha2 = "0.10"
 base64 = { version = "0.22", default-features = false, features = ["std"] }
 # hash domain (always on — pure Rust, no native deps, no network). sha2 (above)

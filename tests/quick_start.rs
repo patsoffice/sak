@@ -110,6 +110,11 @@ fn fixture() -> tempfile::TempDir {
         d.join("cert.pem"),
     )
     .unwrap();
+    std::fs::copy(
+        repo.join("src/cert/testdata/chain.pem"),
+        d.join("chain.pem"),
+    )
+    .unwrap();
     write(d, "file.tar.gz", b"not really a tarball\n");
     write(d, "disk.iso", b"not really an iso\n");
     let sums = Command::new(sak())

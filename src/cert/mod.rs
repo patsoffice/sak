@@ -16,6 +16,7 @@ pub mod from_kubeconfig;
 pub mod from_yaml;
 pub mod hook;
 pub mod inspect;
+pub mod verify_chain;
 
 use crate::output::Outcome;
 use std::io::{self, Read};
@@ -37,6 +38,7 @@ pub enum CertCommand {
     Expiring(expiring::ExpiringArgs),
     FromKubeconfig(from_kubeconfig::FromKubeconfigArgs),
     FromYaml(from_yaml::FromYamlArgs),
+    VerifyChain(verify_chain::VerifyChainArgs),
 }
 
 pub fn run(cmd: &CertCommand) -> Result<Outcome> {
@@ -45,6 +47,7 @@ pub fn run(cmd: &CertCommand) -> Result<Outcome> {
         CertCommand::Expiring(args) => expiring::run(args),
         CertCommand::FromKubeconfig(args) => from_kubeconfig::run(args),
         CertCommand::FromYaml(args) => from_yaml::run(args),
+        CertCommand::VerifyChain(args) => verify_chain::run(args),
     }
 }
 
@@ -293,7 +296,7 @@ fn format_unix_iso8601(ts: i64) -> String {
 /// Convert a Unix timestamp into `(year, month, day, hour, minute, second)` in
 /// UTC. Pure integer arithmetic (Howard Hinnant's date algorithm) so we don't
 /// need chrono / time formatting features just for ISO8601 emission.
-fn unix_to_utc_components(secs: i64) -> (i32, u32, u32, u32, u32, u32) {
+pub(crate) fn unix_to_utc_components(secs: i64) -> (i32, u32, u32, u32, u32, u32) {
     let days_since_epoch = secs.div_euclid(86400);
     let secs_of_day = secs.rem_euclid(86400) as u32;
     let hour = secs_of_day / 3600;

@@ -121,6 +121,7 @@ static QUICK_START: LazyLock<String> = LazyLock::new(|| {
   sak cert inspect cert.pem                   Show subject, dates, SANs, fingerprint
   sak cert expiring --days 30 *.pem           Certs expiring within a window
   sak cert from-kubeconfig ~/.kube/config     Inspect kubeconfig client certs
+  sak cert verify-chain chain.pem             Verify a chain bundle
   sak hash sha256 file.tar.gz                 SHA-256 of a file (or stdin)
   sak hash blake3 *.iso                       BLAKE3 of several files
   sak hash sha256 --verify SHA256SUMS         Verify files against a sumfile

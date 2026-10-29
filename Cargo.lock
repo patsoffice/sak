@@ -1787,7 +1787,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sak"
-version = "0.21.1"
+version = "0.21.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1805,6 +1805,7 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "md-5",
+ "oid-registry",
  "plist",
  "regex",
  "rusqlite",
@@ -2686,6 +2687,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "oid-registry",
+ "ring",
  "rusticata-macros",
  "thiserror 1.0.69",
  "time",

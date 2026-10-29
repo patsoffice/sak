@@ -878,6 +878,39 @@ fn openssl_x509_blocks() {
 }
 
 #[test]
+fn openssl_verify_blocks() {
+    assert!(blocks("openssl verify -CAfile root.pem leaf.pem"));
+    // Closest-to-sak spelling and openssl-3 `=` spelling redirect too.
+    assert!(blocks(
+        "openssl verify -CAfile root.pem -no-CApath leaf.pem"
+    ));
+    assert!(blocks("openssl verify -CAfile=root.pem leaf.pem"));
+    let msg = classify("openssl verify -CAfile root.pem -untrusted inter.pem leaf.pem").unwrap();
+    assert!(msg.contains("sak cert verify-chain --ca"), "{msg}");
+    // The x509 rule keeps its own message.
+    assert!(
+        !classify("openssl x509 -in c.pem")
+            .unwrap()
+            .contains("verify-chain")
+    );
+}
+
+#[test]
+fn openssl_verify_without_a_sak_equivalent_allows() {
+    // Regression: every `openssl verify` was redirected, including forms
+    // `verify-chain` can't answer (the system trust store, CRL checks).
+    assert!(allows("openssl verify leaf.pem"));
+    assert!(allows("openssl verify -CApath /etc/ssl/certs leaf.pem"));
+    assert!(allows(
+        "openssl verify -CAfile root.pem -crl_check leaf.pem"
+    ));
+    // -attime is epoch seconds; sak --at is RFC3339: no redirect.
+    assert!(allows(
+        "openssl verify -CAfile root.pem -attime 1893456000 leaf.pem"
+    ));
+}
+
+#[test]
 fn openssl_other_allows() {
     assert!(allows("openssl genrsa 2048"));
     assert!(allows("openssl req -x509 -newkey rsa:2048"));
