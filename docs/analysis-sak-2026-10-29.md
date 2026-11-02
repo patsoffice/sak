@@ -260,12 +260,14 @@ Good design choices worth keeping:
 
 What it structurally misses (relevant to blast radius):
 
-- Opaque interpreters: `python -c`, `python script.py`, `perl -pe`,
-  `node -e`, `sed -n`, `awk '{print $2}'`. The hook stays silent on `sed`
-  by design, and the model then thinks it solved the problem. Your 40-line
-  Python review pain lives exactly here: the hook has no view into the
-  script file without reading it, and reading every script on every call is
-  not implemented.
+- Opaque interpreters: `python script.py`, `node -e`, and heredoc-fed
+  scripts. `perl`, `sed`, and `awk` now block on every invocation (pure
+  denies naming the closest sak shape), and `python -c` visibly importing
+  `json` redirects to `sak json`. What stays invisible is file content: a
+  `script.py` file's imports aren't on the command line, and neither is a
+  quoted-heredoc body, so those pass through. Your 40-line Python review
+  pain lives exactly here: the hook classifies the command string, not the
+  script file, and reading every script on every call is not implemented.
 - Other tools: any harness tool other than the shell tool (native
   `Read`/`Glob`/`Grep`, MCP filesystem tools) never reaches
   `extract_command`. Native tools are fine (they are also safe), but they

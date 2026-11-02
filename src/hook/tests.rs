@@ -834,6 +834,44 @@ fn find_action_allows() {
     assert!(allows("find . -name old -ok rm {} ;"));
 }
 
+#[test]
+fn ls_blocks() {
+    assert!(blocks("ls"));
+    assert!(blocks("ls -la"));
+    assert!(blocks("ls src/"));
+    assert!(classify("ls src").unwrap().contains("sak fs glob"));
+}
+
+#[test]
+fn cut_blocks() {
+    assert!(blocks("cut -d, -f2 data.csv"));
+    assert!(blocks("echo a:b | cut -d: -f1"));
+    assert!(blocks("cut -f 1,3 file.txt"));
+    assert!(classify("cut -d, -f2 f").unwrap().contains("sak fs cut"));
+}
+
+#[test]
+fn awk_sed_perl_block_unconditionally() {
+    // Full languages with no single sak equivalent: every invocation blocks,
+    // and the message names the closest sak shape for the common cases.
+    assert!(blocks("awk '{print $2}' file.txt"));
+    assert!(blocks("echo a:b | awk -F: '{print $1}'"));
+    assert!(blocks("sed -n '10,20p' file.txt"));
+    assert!(blocks("echo hi | sed 's/hi/bye/'"));
+    assert!(blocks("perl -pe 's/foo/bar/' file.txt"));
+    assert!(blocks("perl script.pl"));
+    assert!(
+        classify("awk '{print $2}' f")
+            .unwrap()
+            .contains("sak fs cut")
+    );
+    assert!(
+        classify("sed -n '10,20p' f")
+            .unwrap()
+            .contains("sak fs read")
+    );
+}
+
 // ── parsers (jq/yq) ───────────────────────────────────────────
 
 #[test]
@@ -867,6 +905,32 @@ fn yq_stdin_blocks() {
 #[test]
 fn plistutil_blocks() {
     assert!(blocks("plistutil -i Info.plist"));
+}
+
+#[test]
+fn python_json_blocks() {
+    assert!(blocks(
+        "python3 -c \"import json, sys; print(json.load(sys.stdin))\""
+    ));
+    assert!(blocks(
+        "python -c \"from json import loads; print(loads('{}'))\""
+    ));
+    assert!(blocks("python3 -m json.tool data.json"));
+    assert!(
+        classify("python3 -c \"import json\"")
+            .unwrap()
+            .contains("sak json query")
+    );
+}
+
+#[test]
+fn python_without_json_allows() {
+    // No visible json marker: plain one-liners and file-driven runs pass.
+    // A script file's imports aren't on the command line, and neither is a
+    // quoted-heredoc body (heredocs are data) — both stay invisible.
+    assert!(allows("python3 -c \"print(1)\""));
+    assert!(allows("python3 script.py"));
+    assert!(allows("python -m http.server"));
 }
 
 // ── openssl x509 ──────────────────────────────────────────────

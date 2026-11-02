@@ -7,20 +7,64 @@
 
 use crate::hook::rule::HookRule;
 
-pub const HOOK_RULES: &[HookRule] = &[HookRule {
-    tool: "jq",
-    subcommand: &[],
-    guard: Some(jq_has_filter),
-    message: "Use `sak json query <path> <file>` instead of `jq` \
-         (pass `-` as <file> to read stdin, e.g. `cmd | sak json query <path> -`). \
-         Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
-}];
+pub const HOOK_RULES: &[HookRule] = &[
+    HookRule {
+        tool: "jq",
+        subcommand: &[],
+        guard: Some(jq_has_filter),
+        message: "Use `sak json query <path> <file>` instead of `jq` \
+             (pass `-` as <file> to read stdin, e.g. `cmd | sak json query <path> -`). \
+             Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
+    },
+    // `python -c` doing JSON work shadows `sak json` the way `jq` does, so
+    // the same invocations redirect: anything visibly importing `json`
+    // (`import json`, `from json import`, `json.load(s)`, `json.tool`,
+    // `python -m json.tool`). Anything without a visible `json` marker
+    // passes through — a `script.py` file's imports aren't on the command
+    // line, and neither is a heredoc body (heredocs are data by the time the
+    // guard sees the args), so those stay invisible by design.
+    HookRule {
+        tool: "python",
+        subcommand: &[],
+        guard: Some(python_imports_json),
+        message: "Don't parse JSON with `python -c`; use \
+             `sak json query <path> <file>` instead \
+             (pass `-` as <file> to read stdin). \
+             Other ops: keys, table, validate, diff.",
+    },
+    HookRule {
+        tool: "python3",
+        subcommand: &[],
+        guard: Some(python_imports_json),
+        message: "Don't parse JSON with `python -c`; use \
+             `sak json query <path> <file>` instead \
+             (pass `-` as <file> to read stdin). \
+             Other ops: keys, table, validate, diff.",
+    },
+];
 
 /// `jq FILTER [FILE]` carries a filter positional whether it reads a file or
 /// stdin, so any invocation with at least one positional redirects. A bare `jq`
 /// (no filter) has nothing to redirect.
 fn jq_has_filter(args: &[String]) -> bool {
     args.iter().any(|a| !a.starts_with('-'))
+}
+
+/// `python`/`python3` doing visible JSON work: any argument mentioning the
+/// `json` module — `import json`, `from json import ...`, `json.load(s)`,
+/// `json.tool` (including `-m json.tool`), `__import__("json")`. Matched
+/// against the raw args (quotes included), so `-c "import json; ..."`
+/// fires whichever way the script is quoted. No marker means no shadow:
+/// `python -c "print(1)"` and `python script.py` pass through.
+fn python_imports_json(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        a.contains("import json")
+            || a.contains("from json import")
+            || a.contains("json.load")
+            || a.contains("json.tool")
+            || a.contains("__import__(\"json\")")
+            || a.contains("__import__('json')")
+    })
 }
 
 #[cfg(test)]
@@ -42,5 +86,24 @@ mod tests {
         // A bare `jq` (no filter) has nothing to redirect.
         assert!(!jq_has_filter(&a(&[])));
         assert!(!jq_has_filter(&a(&["-r"])));
+    }
+
+    #[test]
+    fn python_guard_fires_on_json_marker_only() {
+        // Every visible-json spelling fires.
+        assert!(python_imports_json(&a(&[
+            "-c",
+            "import json, sys; print(json.load(sys.stdin))",
+        ])));
+        assert!(python_imports_json(&a(&[
+            "-c",
+            "from json import loads; print(loads('{}'))",
+        ])));
+        assert!(python_imports_json(&a(&["-m", "json.tool", "data.json"])));
+        assert!(python_imports_json(&a(&["-c", "x = __import__(\"json\")"])));
+        // No marker, no shadow: plain scripts and file-driven runs pass.
+        assert!(!python_imports_json(&a(&["-c", "print(1)"])));
+        assert!(!python_imports_json(&a(&["script.py"])));
+        assert!(!python_imports_json(&a(&[])));
     }
 }

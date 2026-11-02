@@ -1,12 +1,20 @@
 //! Agent-hook redirect rules for the `fs` domain.
 //!
 //! Each row maps a read-only shell tool (`cat`, `head`, `tail`, `grep`, `rg`,
-//! `find`, `tree`, `stat`, `wc`) to its `sak fs` equivalent. These tools take no
-//! subcommand verb — the read-vs-stdin / read-vs-write distinction lives
-//! entirely in each rule's `guard`, so every rule uses an empty `subcommand`
-//! (matches any invocation) and leans on the guard. The claude-code engine
-//! aggregates this table via its `registries()` and appends the bypass hint to
-//! the matched `message`.
+//! `find`, `tree`, `stat`, `wc`, `ls`, `cut`) to its `sak fs` equivalent.
+//! These tools take no subcommand verb — the read-vs-stdin / read-vs-write
+//! distinction lives entirely in each rule's `guard`, so every rule uses an
+//! empty `subcommand` (matches any invocation) and leans on the guard. The
+//! claude-code engine aggregates this table via its `registries()` and
+//! appends the bypass hint to the matched `message`.
+//!
+//! `perl`, `sed`, and `awk` are a second kind of row: pure denies, not
+//! redirects. They have no single `sak` equivalent (each is a full language),
+//! so they block unconditionally (`guard: None`) and their messages name the
+//! closest sak command for the common shapes plus what to do when nothing
+//! fits. `python` is narrower still and lives in `crate::json::hook`: only
+//! invocations that visibly import `json` redirect, since only those shadow a
+//! sak command.
 
 use crate::hook::rule::HookRule;
 
@@ -112,6 +120,59 @@ pub const HOOK_RULES: &[HookRule] = &[
         guard: None,
         message: "Use `sak fs wc [files...]` instead of `wc` (--lines/--words/--bytes; \
             omit files to read stdin, e.g. `cmd | sak fs wc --lines`).",
+    },
+    // `ls` lists names, which is `sak fs glob`'s job (`tree` for a visual
+    // listing). `ls` has no write mode and no `--help`-shaped hole worth
+    // keeping: like `rg`/`tree`/`wc` above, every invocation redirects.
+    HookRule {
+        tool: "ls",
+        subcommand: &[],
+        guard: None,
+        message: "Use `sak fs glob '<pattern>'` instead of `ls` for name searches \
+            (or `sak fs tree [path]` to list a directory).",
+    },
+    // `cut` extracts delimiter-separated fields from files or stdin, exactly
+    // what `sak fs cut` does (`-` reads stdin there too), so every invocation
+    // redirects — the piped `cmd | cut -d, -f2` form maps to
+    // `cmd | sak fs cut -d, -f2`.
+    HookRule {
+        tool: "cut",
+        subcommand: &[],
+        guard: None,
+        message: "Use `sak fs cut -d <delim> -f <n>` instead of `cut` \
+            (reads files or stdin via `-`; --header, --filter, --regex-delim supported).",
+    },
+    // `perl`, `sed`, and `awk` are full languages with no single sak
+    // equivalent, so these rows are pure denies: block every invocation and
+    // name the closest sak command for the shapes models actually reach for.
+    // Anything beyond those shapes has no sak equivalent — the message says
+    // to ask the user rather than guess a second tool.
+    HookRule {
+        tool: "awk",
+        subcommand: &[],
+        guard: None,
+        message: "Don't use `awk`; for field extraction use \
+            `sak fs cut -d <delim> -f <n>` (`awk '{print $2}'`), for line \
+            filtering use `sak fs grep <pattern>`. Anything else `awk` does \
+            has no sak equivalent — say what's missing and ask the user to run the command.",
+    },
+    HookRule {
+        tool: "sed",
+        subcommand: &[],
+        guard: None,
+        message: "Don't use `sed`; to find lines use `sak fs grep <pattern>`, \
+            to view a range use `sak fs read <file> -n <lo>-<hi>` \
+            (`sed -n '10,20p'`). Anything else `sed` does has no sak \
+            equivalent — say what's missing and ask the user to run the command.",
+    },
+    HookRule {
+        tool: "perl",
+        subcommand: &[],
+        guard: None,
+        message: "Don't use `perl` for text or JSON processing; use \
+            `sak fs grep <pattern>` to find lines, `sak json query <path>` \
+            for JSON. Anything else `perl` does has no sak equivalent — say \
+            what's missing and ask the user to run the command.",
     },
 ];
 
