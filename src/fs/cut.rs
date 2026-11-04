@@ -15,11 +15,13 @@ use crate::output::BoundedWriter;
     long_about = "Extract fields from delimited text.\n\n\
         Splits each line by a delimiter and outputs selected fields. \
         With no files, reads piped stdin (exit 2 if nothing is piped); a file \
-        argument of '-' always reads stdin (matches cat/grep). Default \
-        delimiter is whitespace.",
+        argument of '-' always reads stdin (matches cat/grep). The default \
+        delimiter is a tab, as in `cut`. For awk-style fields (`awk '{print \
+        $2}'`), pass '--whitespace': runs of spaces and tabs separate fields \
+        and leading/trailing whitespace is ignored.",
     after_help = "\
 Examples:
-  echo 'alice 30 nyc' | sak fs cut -f 1,3           Extract fields 1 and 3
+  echo 'alice 30 nyc' | sak fs cut --whitespace -f 1,3  Fields 1 and 3, awk-style
   sak fs cut -d: -f 1 /etc/passwd                   Extract usernames
   sak fs cut -d ',' -f 2-4 data.csv                 Extract field range
   echo 'a:b:c:d:e' | sak fs cut -d: --max-fields 3  Split into 3: 'a', 'b', 'c:d:e'
@@ -31,13 +33,18 @@ pub struct CutArgs {
     /// Input files (omitted: piped stdin; '-' always reads stdin)
     pub files: Vec<PathBuf>,
 
-    /// Field delimiter (default: split on whitespace runs)
+    /// Field delimiter (default: tab, as in `cut`)
     #[arg(short = 'd', long = "delimiter")]
     pub delimiter: Option<String>,
 
     /// Use a regex as the delimiter
     #[arg(long = "regex-delim", conflicts_with = "delimiter")]
     pub regex_delim: Option<String>,
+
+    /// Split on runs of whitespace, ignoring leading/trailing whitespace
+    /// (awk's default field splitting)
+    #[arg(long, conflicts_with_all = ["delimiter", "regex_delim"])]
+    pub whitespace: bool,
 
     /// Field indices to extract (1-based, e.g., "1,3", "2-5", "3-")
     #[arg(short = 'f', long = "fields", required = true)]
@@ -367,8 +374,12 @@ pub fn run(args: &CutArgs) -> Result<Outcome> {
         Splitter::Regex(re)
     } else if let Some(ref delim) = args.delimiter {
         Splitter::Literal(delim.clone())
-    } else {
+    } else if args.whitespace {
         Splitter::Whitespace
+    } else {
+        // GNU cut's default: `cut -f2` redirected here must split TSV the
+        // same way, not on spaces inside a field.
+        Splitter::Literal("\t".to_string())
     };
 
     let filter = args.filter.as_ref().map(|f| parse_filter(f)).transpose()?;
@@ -555,6 +566,7 @@ mod tests {
             files: vec![file_path],
             delimiter: None,
             regex_delim: None,
+            whitespace: true,
             fields: "1,3".to_string(),
             separator: "\t".to_string(),
             max_fields: None,
@@ -567,5 +579,26 @@ mod tests {
         };
         let exit = run(&args).unwrap();
         assert_eq!(exit, Outcome::Found);
+    }
+
+    #[test]
+    fn default_delimiter_is_tab_like_cut() {
+        // `cut -f2` redirected here must not split on the space inside a
+        // TSV field; awk-style splitting is opt-in via --whitespace.
+        use clap::Parser;
+        #[derive(Parser)]
+        struct Cli {
+            #[command(flatten)]
+            args: CutArgs,
+        }
+        let args = Cli::try_parse_from(["cut", "-f", "2"]).unwrap().args;
+        assert!(args.delimiter.is_none() && !args.whitespace);
+        let tab = Splitter::Literal("\t".to_string());
+        assert_eq!(tab.split("a b\tc d", None), ["a b", "c d"]);
+        let ws = Cli::try_parse_from(["cut", "--whitespace", "-f", "2"])
+            .unwrap()
+            .args;
+        assert!(ws.whitespace);
+        assert!(Cli::try_parse_from(["cut", "--whitespace", "-d", ",", "-f", "1"]).is_err());
     }
 }

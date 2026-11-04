@@ -13,7 +13,7 @@ This repo dogfoods its own product. When you need to inspect the filesystem, rep
 - `sak fs glob '<pattern>'` instead of `ls`, `find`, or `**` shell globs
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat` or `sed -n` (and `sak fs head|tail <file> [n]` instead of `head`/`tail`)
 - `sak fs grep <pattern> <path>` instead of `grep` / `rg` — and to *count* matches use `-c` (per file) or `--total` (one grand total) rather than piping the default output into a line counter; `--no-heading` gives bare `path:line:text` rows when you need to pipe matches onward
-- `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak fs cut -f <n>` instead of `cut` (tab-delimited by default, like `cut`; `-d <delim>` otherwise), and `sak fs cut --whitespace -f <n>` instead of `awk '{print $n}'`
 - `sak fs tree [path]` instead of `tree` / `ls -R`, `sak fs stat <path...>` instead of `stat`, `sak fs wc [files...]` instead of `wc`
 - `sak git status|log|diff|blame|show` instead of shelling out to `git` for read ops — `log -1 --stat`, `status -- <path>`, and `diff main...HEAD` mirror git's spellings
 - `sak json query|exists|keys|flatten|paths|grep|length|schema|select|table|type|validate|diff` for `*.json`

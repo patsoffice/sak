@@ -28,7 +28,8 @@ use crate::hook::rule::HookRule;
 /// reads, so they share one string and differ only by `tool`).
 const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep` \
      (pass `-` as <path> to read stdin, e.g. `cmd | sak fs grep <pattern> -`). \
-     Flags: -i, -v, -l, -C N, --type, --glob, -U for multiline. \
+     Rust regex syntax: `a|b`, not `a\\|b`. \
+     Flags: -i, -v, -l, -w, -e, -F, -o, -h, -C N, --type, --glob, -U for multiline. \
      Counting: -c (per file) or --total (one grand total) — don't pipe the \
      default output into a line counter. --no-heading gives bare \
      path:line:text rows. \
@@ -41,7 +42,7 @@ const GREP_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `grep` \
 /// `grep_reads` guard — only the binary name differs).
 const AG_MSG: &str = "Use `sak fs grep <pattern> <path>` instead of `ag`/`ack` \
      (pass `-` as <path> to read stdin, e.g. `cmd | sak fs grep <pattern> -`). \
-     Flags: -i, -v, -l, -C N, --type, --glob, -U for multiline. \
+     Flags: -i, -v, -l, -w, -e, -F, -o, -h, -C N, --type, --glob, -U for multiline. \
      Counting: -c (per file) or --total (one grand total) — don't pipe the \
      default output into a line counter. --no-heading gives bare \
      path:line:text rows.";
@@ -60,7 +61,8 @@ const LS_MSG: &str = "Use `sak fs glob '<pattern>'` instead of `ls`/`eza`/`exa` 
 
 /// Shared `awk`/`gawk`/`nawk`/`mawk` pure-deny message.
 const AWK_MSG: &str = "Don't use `awk`/`gawk`/`nawk`/`mawk`; for field extraction use \
-     `sak fs cut -d <delim> -f <n>` (`awk '{print $2}'`), for line \
+     `sak fs cut --whitespace -f <n>` (`awk '{print $2}'`; `-d <delim>` for \
+     `awk -F`), for line \
      filtering use `sak fs grep <pattern>`. Anything else these tools do \
      has no sak equivalent — say what's missing and ask the user to run the command.";
 
@@ -243,8 +245,9 @@ pub const HOOK_RULES: &[HookRule] = &[
         tool: "cut",
         subcommand: &[],
         guard: None,
-        message: "Use `sak fs cut -d <delim> -f <n>` instead of `cut` \
-            (reads files or stdin via `-`; --header, --filter, --regex-delim supported).",
+        message: "Use `sak fs cut -f <n>` instead of `cut` (tab-delimited by \
+            default, like `cut`; `-d <delim>` for others; reads files or stdin \
+            via `-`; --header, --filter, --regex-delim supported).",
     },
     // `perl`, `sed`, and `awk` are full languages with no single sak
     // equivalent, so these rows are pure denies: block every invocation that

@@ -246,8 +246,8 @@ endpoint, **prefer `sak <domain> <command>` over shell equivalents**:
 
 - `sak fs glob '<pattern>'...` instead of `ls`, `find`, or `**` shell globs (pass multiple patterns to OR-match, e.g. `sak fs glob flake.nix shell.nix .`)
 - `sak fs read <file> -n <lo>-<hi>` instead of `cat`, `sed -n` (or `sak fs head`/`sak fs tail` for the first/last N lines; `--exclude <ranges>` drops ranges)
-- `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin; `-c` counts per file, `--total` gives one grand total, `--no-heading` emits bare `path:line:text` rows)
-- `sak fs cut -d <delim> -f <n>` instead of `cut` / `awk '{print $n}'`
+- `sak fs grep <pattern> <path>` instead of `grep` / `rg` (use `-` as the path to grep piped stdin; `-c` counts per file, `--total` gives one grand total, `--no-heading` emits bare `path:line:text` rows; grep's `-e`, `-E`, `-F`, `-o` and `-h` work as in grep, so help is `--help`; patterns are Rust regex, `a|b` not `a\|b`)
+- `sak fs cut -f <n>` instead of `cut` (tab-delimited by default, like `cut`; `-d <delim>` otherwise), and `sak fs cut --whitespace -f <n>` instead of `awk '{print $n}'`
 - `sak fs largest [path]` to rank the biggest files (size<TAB>path, `--human`, `--min-size`)
 - `sak fs duplicates [path]` to find byte-identical files (size-bucketed, then SHA-256 confirmed)
 - `sak fs find <path>` to filter by metadata (`--size +1M`, `--mtime -7d`, `--type f|d|l`, `--name <glob>`) — `find` with predicates, where `glob` matches by name

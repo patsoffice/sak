@@ -122,7 +122,8 @@ pub const HOOK_RULES: &[HookRule] = &[
         subcommand: &[&["grep"]],
         guard: Some(git_grep_searches_worktree),
         message: "Use `sak fs grep <pattern> [path]` instead of `git grep` to \
-             search the working tree (-i, -w, -l, -c, --glob work; it skips .git/target/node_modules, and --hidden adds \
+             search the working tree (-i, -w, -l, -c, -e, -F, -o, -h, --glob \
+             work; it skips .git/target/node_modules, and --hidden adds \
              dotfiles). To search a revision or branch, name it before `--`: \
              `git grep <pattern> <rev> -- [path]`.",
     },

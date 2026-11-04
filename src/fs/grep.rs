@@ -32,7 +32,13 @@ use crate::output::{BoundedWriter, Limit, is_binary, line_number_width, relative
         the default output's lines, which also carries filename headings. \
         '--no-heading' is the parse-friendly mode: one 'path:line:text' row \
         per match, no headings and no '--' separators, so every stdout line \
-        is exactly one match.",
+        is exactly one match.\n\n\
+        grep spellings: '-e PATTERN' (repeatable; any one may match, and \
+        every positional is then a path), '-F' (fixed strings), '-o' (print \
+        only the matched text), '-h' (no filenames). '-E' is accepted and \
+        changes nothing: the syntax is always extended. As in grep, '-h' is \
+        not help; use '--help'.",
+    disable_help_flag = true,
     after_help = "\
 Examples:
   sak fs grep 'fn main' src/                       Find 'fn main' in src/
@@ -44,14 +50,42 @@ Examples:
   sak fs grep --no-heading 'TODO' src/             path:line:text rows, no decoration
   sak fs grep -C 3 'panic' src/                    Show 3 lines of context
   some-cmd | sak fs grep 'pattern'                  Search piped stdin (no path)
-  sak fs grep -v 'ok\\.' results.txt               Lines NOT matching (invert)"
+  sak fs grep -v 'ok\\.' results.txt               Lines NOT matching (invert)
+  sak fs grep -e foo -e bar src/                   Match either pattern
+  sak fs grep -oF 'a.b' notes.txt                  Literal text, matched part only"
 )]
 pub struct GrepArgs {
-    /// Regex pattern to search for
-    pub pattern: String,
+    /// Regex pattern to search for (omit when using -e)
+    #[arg(required_unless_present = "regexps")]
+    pub pattern: Option<String>,
 
     /// Files or directories to search (omitted: piped stdin, else `.`; '-' reads stdin)
     pub paths: Vec<PathBuf>,
+
+    /// Pattern to search for; repeat to match any of several. With -e, every
+    /// positional is a path
+    #[arg(short = 'e', long = "regexp", allow_hyphen_values = true)]
+    pub regexps: Vec<String>,
+
+    /// Accepted for grep compatibility; patterns are always extended syntax
+    #[arg(short = 'E', long = "extended-regexp")]
+    pub extended: bool,
+
+    /// Treat patterns as literal strings, not regexes
+    #[arg(short = 'F', long = "fixed-strings")]
+    pub fixed_strings: bool,
+
+    /// Print only the matched part of each line, one match per row
+    #[arg(short = 'o', long = "only-matching", conflicts_with = "invert")]
+    pub only_matching: bool,
+
+    /// Omit filenames from output (grep's `-h`; help is `--help`)
+    #[arg(short = 'h', long = "no-filename")]
+    pub no_filename: bool,
+
+    /// Print help
+    #[arg(long, action = clap::ArgAction::HelpLong)]
+    pub help: Option<bool>,
 
     /// Select non-matching lines instead of matching ones
     #[arg(short = 'v', long = "invert-match")]
@@ -165,6 +199,48 @@ impl GrepArgs {
     fn use_line_numbers(&self) -> bool {
         self.line_number || !self.no_line_numbers
     }
+
+    /// The single regex to search with: the positional pattern, or every `-e`
+    /// pattern as alternatives. `-F` escapes each one first. Each alternative
+    /// is grouped so `-w`'s boundaries and the `|` join can't regroup it.
+    fn combined_pattern(&self) -> String {
+        let raw: Vec<&str> = if self.regexps.is_empty() {
+            self.pattern.as_deref().into_iter().collect()
+        } else {
+            self.regexps.iter().map(String::as_str).collect()
+        };
+        let pats: Vec<String> = raw
+            .into_iter()
+            .map(|p| {
+                if self.fixed_strings {
+                    regex::escape(p)
+                } else {
+                    p.to_string()
+                }
+            })
+            .collect();
+        match pats.as_slice() {
+            [one] => one.clone(),
+            many => many
+                .iter()
+                .map(|p| format!("(?:{p})"))
+                .collect::<Vec<_>>()
+                .join("|"),
+        }
+    }
+
+    /// The paths to search. With `-e` the patterns come from flags, so a
+    /// positional the parser took as the pattern is really the first path.
+    fn search_paths(&self) -> Vec<PathBuf> {
+        if self.regexps.is_empty() {
+            return self.paths.clone();
+        }
+        self.pattern
+            .iter()
+            .map(PathBuf::from)
+            .chain(self.paths.iter().cloned())
+            .collect()
+    }
 }
 
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".venv"];
@@ -172,7 +248,8 @@ const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "__pycache__", ".
 fn build_regex(pattern: &str, ignore_case: bool, word: bool, multiline: bool) -> Result<Regex> {
     let mut pat = pattern.to_string();
     if word {
-        pat = format!(r"\b{}\b", pat);
+        // Group first: `\ba|b\b` would bind the boundaries to one alternative.
+        pat = format!(r"\b(?:{})\b", pat);
     }
     let mut prefix = String::new();
     if ignore_case {
@@ -558,6 +635,29 @@ fn search_content_multiline_inverted(
     }))
 }
 
+/// `-o`: replace each selected line with one row per non-empty match on it,
+/// keeping its line number. Context rows and separators drop, as in grep;
+/// `count` still counts matching lines.
+fn only_matching(result: MatchResult, re: &Regex) -> MatchResult {
+    let matches = result
+        .matches
+        .iter()
+        .filter(|m| !m.is_separator && !m.is_context)
+        .flat_map(|m| {
+            re.find_iter(&m.content)
+                .filter(|f| !f.as_str().is_empty())
+                .map(|f| LineMatch {
+                    line_num: m.line_num,
+                    content: f.as_str().to_string(),
+                    is_context: false,
+                    is_separator: false,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    MatchResult { matches, ..result }
+}
+
 /// Emit one file's (or stdin's) matches. Returns `Ok(false)` when the output
 /// limit has been reached and the caller should stop emitting further results.
 fn emit_result(
@@ -572,6 +672,10 @@ fn emit_result(
         return Ok(writer.write_line(label)?);
     }
 
+    // `-h` drops the filename everywhere a match row or count would carry it
+    // (`-l` above still prints names: they are its output, as in grep).
+    let multi_file = multi_file && !args.no_filename;
+
     if args.count {
         return if multi_file {
             Ok(writer.write_line(&format!("{}:{}", label, result.count))?)
@@ -583,7 +687,9 @@ fn emit_result(
     // Regular output
     let line_numbers = args.use_line_numbers();
     if args.use_heading() {
-        if !*first_file {
+        // The blank line separates per-file heading blocks; with no headings
+        // (`-h`, or a single source) there are no blocks to separate.
+        if !*first_file && multi_file {
             writer.write_decoration("")?;
         }
         if multi_file {
@@ -623,12 +729,12 @@ fn emit_result(
             if m.is_separator {
                 continue;
             }
-            let line = if line_numbers {
-                let sep = if m.is_context { '-' } else { ':' };
-                format!("{}{}{}{}{}", label, sep, m.line_num, sep, m.content)
-            } else {
-                let sep = if m.is_context { '-' } else { ':' };
-                format!("{}{}{}", label, sep, m.content)
+            let sep = if m.is_context { '-' } else { ':' };
+            let line = match (args.no_filename, line_numbers) {
+                (false, true) => format!("{}{}{}{}{}", label, sep, m.line_num, sep, m.content),
+                (false, false) => format!("{}{}{}", label, sep, m.content),
+                (true, true) => format!("{}{}{}", m.line_num, sep, m.content),
+                (true, false) => m.content.clone(),
             };
             if !writer.write_line(&line)? {
                 return Ok(false);
@@ -656,15 +762,35 @@ fn resolve_paths(paths: &[PathBuf], piped: impl FnOnce() -> bool) -> (Vec<PathBu
 }
 
 pub fn run(args: &GrepArgs) -> Result<Outcome> {
-    let re = build_regex(&args.pattern, args.ignore_case, args.word, args.multiline)?;
+    let re = build_regex(
+        &args.combined_pattern(),
+        args.ignore_case,
+        args.word,
+        args.multiline,
+    )?;
     // Omitted paths read piped stdin, or search `.` when nothing was piped
     // (an agent harness's empty stdin must not read as "no matches"). A '-'
     // among the paths always reads stdin.
-    let (paths, read_stdin) = resolve_paths(&args.paths, stdin_is_piped);
+    let (paths, read_stdin) = resolve_paths(&args.search_paths(), stdin_is_piped);
     let files = collect_files(args, &paths)?;
 
-    let before_ctx = args.before_context.or(args.context).unwrap_or(0);
-    let after_ctx = args.after_context.or(args.context).unwrap_or(0);
+    // `-o` prints matches only, so there is no context to show.
+    let (before_ctx, after_ctx) = if args.only_matching {
+        (0, 0)
+    } else {
+        (
+            args.before_context.or(args.context).unwrap_or(0),
+            args.after_context.or(args.context).unwrap_or(0),
+        )
+    };
+    // Multiline mode already prints only the matched text.
+    let only = |r: MatchResult| {
+        if args.only_matching && !args.multiline {
+            only_matching(r, &re)
+        } else {
+            r
+        }
+    };
 
     // stdin counts as one source when deciding whether to label output by source.
     let multi_file = files.len() + usize::from(read_stdin) > 1;
@@ -700,7 +826,7 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
         };
 
         let result = match result {
-            Some(r) => r,
+            Some(r) => only(r),
             None => continue,
         };
 
@@ -746,7 +872,7 @@ pub fn run(args: &GrepArgs) -> Result<Outcome> {
             )?
         };
 
-        if let Some(result) = result {
+        if let Some(result) = result.map(only) {
             any_match = true;
             total += result.count;
             if !args.total {
@@ -849,7 +975,81 @@ mod tests {
         // a value for it, which is why it is not a value-taking bool.
         let args = parse(&["grep", "-n", "pat", "src/"]);
         assert!(args.use_line_numbers());
-        assert_eq!(args.pattern, "pat");
+        assert_eq!(args.pattern.as_deref(), Some("pat"));
+    }
+
+    #[test]
+    fn dash_h_is_no_filename_not_help() {
+        // GNU grep's `-h` drops filenames; as help it printed usage and
+        // exited 0, so `grep -h pat … | sort` sorted the help text.
+        let args = parse(&["grep", "-h", "pat", "src/"]);
+        assert!(args.no_filename);
+        assert_eq!(args.pattern.as_deref(), Some("pat"));
+        let err = GrepCli::try_parse_from(["grep", "--help"])
+            .err()
+            .expect("--help still shows help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn dash_e_patterns_make_every_positional_a_path() {
+        let args = parse(&["grep", "-e", "foo", "-e", "-bar", "src/", "lib/"]);
+        assert_eq!(args.regexps, ["foo", "-bar"]);
+        assert_eq!(
+            args.search_paths(),
+            [PathBuf::from("src/"), PathBuf::from("lib/")]
+        );
+        let re = Regex::new(&args.combined_pattern()).unwrap();
+        assert!(re.is_match("x foo"));
+        assert!(re.is_match("x -bar"));
+        assert!(!re.is_match("baz"));
+        // No pattern at all is still a usage error.
+        assert!(GrepCli::try_parse_from(["grep"]).is_err());
+    }
+
+    #[test]
+    fn fixed_strings_escape_and_extended_is_accepted() {
+        let args = parse(&["grep", "-F", "a.b", "f"]);
+        let re = Regex::new(&args.combined_pattern()).unwrap();
+        assert!(re.is_match("a.b"));
+        assert!(!re.is_match("axb"));
+        let args = parse(&["grep", "-E", "a|b", "f"]);
+        assert!(args.extended);
+        assert_eq!(args.combined_pattern(), "a|b");
+    }
+
+    #[test]
+    fn word_boundaries_wrap_every_alternative() {
+        let re = build_regex("ab|cd", false, true, false).unwrap();
+        assert!(re.is_match("x cd y"));
+        assert!(!re.is_match("abc"));
+        assert!(!re.is_match("xcd"));
+    }
+
+    #[test]
+    fn only_matching_emits_each_match_and_drops_context() {
+        let re = Regex::new(r"\d+").unwrap();
+        let result = search_reader_lines(
+            io::Cursor::new("a 1 b 22\nnone\nc 333\n"),
+            &re,
+            false,
+            None,
+            0,
+            0,
+            PathBuf::from(STDIN_LABEL),
+        )
+        .unwrap()
+        .unwrap();
+        let result = only_matching(result, &re);
+        assert_eq!(result.count, 2);
+        let got: Vec<_> = result
+            .matches
+            .iter()
+            .map(|m| (m.line_num, m.content.as_str()))
+            .collect();
+        assert_eq!(got, [(1, "1"), (1, "22"), (3, "333")]);
+        // `-o` with `-v` has nothing to print, so clap refuses the pair.
+        assert!(GrepCli::try_parse_from(["grep", "-o", "-v", "x"]).is_err());
     }
 
     #[test]
