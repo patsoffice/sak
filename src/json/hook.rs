@@ -16,27 +16,18 @@ pub const HOOK_RULES: &[HookRule] = &[
              (pass `-` as <file> to read stdin, e.g. `cmd | sak json query <path> -`). \
              Other ops: keys, flatten, grep, length, paths, schema, type, validate, diff.",
     },
-    // `python -c` doing JSON work shadows `sak json` the way `jq` does, so
-    // the same invocations redirect: anything visibly importing `json`
-    // (`import json`, `from json import`, `json.load(s)`, `json.tool`,
-    // `python -m json.tool`). Anything without a visible `json` marker
-    // passes through — a `script.py` file's imports aren't on the command
-    // line, and neither is a heredoc body (heredocs are data by the time the
-    // guard sees the args), so those stay invisible by design.
+    // `python` doing JSON work shadows `sak json` the way `jq` does. Inline
+    // code (`python -c …`) is already denied by the `fs` inline-program row,
+    // which the engine consults first, so this row is what catches the
+    // module form, `python -m json.tool`, plus any other invocation visibly
+    // naming `json`. A `script.py` file's imports aren't on the command line,
+    // so script runs stay invisible by design. Versioned names (`python3`,
+    // `python3.14`) reach this row through the engine's `canonical_tool`.
     HookRule {
         tool: "python",
         subcommand: &[],
         guard: Some(python_imports_json),
-        message: "Don't parse JSON with `python -c`; use \
-             `sak json query <path> <file>` instead \
-             (pass `-` as <file> to read stdin). \
-             Other ops: keys, table, validate, diff.",
-    },
-    HookRule {
-        tool: "python3",
-        subcommand: &[],
-        guard: Some(python_imports_json),
-        message: "Don't parse JSON with `python -c`; use \
+        message: "Don't parse JSON with `python`; use \
              `sak json query <path> <file>` instead \
              (pass `-` as <file> to read stdin). \
              Other ops: keys, table, validate, diff.",

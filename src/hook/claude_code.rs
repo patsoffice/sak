@@ -660,7 +660,29 @@ fn check(tokens: &[String], depth: usize) -> Option<String> {
         return check(&rest, depth + 1);
     }
 
-    check_registries(cmd_base, &tokens[1..])
+    check_registries(canonical_tool(cmd_base), &tokens[1..])
+}
+
+/// Interpreters installed under versioned names that should match their
+/// unversioned rule rows, so one row covers every release.
+const VERSIONED_TOOLS: &[&str] = &["python", "perl", "ruby", "php"];
+
+/// The rule-table name for a command basename: a versioned interpreter
+/// (`python3`, `python3.14`, free-threaded `python3.14t`, `perl5.40.0`,
+/// `ruby3.3`) maps to its stem; anything else — including look-alikes such as
+/// `python3-config` — is returned unchanged.
+fn canonical_tool(base: &str) -> &str {
+    for stem in VERSIONED_TOOLS {
+        if let Some(rest) = base.strip_prefix(stem) {
+            let version = rest.strip_suffix('t').unwrap_or(rest);
+            if version.starts_with(|c: char| c.is_ascii_digit())
+                && version.chars().all(|c| c.is_ascii_digit() || c == '.')
+            {
+                return stem;
+            }
+        }
+    }
+    base
 }
 
 /// Shells whose `-c` operand is a command string to recurse into. A bare
@@ -786,12 +808,39 @@ const WRAPPERS: &[Wrapper] = &[
     },
 ];
 
+/// `command`'s lookup modes (`-v`/`-V`, alone or clustered like `-pv`)
+/// print how the operand would be interpreted instead of executing it. A
+/// lookup is not a use: `command -v perl` must not peel to a bare `perl`
+/// and trip the deny row the way `command perl -pe …` (real execution)
+/// does. Only leading options count — `command perl -v` executes perl
+/// with `-v`, so it still peels.
+fn command_is_lookup(args: &[String]) -> bool {
+    for a in args {
+        if a == "--" || !a.starts_with('-') || a.len() < 2 {
+            return false;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        let flags = &a[1..];
+        if flags.chars().all(|c| "pvV".contains(c)) && (flags.contains('v') || flags.contains('V'))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Peel a known command-prefix wrapper, returning the inner command's tokens
 /// (its own options and `skip_positionals` leading operands removed, plus any
 /// `VAR=val` assignments the wrapper passes through). `None` when `base` isn't a
-/// wrapper or nothing follows it.
+/// wrapper or nothing follows it — and when `command` is only looking its
+/// operand up (`-v`/`-V`), since a lookup executes nothing to classify.
 fn strip_command_wrapper(base: &str, args: &[String]) -> Option<Vec<String>> {
     let w = WRAPPERS.iter().find(|w| w.name == base)?;
+    if base == "command" && command_is_lookup(args) {
+        return None;
+    }
     let mut i = 0;
     let mut skipped = 0;
     while i < args.len() {
@@ -1221,6 +1270,45 @@ mod engine_tests {
         // Not a wrapper / nothing to run.
         assert!(strip_command_wrapper("kubectl", &args(&["get", "pods"])).is_none());
         assert!(strip_command_wrapper("nohup", &args(&[])).is_none());
+    }
+
+    #[test]
+    fn versioned_interpreters_canonicalize() {
+        assert_eq!(canonical_tool("python3"), "python");
+        assert_eq!(canonical_tool("python3.14"), "python");
+        assert_eq!(canonical_tool("python3.14t"), "python");
+        assert_eq!(canonical_tool("python2.7"), "python");
+        assert_eq!(canonical_tool("perl5.40.0"), "perl");
+        assert_eq!(canonical_tool("ruby3.3"), "ruby");
+        assert_eq!(canonical_tool("php8.3"), "php");
+        // Unversioned names and look-alikes are untouched.
+        assert_eq!(canonical_tool("python"), "python");
+        assert_eq!(canonical_tool("python3-config"), "python3-config");
+        assert_eq!(canonical_tool("rubocop"), "rubocop");
+        assert_eq!(canonical_tool("git"), "git");
+    }
+
+    #[test]
+    fn command_lookup_does_not_peel() {
+        // `command -v/-V` prints how the operand would be interpreted without
+        // executing it — a lookup, not a use, so nothing peels.
+        assert!(strip_command_wrapper("command", &args(&["-v", "perl"])).is_none());
+        assert!(strip_command_wrapper("command", &args(&["-V", "sed"])).is_none());
+        assert!(strip_command_wrapper("command", &args(&["-pv", "awk"])).is_none());
+        // Real execution still peels: `-p` alone uses a default PATH but runs,
+        // and a `-v` after the command word is the command's own flag.
+        assert_eq!(
+            strip_command_wrapper("command", &args(&["perl", "-pe", "1"])),
+            Some(args(&["perl", "-pe", "1"]))
+        );
+        assert_eq!(
+            strip_command_wrapper("command", &args(&["-p", "perl", "-e", "1"])),
+            Some(args(&["perl", "-e", "1"]))
+        );
+        assert_eq!(
+            strip_command_wrapper("command", &args(&["perl", "-v"])),
+            Some(args(&["perl", "-v"]))
+        );
     }
 
     #[test]

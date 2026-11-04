@@ -117,7 +117,96 @@ pub const HOOK_RULES: &[HookRule] = &[
         guard: None,
         message: "Use `sak git stash-list` instead of `git stash list`.",
     },
+    HookRule {
+        tool: "git",
+        subcommand: &[&["grep"]],
+        guard: Some(git_grep_searches_worktree),
+        message: "Use `sak fs grep <pattern> [path]` instead of `git grep` to \
+             search the working tree (-i, -w, -l, -c, --glob work; it skips .git/target/node_modules, and --hidden adds \
+             dotfiles). To search a revision or branch, name it before `--`: \
+             `git grep <pattern> <rev> -- [path]`.",
+    },
 ];
+
+/// `git grep` over the working tree — what `sak fs grep` searches. Revisions,
+/// the index (`--cached`), and pager mode (`-O`) are git-only and pass.
+/// Without `--`, git tells a revision from a path by resolving it, which a
+/// hook can't; so an argument counts as a revision when it sits between the
+/// pattern and an explicit `--`, or when its syntax says so (`HEAD~1`,
+/// `a..b`, `rev:path`, `@{u}`, a 7-40 digit hex id). A bare branch name
+/// without `--` reads as a path, and the message says how to pass one.
+fn git_grep_searches_worktree(args: &[String]) -> bool {
+    const VALUE_FLAGS: &[&str] = &[
+        "-A",
+        "-B",
+        "-C",
+        "-m",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-count",
+        "--max-depth",
+        "--threads",
+    ];
+    let rest = &args[1..];
+    if rest.is_empty() {
+        return false;
+    }
+    let mut pattern_from_flag = false;
+    let mut before_dashdash: Vec<&str> = Vec::new();
+    let mut saw_dashdash = false;
+    let mut i = 0;
+    while i < rest.len() {
+        let a = rest[i].as_str();
+        i += 1;
+        if saw_dashdash {
+            continue;
+        }
+        match a {
+            "--" => saw_dashdash = true,
+            "--cached" | "--recurse-submodules" => return false,
+            _ if a == "-O" || a.starts_with("--open-files-in-pager") => return false,
+            "-e" | "-f" | "--regexp" | "--file" => {
+                pattern_from_flag = true;
+                i += 1;
+            }
+            _ if a.starts_with("--regexp=") || a.starts_with("--file=") => {
+                pattern_from_flag = true;
+            }
+            _ if VALUE_FLAGS.contains(&a) => i += 1,
+            _ if a.starts_with("--") => {}
+            _ if a.starts_with('-') && a.len() > 1 => {
+                // A short cluster ending in a value flag takes the next arg
+                // (`-ie foo`, `-nC 3`); attached values (`-C3`) don't.
+                if a.ends_with(['e', 'f']) {
+                    pattern_from_flag = true;
+                    i += 1;
+                } else if a.ends_with(['A', 'B', 'C', 'm']) {
+                    i += 1;
+                }
+            }
+            _ => before_dashdash.push(a),
+        }
+    }
+    let skip = usize::from(!pattern_from_flag);
+    let revs = before_dashdash.get(skip..).unwrap_or(&[]);
+    if saw_dashdash {
+        return revs.is_empty();
+    }
+    !revs.iter().any(|r| looks_like_revision(r))
+}
+
+/// Syntax that only a revision has: `HEAD`-family names, `~`/`^` ancestry,
+/// `..` ranges, `@{…}` reflog/upstream, `rev:path` tree-ish paths, and
+/// abbreviated or full hex object ids.
+fn looks_like_revision(arg: &str) -> bool {
+    const REFS: &[&str] = &["HEAD", "FETCH_HEAD", "ORIG_HEAD", "MERGE_HEAD"];
+    REFS.iter().any(|r| arg.starts_with(r))
+        || arg.contains(['~', '^', ':'])
+        || arg.contains("..")
+        || arg.contains("@{")
+        || ((7..=40).contains(&arg.len()) && arg.chars().all(|c| c.is_ascii_hexdigit()))
+}
 
 /// `git branch` in a listing form: no extra args, or only the list-flavor flags
 /// (`-a`/`--all`, `-r`/`--remotes`, `-l`/`--list`, `-v`/`-vv`/`--verbose`,
@@ -218,6 +307,49 @@ mod tests {
 
     fn a(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn git_grep_guard_splits_worktree_from_revisions() {
+        // Working-tree searches redirect.
+        assert!(git_grep_searches_worktree(&a(&["grep", "foo"])));
+        assert!(git_grep_searches_worktree(&a(&[
+            "grep", "-n", "foo", "src/"
+        ])));
+        assert!(git_grep_searches_worktree(&a(&[
+            "grep", "-e", "foo", "src/"
+        ])));
+        assert!(git_grep_searches_worktree(&a(&["grep", "-C", "3", "foo"])));
+        assert!(git_grep_searches_worktree(&a(&[
+            "grep", "foo", "--", "src/"
+        ])));
+        assert!(git_grep_searches_worktree(&a(&[
+            "grep",
+            "--no-index",
+            "foo"
+        ])));
+        // Revisions, the index, and pager mode pass through.
+        assert!(!git_grep_searches_worktree(&a(&["grep", "foo", "HEAD~1"])));
+        assert!(!git_grep_searches_worktree(&a(&[
+            "grep",
+            "foo",
+            "main..dev"
+        ])));
+        assert!(!git_grep_searches_worktree(&a(&[
+            "grep", "foo", "v1.2:src"
+        ])));
+        assert!(!git_grep_searches_worktree(&a(&["grep", "foo", "a1b2c3d"])));
+        assert!(!git_grep_searches_worktree(&a(&[
+            "grep", "foo", "main", "--", "src/"
+        ])));
+        assert!(!git_grep_searches_worktree(&a(&[
+            "grep", "-e", "foo", "main", "--"
+        ])));
+        assert!(!git_grep_searches_worktree(&a(&[
+            "grep", "--cached", "foo"
+        ])));
+        assert!(!git_grep_searches_worktree(&a(&["grep", "-O", "foo"])));
+        assert!(!git_grep_searches_worktree(&a(&["grep"])));
     }
 
     #[test]

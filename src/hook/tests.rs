@@ -851,9 +851,40 @@ fn cut_blocks() {
 }
 
 #[test]
-fn awk_sed_perl_block_unconditionally() {
-    // Full languages with no single sak equivalent: every invocation blocks,
-    // and the message names the closest sak shape for the common cases.
+fn alias_rows_block() {
+    // Same-binary aliases share their primary's guard and message.
+    assert!(blocks("gawk '{print $2}' f"));
+    assert!(blocks("nawk '{print}' f"));
+    assert!(blocks("mawk -W posix '{print}'"));
+    assert!(blocks("gsed -n '10,20p' f"));
+    assert!(blocks("eza -la"));
+    assert!(blocks("exa src/"));
+    assert!(blocks("gfind . -name foo.rs"));
+    assert!(blocks("fd foo"));
+    assert!(blocks("fdfind -t f foo ."));
+    assert!(blocks("ag foo src/"));
+    assert!(blocks("ack -i foo"));
+    assert!(blocks("bat src/main.rs"));
+    assert!(classify("eza src").unwrap().contains("sak fs glob"));
+    assert!(classify("ag foo").unwrap().contains("sak fs grep"));
+    assert!(classify("bat f").unwrap().contains("sak fs read"));
+    assert!(classify("fd foo").unwrap().contains("sak fs glob"));
+    // The aliases inherit the primaries' pass-throughs too.
+    assert!(allows("gawk --version"));
+    assert!(allows("gsed --version"));
+    assert!(allows("ag --help"));
+    assert!(allows("echo hi | bat"));
+    assert!(allows("gfind . -name x -delete"));
+    // `fd --exec` runs arbitrary commands — no sak equivalent, passes.
+    assert!(allows("fd foo -x rm {}"));
+    assert!(allows("fd foo --exec-batch rm"));
+}
+
+#[test]
+fn awk_sed_perl_block_programs() {
+    // Full languages with no single sak equivalent: every program-running
+    // invocation blocks, and the message names the closest sak shape for the
+    // common cases.
     assert!(blocks("awk '{print $2}' file.txt"));
     assert!(blocks("echo a:b | awk -F: '{print $1}'"));
     assert!(blocks("sed -n '10,20p' file.txt"));
@@ -870,6 +901,95 @@ fn awk_sed_perl_block_unconditionally() {
             .unwrap()
             .contains("sak fs read")
     );
+    // A bare interpreter runs a program from stdin, however it's reached.
+    assert!(blocks("echo 'print 1' | perl"));
+    assert!(blocks("/run/current-system/sw/bin/perl"));
+    assert!(blocks("perl <<'EOF'\nprint 1\nEOF"));
+}
+
+#[test]
+fn interpreter_info_queries_allow() {
+    // A version/help query runs no program — a lookup, not a use.
+    assert!(allows("perl -v"));
+    assert!(allows("perl --version"));
+    assert!(allows("perl -V:version"));
+    assert!(allows("sed --version"));
+    assert!(allows("awk --version"));
+    assert!(allows("awk -W version"));
+    assert!(allows("node --version"));
+    assert!(allows("ruby -v"));
+    // Discovery commands never name the interpreter as the command.
+    assert!(allows("which perl"));
+    assert!(allows("type node"));
+}
+
+#[test]
+fn node_ruby_inline_programs_block() {
+    assert!(blocks("node -e 'console.log(1)'"));
+    assert!(blocks("node -p \"require('./package.json').version\""));
+    assert!(blocks("cat data.json | node -e 'x'"));
+    assert!(blocks("node <<'EOF'\nconsole.log(1)\nEOF"));
+    assert!(blocks("node - <<'EOF'\nconsole.log(1)\nEOF"));
+    assert!(blocks("nodejs --eval 'x'"));
+    assert!(blocks("sudo node -e 'x'"));
+    assert!(blocks("ruby -e 'puts 1'"));
+    assert!(blocks("ruby -rjson -e 'p JSON.parse(STDIN.read)'"));
+    assert!(blocks("echo x | ruby -ne 'print if /x/'"));
+    assert!(blocks("ruby <<'EOF'\nputs 1\nEOF"));
+    assert!(classify("node -p 1").unwrap().contains("sak json query"));
+}
+
+#[test]
+fn node_ruby_script_files_allow() {
+    // Running project code isn't an inline program.
+    assert!(allows("node build.js"));
+    assert!(allows("node -r dotenv/config server.js"));
+    assert!(allows("node --test"));
+    assert!(allows("node scripts/gen.js -e production"));
+    assert!(allows("ruby script.rb"));
+    assert!(allows("ruby -rset -I lib script.rb"));
+}
+
+#[test]
+fn bun_deno_php_inline_programs_block() {
+    assert!(blocks("bun -e 'console.log(1)'"));
+    assert!(blocks("bun run -p '1+1'"));
+    assert!(blocks("echo 'console.log(1)' | bun -"));
+    assert!(blocks("deno eval 'console.log(1)'"));
+    assert!(blocks("echo 'console.log(1)' | deno run -"));
+    assert!(blocks("echo 'console.log(1)' | deno"));
+    assert!(blocks("deno repl --eval 'x'"));
+    assert!(blocks("php -r 'echo 1;'"));
+    assert!(blocks("php8.3 -r 'echo 1;'"));
+    assert!(blocks("echo '<?php echo 1;' | php"));
+    assert!(blocks("printf 'a\\n' | php -R 'echo $argn;'"));
+    assert!(classify("deno eval 1").unwrap().contains("sak json query"));
+}
+
+#[test]
+fn bun_deno_php_projects_allow() {
+    assert!(allows("bun run build.ts"));
+    assert!(allows("bun test"));
+    assert!(allows("bun x vite"));
+    assert!(allows("echo hi | bun"));
+    assert!(allows("deno run -A main.ts"));
+    assert!(allows("deno task build"));
+    assert!(allows("deno --version"));
+    assert!(allows("php artisan migrate"));
+    assert!(allows("php -S localhost:8000"));
+    assert!(allows("php -l index.php"));
+    assert!(allows("php -v"));
+}
+
+#[test]
+fn git_grep_worktree_redirects_revisions_pass() {
+    assert!(blocks("git grep -n foo"));
+    assert!(blocks("git grep -e foo -- src/"));
+    assert!(blocks("git -C repo grep foo"));
+    assert!(classify("git grep foo").unwrap().contains("sak fs grep"));
+    assert!(allows("git grep foo HEAD~3"));
+    assert!(allows("git grep foo main -- src/"));
+    assert!(allows("git grep --cached foo"));
 }
 
 // ── parsers (jq/yq) ───────────────────────────────────────────
@@ -924,13 +1044,50 @@ fn python_json_blocks() {
 }
 
 #[test]
-fn python_without_json_allows() {
-    // No visible json marker: plain one-liners and file-driven runs pass.
-    // A script file's imports aren't on the command line, and neither is a
-    // quoted-heredoc body (heredocs are data) — both stay invisible.
-    assert!(allows("python3 -c \"print(1)\""));
+fn command_lookup_allows_but_execution_blocks() {
+    // `command -v/-V` is discovery, not use — it must not trip deny rows.
+    assert!(allows("command -v perl"));
+    assert!(allows("command -V sed"));
+    assert!(allows("sudo command -v perl"));
+    // Real execution through `command` still blocks.
+    assert!(blocks("command perl -pe 's/a/b/'"));
+    assert!(blocks("command sed -n '10,20p' f"));
+}
+
+#[test]
+fn python_files_and_modules_allow() {
+    // Running a script file or a module isn't inline code; a script file's
+    // imports aren't on the command line, so it stays invisible.
     assert!(allows("python3 script.py"));
     assert!(allows("python -m http.server"));
+    assert!(allows("python3.14 -m pytest -q"));
+    assert!(allows("python3 --version"));
+    assert!(allows("python3.14 -V"));
+    // Look-alike binaries aren't the interpreter.
+    assert!(allows("python3-config --includes"));
+}
+
+#[test]
+fn python_inline_code_blocks() {
+    // Inline code under any interpreter name, however it's fed in.
+    assert!(blocks("python3 -c \"print(1)\""));
+    assert!(blocks("python -c 'import os; print(os.getcwd())'"));
+    assert!(blocks("python3.14 -c 'print(1)'"));
+    assert!(blocks("python3.14t -c 'print(1)'"));
+    assert!(blocks("/usr/bin/python3.12 -I -c 'print(1)'"));
+    assert!(blocks("python2.7 -c 'print 1'"));
+    assert!(blocks("sudo python3 -c 'print(1)'"));
+    assert!(blocks("echo 'print(1)' | python3"));
+    assert!(blocks("python3 - <<'PY'\nprint(1)\nPY"));
+    assert!(blocks("python3 <<'PY'\nprint(1)\nPY"));
+    assert!(
+        classify("python3 -c 'print(open(\"f\").read()[:160])'")
+            .unwrap()
+            .contains("sak fs read")
+    );
+    // Versioned perl/ruby names reach their rows the same way.
+    assert!(blocks("perl5.40.0 -e 'print 1'"));
+    assert!(blocks("ruby3.3 -e 'puts 1'"));
 }
 
 // ── openssl x509 ──────────────────────────────────────────────
